@@ -1,0 +1,288 @@
+@extends('admin.layouts.app')
+
+@section('content')
+<div class="p-6">
+    <!-- Header -->
+    <div class="mb-6">
+        <div class="flex items-center gap-3">
+            <a href="{{ route('admin.announcements.index') }}"
+               class="text-gray-400 hover:text-primary-600 transition-colors">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="text-2xl font-bold text-white">Modifier l'Annonce</h1>
+                <p class="text-gray-400">Modifiez les informations de l'annonce</p>
+            </div>
+        </div>
+    </div>
+
+    @if($announcement->status === 'sent')
+        <div class="mb-6 p-4 bg-yellow-900/20 border-l-4 border-yellow-500 rounded">
+            <p class="text-yellow-300"><i class="fas fa-exclamation-triangle mr-2"></i>Cette annonce a déjà été envoyée et ne peut plus être modifiée</p>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="mb-6 p-4 bg-red-900/20 border-l-4 border-red-500 rounded">
+            <p class="text-red-300"><i class="fas fa-exclamation-circle mr-2"></i>{{ session('error') }}</p>
+        </div>
+    @endif
+
+    <!-- Form -->
+    <form action="{{ route('admin.announcements.update', $announcement) }}" method="POST"
+          x-data="{ targetType: '{{ old('target_type', $announcement->target_type) }}', channel: '{{ old('channel', $announcement->channel) }}' }">
+        @csrf
+        @method('PUT')
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Main Content -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Message Content -->
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-message text-primary-500 mr-2"></i>
+                        Contenu du Message
+                    </h3>
+
+                    <div class="space-y-4">
+                        <!-- Title -->
+                        <div>
+                            <label for="title" class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fas fa-heading text-primary-400 mr-1"></i>
+                                Titre (optionnel)
+                            </label>
+                            <input type="text" name="title" id="title" value="{{ old('title', $announcement->title) }}"
+                                   {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:opacity-50"
+                                   placeholder="Ex: Nouvelle promotion">
+                            <p class="mt-1 text-xs text-gray-400">Titre de l'annonce (facultatif)</p>
+                            @error('title')
+                                <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Message -->
+                        <div>
+                            <label for="message" class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fas fa-paragraph text-primary-400 mr-1"></i>
+                                Message <span class="text-red-500">*</span>
+                            </label>
+                            <textarea name="message" id="message" rows="6" required
+                                      {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                      class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:opacity-50"
+                                      placeholder="Écrivez votre message ici...">{{ old('message', $announcement->message) }}</textarea>
+                            <p class="mt-1 text-xs text-gray-400">Le contenu de votre annonce</p>
+                            @error('message')
+                                <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target Selection -->
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-users text-primary-500 mr-2"></i>
+                        Destinataires
+                    </h3>
+
+                    <div class="space-y-4">
+                        <!-- Target Type -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-3">
+                                <i class="fas fa-bullseye text-primary-400 mr-1"></i>
+                                Type de destinataire <span class="text-red-500">*</span>
+                            </label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="relative flex items-center p-4 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                                       :class="targetType === 'all' ? 'border-primary-500 bg-primary-500/10' : ''">
+                                    <input type="radio" name="target_type" value="all"
+                                           x-model="targetType"
+                                           {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                           class="sr-only">
+                                    <div class="flex-1">
+                                        <div class="flex items-center">
+                                            <i class="fas fa-users text-primary-500 mr-2"></i>
+                                            <span class="text-white font-medium">Tous les utilisateurs</span>
+                                        </div>
+                                        <p class="text-xs text-gray-400 mt-1">Envoyer à tous</p>
+                                    </div>
+                                    <i class="fas fa-check-circle text-primary-500"
+                                       x-show="targetType === 'all'"></i>
+                                </label>
+
+                                <label class="relative flex items-center p-4 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                                       :class="targetType === 'specific' ? 'border-primary-500 bg-primary-500/10' : ''">
+                                    <input type="radio" name="target_type" value="specific"
+                                           x-model="targetType"
+                                           {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                           class="sr-only">
+                                    <div class="flex-1">
+                                        <div class="flex items-center">
+                                            <i class="fas fa-user text-primary-500 mr-2"></i>
+                                            <span class="text-white font-medium">Utilisateur spécifique</span>
+                                        </div>
+                                        <p class="text-xs text-gray-400 mt-1">Cibler un seul utilisateur</p>
+                                    </div>
+                                    <i class="fas fa-check-circle text-primary-500"
+                                       x-show="targetType === 'specific'"></i>
+                                </label>
+                            </div>
+                            @error('target_type')
+                                <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- User Selection (shown only if specific) -->
+                        <div x-show="targetType === 'specific'" x-cloak>
+                            <label for="user_id" class="block text-sm font-medium text-gray-300 mb-2">
+                                <i class="fas fa-user-check text-primary-400 mr-1"></i>
+                                Sélectionner l'utilisateur <span class="text-red-500">*</span>
+                            </label>
+                            <select name="user_id" id="user_id"
+                                    {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                    class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:opacity-50">
+                                <option value="">-- Choisir un utilisateur --</option>
+                                @foreach($users as $user)
+                                    <option value="{{ $user->id }}" {{ old('user_id', $announcement->user_id) == $user->id ? 'selected' : '' }}>
+                                        {{ $user->name }} ({{ $user->email }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('user_id')
+                                <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Sidebar -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Channel Selection -->
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-paper-plane text-primary-500 mr-2"></i>
+                        Canal d'envoi
+                    </h3>
+
+                    <div class="space-y-3">
+                        <label class="relative flex items-center p-3 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                               :class="channel === 'sms' ? 'border-blue-500 bg-blue-500/10' : ''">
+                            <input type="radio" name="channel" value="sms"
+                                   x-model="channel"
+                                   {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                   class="sr-only">
+                            <i class="fas fa-sms text-blue-500 text-lg mr-3"></i>
+                            <span class="text-white font-medium flex-1">SMS</span>
+                            <i class="fas fa-check-circle text-blue-500"
+                               x-show="channel === 'sms'"></i>
+                        </label>
+
+                        <label class="relative flex items-center p-3 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                               :class="channel === 'whatsapp' ? 'border-green-500 bg-green-500/10' : ''">
+                            <input type="radio" name="channel" value="whatsapp"
+                                   x-model="channel"
+                                   {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                   class="sr-only">
+                            <i class="fab fa-whatsapp text-green-500 text-lg mr-3"></i>
+                            <span class="text-white font-medium flex-1">WhatsApp</span>
+                            <i class="fas fa-check-circle text-green-500"
+                               x-show="channel === 'whatsapp'"></i>
+                        </label>
+
+                        <label class="relative flex items-center p-3 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                               :class="channel === 'email' ? 'border-purple-500 bg-purple-500/10' : ''">
+                            <input type="radio" name="channel" value="email"
+                                   x-model="channel"
+                                   {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                   class="sr-only">
+                            <i class="fas fa-envelope text-purple-500 text-lg mr-3"></i>
+                            <span class="text-white font-medium flex-1">Email</span>
+                            <i class="fas fa-check-circle text-purple-500"
+                               x-show="channel === 'email'"></i>
+                        </label>
+
+                        <label class="relative flex items-center p-3 bg-dark-50 border-2 border-dark-300 rounded-lg cursor-pointer hover:bg-dark-200 transition-all"
+                               :class="channel === 'push' ? 'border-orange-500 bg-orange-500/10' : ''">
+                            <input type="radio" name="channel" value="push"
+                                   x-model="channel"
+                                   {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                                   class="sr-only">
+                            <i class="fas fa-bell text-orange-500 text-lg mr-3"></i>
+                            <span class="text-white font-medium flex-1">Push Notification</span>
+                            <i class="fas fa-check-circle text-orange-500"
+                               x-show="channel === 'push'"></i>
+                        </label>
+                    </div>
+                    @error('channel')
+                        <p class="mt-2 text-sm text-red-400">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <!-- Scheduling (Optional) -->
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-clock text-primary-500 mr-2"></i>
+                        Programmation
+                    </h3>
+
+                    <div>
+                        <label for="scheduled_at" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-calendar text-primary-400 mr-1"></i>
+                            Date/Heure d'envoi (optionnel)
+                        </label>
+                        <input type="datetime-local" name="scheduled_at" id="scheduled_at"
+                               value="{{ old('scheduled_at', $announcement->scheduled_at?->format('Y-m-d\TH:i')) }}"
+                               min="{{ now()->format('Y-m-d\TH:i') }}"
+                               {{ $announcement->status === 'sent' ? 'disabled' : '' }}
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:opacity-50">
+                        <p class="mt-1 text-xs text-gray-400">Laisser vide pour un envoi manuel</p>
+                        @error('scheduled_at')
+                            <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+
+                <!-- Info -->
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-4">
+                    <h4 class="text-sm font-semibold text-white mb-3">
+                        <i class="fas fa-info-circle text-primary-500 mr-1"></i>
+                        Informations
+                    </h4>
+                    <div class="space-y-2 text-xs text-gray-400">
+                        <div class="flex items-center">
+                            <i class="fas fa-calendar-plus w-4 mr-2 text-primary-400"></i>
+                            <span>Créé: {{ $announcement->created_at->format('d/m/Y H:i') }}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-calendar-edit w-4 mr-2 text-primary-400"></i>
+                            <span>Modifié: {{ $announcement->updated_at->format('d/m/Y H:i') }}</span>
+                        </div>
+                        @if($announcement->sent_at)
+                            <div class="flex items-center">
+                                <i class="fas fa-paper-plane w-4 mr-2 text-green-400"></i>
+                                <span>Envoyé: {{ $announcement->sent_at->format('d/m/Y H:i') }}</span>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-6 flex justify-between items-center">
+            <a href="{{ route('admin.announcements.index') }}"
+               class="px-6 py-3 bg-dark-300 text-white rounded-lg hover:bg-dark-400 transition-all shadow-md">
+                <i class="fas fa-times mr-2"></i> Annuler
+            </a>
+            @if($announcement->status !== 'sent')
+                <button type="submit"
+                        class="px-8 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-lg hover:shadow-xl">
+                    <i class="fas fa-save mr-2"></i> Enregistrer les modifications
+                </button>
+            @endif
+        </div>
+    </form>
+</div>
+@endsection

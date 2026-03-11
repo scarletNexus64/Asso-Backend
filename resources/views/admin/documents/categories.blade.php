@@ -1,0 +1,5 @@
+@extends('admin.layouts.app')
+@section('title', 'Catégories de documents')
+@section('content')
+<div class="p-6 space-y-6"><h1 class="text-3xl font-bold text-white">Catégories de documents</h1><div class="bg-dark-100 border border-dark-200 rounded-lg overflow-hidden"><table class="w-full"><thead class="bg-dark-50"><tr><th class="px-6 py-3 text-left text-gray-300">Nom</th><th class="px-6 py-3 text-left text-gray-300">Documents</th><th class="px-6 py-3 text-left text-gray-300">Statut</th></tr></thead><tbody>@foreach($categories as $cat)<tr class="border-b border-dark-200"><td class="px-6 py-4 text-white">{{ $cat->name }}</td><td class="px-6 py-4 text-gray-300">{{ $cat->documents_count }}</td><td class="px-6 py-4"><span class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-sm">{{ $cat->is_active ? 'Actif' : 'Inactif' }}</span></td></tr>@endforeach</tbody></table></div><a href="{{ route('admin.documents.index') }}" class="inline-block px-6 py-2 bg-dark-300 hover:bg-dark-400 text-white rounded-lg">Retour</a></div>
+@endsection
