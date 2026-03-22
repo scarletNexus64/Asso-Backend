@@ -19,6 +19,13 @@ class AuthController extends Controller
             return redirect()->route('admin.dashboard');
         }
 
+        // If user is authenticated but not admin, log them out to avoid redirect loop
+        if (Auth::check()) {
+            Auth::logout();
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
+        }
+
         return view('admin.auth.login');
     }
 

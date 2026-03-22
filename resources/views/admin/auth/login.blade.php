@@ -3,6 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+
+    <!-- Open Graph / Partage de lien -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ url()->current() }}">
+    <meta property="og:title" content="ASSO - Dashboard Admin">
+    <meta property="og:description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+    <meta property="og:image" content="{{ asset('logo/Asso.png') }}">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ASSO - Dashboard Admin">
+    <meta name="twitter:description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+    <meta name="twitter:image" content="{{ asset('logo/Asso.png') }}">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ asset('logo/Asso.png') }}">
+    <link rel="apple-touch-icon" href="{{ asset('logo/Asso.png') }}">
+
     <title>Connexion - ASSO Admin</title>
 
     <!-- Font Awesome -->

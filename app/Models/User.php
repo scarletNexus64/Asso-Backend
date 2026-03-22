@@ -32,6 +32,8 @@ class User extends Authenticatable
         'latitude',
         'longitude',
         'avatar',
+        'company_name',
+        'company_logo',
         'referral_code',
         'referred_by_id',
         'total_earnings',

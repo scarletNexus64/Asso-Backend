@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\CommissionRange;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -18,8 +19,9 @@ class SettingsController extends Controller
     {
         $generalSettings = Setting::where('group', 'general')->get()->keyBy('key');
         $systemSettings = Setting::where('group', 'system')->get()->keyBy('key');
+        $commissionRanges = CommissionRange::orderBy('min_amount')->get();
 
-        return view('admin.settings.index', compact('generalSettings', 'systemSettings'));
+        return view('admin.settings.index', compact('generalSettings', 'systemSettings', 'commissionRanges'));
     }
 
     /**
@@ -31,18 +33,32 @@ class SettingsController extends Controller
     public function update(Request $request)
     {
         try {
-            $validated = $request->validate([
-                'app_name' => 'required|string|max:255',
-                'app_slogan' => 'nullable|string|max:255',
-                'app_description' => 'nullable|string',
-                'contact_email' => 'required|email',
-                'contact_phone' => 'nullable|string|max:20',
-                'contact_address' => 'nullable|string|max:255',
-                'timezone' => 'required|string',
-                'default_language' => 'required|string',
-                'currency' => 'required|string|max:10',
-                'currency_symbol' => 'required|string|max:10',
-            ]);
+            // Déterminer les règles selon les champs envoyés (onglet Général ou Système)
+            $rules = [];
+
+            // Onglet Général
+            if ($request->has('app_name')) {
+                $rules = array_merge($rules, [
+                    'app_name' => 'required|string|max:255',
+                    'app_slogan' => 'nullable|string|max:255',
+                    'app_description' => 'nullable|string',
+                    'contact_email' => 'required|email',
+                    'contact_phone' => 'nullable|string|max:20',
+                    'contact_address' => 'nullable|string|max:255',
+                ]);
+            }
+
+            // Onglet Système
+            if ($request->has('timezone')) {
+                $rules = array_merge($rules, [
+                    'timezone' => 'required|string',
+                    'default_language' => 'required|string',
+                    'currency' => 'required|string|max:10',
+                    'currency_symbol' => 'required|string|max:10',
+                ]);
+            }
+
+            $validated = $request->validate($rules);
 
             // Gérer l'upload du logo
             if ($request->hasFile('app_logo')) {
@@ -239,6 +255,57 @@ class SettingsController extends Controller
             return redirect()->back()
                 ->with('error', 'Erreur lors de la mise à jour: ' . $e->getMessage())
                 ->withInput();
+        }
+    }
+
+    /**
+     * Enregistrer les plages de commissions.
+     */
+    public function updateCommissions(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'ranges' => 'required|array|min:1',
+                'ranges.*.min_amount' => 'required|numeric|min:0',
+                'ranges.*.max_amount' => 'required|numeric|gt:ranges.*.min_amount',
+                'ranges.*.percentage' => 'required|numeric|min:0|max:100',
+                'ranges.*.is_active' => 'nullable|boolean',
+            ]);
+
+            // Supprimer les anciennes plages et recréer
+            CommissionRange::truncate();
+
+            foreach ($validated['ranges'] as $range) {
+                CommissionRange::create([
+                    'min_amount' => $range['min_amount'],
+                    'max_amount' => $range['max_amount'],
+                    'percentage' => $range['percentage'],
+                    'is_active' => isset($range['is_active']) ? true : false,
+                ]);
+            }
+
+            return redirect()->route('admin.settings.index', ['tab' => 'commissions'])
+                ->with('success', 'Plages de commissions mises à jour avec succès');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', 'Erreur lors de la mise à jour: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+
+    /**
+     * Supprimer une plage de commission.
+     */
+    public function destroyCommission(CommissionRange $commission)
+    {
+        try {
+            $commission->delete();
+
+            return redirect()->route('admin.settings.index', ['tab' => 'commissions'])
+                ->with('success', 'Plage de commission supprimée avec succès');
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', 'Erreur lors de la suppression: ' . $e->getMessage());
         }
     }
 }

@@ -163,16 +163,14 @@
 
             <!-- Boutons d'action -->
             <div class="flex justify-between items-center gap-4 mt-6 pt-6 border-t border-dark-200">
-                <form action="{{ route('admin.packages.destroy', $package) }}" method="POST" class="inline"
-                    onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce package ? Cette action est irréversible.');">
-                    @csrf
-                    @method('DELETE')
-                    <button type="submit"
+                <div>
+                    {{-- Le bouton supprimer est géré par un formulaire séparé en dehors du form principal --}}
+                    <button type="button" id="deletePackageBtn"
                         class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
                         <i class="fas fa-trash mr-2"></i>
                         Supprimer
                     </button>
-                </form>
+                </div>
 
                 <div class="flex gap-4">
                     <a href="{{ route('admin.packages.index') }}"
@@ -186,6 +184,12 @@
                     </button>
                 </div>
             </div>
+        </form>
+
+        {{-- Formulaire de suppression séparé (en dehors du formulaire de mise à jour) --}}
+        <form id="deletePackageForm" action="{{ route('admin.packages.destroy', $package) }}" method="POST" class="hidden">
+            @csrf
+            @method('DELETE')
         </form>
     </div>
 </div>
@@ -234,6 +238,13 @@
     function removeBenefit(button) {
         button.parentElement.remove();
     }
+
+    // Gestion du bouton supprimer (formulaire séparé pour éviter le conflit avec le formulaire de mise à jour)
+    document.getElementById('deletePackageBtn').addEventListener('click', function() {
+        if (confirm('Êtes-vous sûr de vouloir supprimer ce package ? Cette action est irréversible.')) {
+            document.getElementById('deletePackageForm').submit();
+        }
+    });
 </script>
 @endpush
 @endsection

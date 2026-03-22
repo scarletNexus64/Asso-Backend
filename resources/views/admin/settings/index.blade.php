@@ -6,7 +6,7 @@
 @section('content')
 <div class="space-y-6">
     <!-- Tabs Navigation -->
-    <div class="bg-dark-100 rounded-lg shadow-sm border border-dark-200" x-data="{ activeTab: 'general' }">
+    <div class="bg-dark-100 rounded-lg shadow-sm border border-dark-200" x-data="{ activeTab: new URLSearchParams(window.location.search).get('tab') || 'general' }">
         <div class="border-b border-dark-200">
             <nav class="flex space-x-4 px-6" aria-label="Tabs">
                 <button @click="activeTab = 'general'"
@@ -18,6 +18,11 @@
                         :class="activeTab === 'system' ? 'border-primary-500 text-primary-500' : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'"
                         class="py-4 px-1 border-b-2 font-medium text-sm transition-colors">
                     <i class="fas fa-server mr-2"></i> Système
+                </button>
+                <button @click="activeTab = 'commissions'"
+                        :class="activeTab === 'commissions' ? 'border-primary-500 text-primary-500' : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'"
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition-colors">
+                    <i class="fas fa-percentage mr-2"></i> Commissions
                 </button>
             </nav>
         </div>
@@ -198,6 +203,139 @@
                 </div>
             </form>
         </div>
+
+        <!-- Commissions Tab -->
+        @php
+            $rangesData = $commissionRanges->map(fn($r) => [
+                'id' => $r->id,
+                'min_amount' => $r->min_amount,
+                'max_amount' => $r->max_amount,
+                'percentage' => $r->percentage,
+                'is_active' => $r->is_active,
+            ])->values()->toArray();
+            if (empty($rangesData)) {
+                $rangesData = [['id' => null, 'min_amount' => '', 'max_amount' => '', 'percentage' => '', 'is_active' => true]];
+            }
+        @endphp
+        <div x-show="activeTab === 'commissions'" x-cloak
+             x-data="commissionRanges()">
+            <form action="{{ route('admin.settings.commissions.update') }}" method="POST" class="p-6">
+                @csrf
+                @method('PUT')
+
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Commissions par plage de montant</h3>
+                            <p class="text-sm text-gray-400 mt-1">Configurez le pourcentage de commission qu'Asso prélève sur chaque transaction en fonction du montant.</p>
+                        </div>
+                        <button type="button" @click="addRange()"
+                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                            <i class="fas fa-plus mr-1"></i> Ajouter une plage
+                        </button>
+                    </div>
+
+                    <!-- Table Header -->
+                    <div class="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-sm font-medium text-gray-400 border-b border-dark-200">
+                        <div class="col-span-3">Montant minimum (F)</div>
+                        <div class="col-span-3">Montant maximum (F)</div>
+                        <div class="col-span-2">Commission (%)</div>
+                        <div class="col-span-2 text-center">Actif</div>
+                        <div class="col-span-2 text-center">Actions</div>
+                    </div>
+
+                    <!-- Ranges -->
+                    <template x-for="(range, index) in ranges" :key="index">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 px-4 py-3 bg-dark-50 rounded-lg border border-dark-300 items-center">
+                            <!-- Min Amount -->
+                            <div class="col-span-1 md:col-span-3">
+                                <label class="md:hidden block text-xs text-gray-400 mb-1">Montant minimum (F)</label>
+                                <input type="number" :name="'ranges[' + index + '][min_amount]'" x-model="range.min_amount"
+                                       placeholder="1000" min="0" step="1"
+                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                                       required>
+                            </div>
+
+                            <!-- Max Amount -->
+                            <div class="col-span-1 md:col-span-3">
+                                <label class="md:hidden block text-xs text-gray-400 mb-1">Montant maximum (F)</label>
+                                <input type="number" :name="'ranges[' + index + '][max_amount]'" x-model="range.max_amount"
+                                       placeholder="100000" min="0" step="1"
+                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                                       required>
+                            </div>
+
+                            <!-- Percentage -->
+                            <div class="col-span-1 md:col-span-2">
+                                <label class="md:hidden block text-xs text-gray-400 mb-1">Commission (%)</label>
+                                <div class="relative">
+                                    <input type="number" :name="'ranges[' + index + '][percentage]'" x-model="range.percentage"
+                                           placeholder="5" min="0" max="100" step="0.01"
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm pr-8"
+                                           required>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                </div>
+                            </div>
+
+                            <!-- Active Toggle -->
+                            <div class="col-span-1 md:col-span-2 flex items-center md:justify-center">
+                                <label class="md:hidden text-xs text-gray-400 mr-2">Actif</label>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" :name="'ranges[' + index + '][is_active]'" x-model="range.is_active"
+                                           value="1" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-dark-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                                </label>
+                            </div>
+
+                            <!-- Remove Button -->
+                            <div class="col-span-1 md:col-span-2 flex items-center md:justify-center">
+                                <button type="button" @click="removeRange(index)" x-show="ranges.length > 1"
+                                        class="px-3 py-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/40 transition-colors text-sm">
+                                    <i class="fas fa-trash-alt mr-1"></i> Supprimer
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Info -->
+                    <div class="bg-blue-900/20 border border-blue-800/30 rounded-lg p-4">
+                        <div class="flex items-start">
+                            <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
+                            <div class="text-sm text-blue-300">
+                                <p class="font-medium mb-1">Comment fonctionnent les plages de commission ?</p>
+                                <p class="text-blue-400">Pour chaque transaction, le système vérifie dans quelle plage de montant se situe le prix du produit et applique le pourcentage de commission correspondant. Assurez-vous que les plages ne se chevauchent pas.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="flex justify-end pt-4">
+                        <button type="submit"
+                                class="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-md">
+                            <i class="fas fa-save mr-2"></i> Enregistrer les commissions
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    function commissionRanges() {
+        return {
+            ranges: @json($rangesData),
+            addRange() {
+                this.ranges.push({ id: null, min_amount: '', max_amount: '', percentage: '', is_active: true });
+            },
+            removeRange(index) {
+                if (this.ranges.length > 1) {
+                    this.ranges.splice(index, 1);
+                }
+            }
+        }
+    }
+</script>
+@endpush

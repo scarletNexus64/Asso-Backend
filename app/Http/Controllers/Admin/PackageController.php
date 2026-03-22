@@ -89,6 +89,7 @@ class PackageController extends Controller
             'storage_size_mb' => 'nullable|integer|min:1',
             'reach_users' => 'nullable|integer|min:1',
             'benefits' => 'nullable|array',
+            'benefits.*' => 'nullable|string|max:500',
             'is_active' => 'boolean',
             'is_popular' => 'boolean',
             'order' => 'nullable|integer|min:0',
@@ -96,6 +97,25 @@ class PackageController extends Controller
 
         $validated['is_active'] = $request->has('is_active');
         $validated['is_popular'] = $request->has('is_popular');
+
+        // Filtrer les bénéfices vides
+        if (isset($validated['benefits'])) {
+            $validated['benefits'] = array_values(array_filter($validated['benefits'], fn($b) => !empty(trim($b))));
+            if (empty($validated['benefits'])) {
+                $validated['benefits'] = null;
+            }
+        }
+
+        // Nettoyer les champs non pertinents selon le type
+        if ($validated['type'] !== 'storage') {
+            $validated['storage_size_mb'] = null;
+        }
+        if ($validated['type'] !== 'boost') {
+            $validated['reach_users'] = null;
+        }
+        if ($validated['type'] !== 'certification') {
+            $validated['benefits'] = null;
+        }
 
         Package::create($validated);
 
@@ -133,6 +153,7 @@ class PackageController extends Controller
             'storage_size_mb' => 'nullable|integer|min:1',
             'reach_users' => 'nullable|integer|min:1',
             'benefits' => 'nullable|array',
+            'benefits.*' => 'nullable|string|max:500',
             'is_active' => 'boolean',
             'is_popular' => 'boolean',
             'order' => 'nullable|integer|min:0',
@@ -140,6 +161,25 @@ class PackageController extends Controller
 
         $validated['is_active'] = $request->has('is_active');
         $validated['is_popular'] = $request->has('is_popular');
+
+        // Filtrer les bénéfices vides
+        if (isset($validated['benefits'])) {
+            $validated['benefits'] = array_values(array_filter($validated['benefits'], fn($b) => !empty(trim($b))));
+            if (empty($validated['benefits'])) {
+                $validated['benefits'] = null;
+            }
+        }
+
+        // Nettoyer les champs non pertinents selon le type
+        if ($validated['type'] !== 'storage') {
+            $validated['storage_size_mb'] = null;
+        }
+        if ($validated['type'] !== 'boost') {
+            $validated['reach_users'] = null;
+        }
+        if ($validated['type'] !== 'certification') {
+            $validated['benefits'] = null;
+        }
 
         $package->update($validated);
 

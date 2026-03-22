@@ -4,6 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+
+    <!-- Open Graph / Partage de lien -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ url()->current() }}">
+    <meta property="og:title" content="ASSO - Dashboard Admin">
+    <meta property="og:description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+    <meta property="og:image" content="{{ asset('logo/Asso.png') }}">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ASSO - Dashboard Admin">
+    <meta name="twitter:description" content="Dashboard Panel Admin de l'application ASSO - Gérez vos utilisateurs, boutiques, produits, transactions et bien plus.">
+    <meta name="twitter:image" content="{{ asset('logo/Asso.png') }}">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ asset('logo/Asso.png') }}">
+    <link rel="apple-touch-icon" href="{{ asset('logo/Asso.png') }}">
+
     <title>@yield('title', 'Dashboard') - ASSO Admin</title>
 
     <!-- Tailwind CSS -->
@@ -108,6 +127,12 @@
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.users.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-users w-5 mr-3"></i>
                         Utilisateurs
+                    </a>
+
+                    <a href="{{ route('admin.deliverers.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.deliverers.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-truck w-5 mr-3"></i>
+                        Livreurs
                     </a>
 
                     <a href="{{ route('admin.shops.index') }}"

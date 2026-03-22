@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\MapController;
 use App\Http\Controllers\Admin\PackageController;
 use App\Http\Controllers\Admin\SupportController;
 use App\Http\Controllers\Admin\AffiliateController;
+use App\Http\Controllers\Admin\DelivererController;
 use App\Http\Controllers\Admin\DocumentController;
 use App\Http\Controllers\Admin\DatabaseController;
 use App\Http\Controllers\Admin\VaultController;
@@ -34,11 +35,9 @@ Route::get('/login', function () {
 
 // Admin routes
 Route::prefix('admin')->name('admin.')->group(function () {
-    // Guest routes (login)
-    Route::middleware('guest')->group(function () {
-        Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-        Route::post('/login', [AuthController::class, 'login'])->name('login.submit');
-    });
+    // Login routes (no guest middleware to avoid redirect loops)
+    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/login', [AuthController::class, 'login'])->name('login.submit');
 
     // Authenticated routes
     Route::middleware('auth')->group(function () {
@@ -47,6 +46,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Users management
         Route::resource('users', UserController::class);
+
+        // Deliverers (Livreurs partenaires)
+        Route::resource('deliverers', DelivererController::class);
 
         // Shops management
         Route::resource('shops', ShopController::class);
@@ -77,6 +79,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
             // Services
             Route::get('/services', [SettingsController::class, 'services'])->name('services');
             Route::put('/services/update', [SettingsController::class, 'updateServices'])->name('services.update');
+
+            // Commissions
+            Route::put('/commissions/update', [SettingsController::class, 'updateCommissions'])->name('commissions.update');
+            Route::delete('/commissions/{commission}', [SettingsController::class, 'destroyCommission'])->name('commissions.destroy');
 
             // Category Settings
             Route::get('/categories', [CategorySettingsController::class, 'index'])->name('categories');
