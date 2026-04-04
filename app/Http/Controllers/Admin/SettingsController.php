@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CommissionRange;
+use App\Models\ServiceConfiguration;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -55,6 +56,8 @@ class SettingsController extends Controller
                     'default_language' => 'required|string',
                     'currency' => 'required|string|max:10',
                     'currency_symbol' => 'required|string|max:10',
+                    'min_deposit_amount' => 'required|integer|min:1',
+                    'min_withdrawal_amount' => 'required|integer|min:1',
                 ]);
             }
 
@@ -73,7 +76,10 @@ class SettingsController extends Controller
                 }
 
                 $type = in_array($key, ['app_description']) ? 'text' : 'string';
-                $group = in_array($key, ['timezone', 'default_language', 'currency', 'currency_symbol']) ? 'system' : 'general';
+                if (in_array($key, ['min_deposit_amount', 'min_withdrawal_amount'])) {
+                    $type = 'integer';
+                }
+                $group = in_array($key, ['timezone', 'default_language', 'currency', 'currency_symbol', 'min_deposit_amount', 'min_withdrawal_amount']) ? 'system' : 'general';
 
                 Setting::set($key, $value, $type, $group);
             }
@@ -166,6 +172,12 @@ class SettingsController extends Controller
                 'fedapay_callback_url' => 'nullable|url',
                 'fedapay_timeout' => 'nullable|integer|min:60|max:600',
                 'fedapay_auto_commission' => 'nullable|boolean',
+                // FreemoPay
+                'freemopay_enabled' => 'nullable|boolean',
+                'freemopay_mode' => 'nullable|in:sandbox,live',
+                'freemopay_app_key' => 'nullable|string',
+                'freemopay_secret_key' => 'nullable|string',
+                'freemopay_callback_url' => 'nullable|url',
             ]);
 
             foreach ($validated as $key => $value) {
@@ -179,6 +191,9 @@ class SettingsController extends Controller
 
                 Setting::set($key, $value ?? '', $type, 'payment');
             }
+
+            // Also save to ServiceConfiguration if using that model
+            $this->updateServiceConfiguration($validated);
 
             return redirect()->route('admin.settings.payments')
                 ->with('success', 'Paramètres de paiement mis à jour avec succès');
@@ -212,26 +227,23 @@ class SettingsController extends Controller
     {
         try {
             $validated = $request->validate([
-                // Nexaah SMS
+                // OTP Default Service
+                'otp_default_service' => 'nullable|string|in:auto,whatsapp,sms',
+                // Nexaah SMS (Nexah API)
                 'nexaah_enabled' => 'nullable|boolean',
-                'nexaah_api_key' => 'nullable|string',
-                'nexaah_api_secret' => 'nullable|string',
-                'nexaah_account_sid' => 'nullable|string',
-                'nexaah_sender_id' => 'nullable|string|max:11',
                 'nexaah_base_url' => 'nullable|url',
-                'nexaah_country_code' => 'nullable|string|max:5',
-                'nexaah_timeout' => 'nullable|integer|min:10|max:120',
-                // WhatsApp
+                'nexaah_send_endpoint' => 'nullable|string',
+                'nexaah_credits_endpoint' => 'nullable|string',
+                'nexaah_user' => 'nullable|string',
+                'nexaah_password' => 'nullable|string',
+                'nexaah_sender_id' => 'nullable|string|max:11',
+                // WhatsApp (only 5 required fields)
                 'whatsapp_enabled' => 'nullable|boolean',
-                'whatsapp_business_account_id' => 'nullable|string',
+                'whatsapp_api_token' => 'nullable|string',
                 'whatsapp_phone_number_id' => 'nullable|string',
-                'whatsapp_business_phone' => 'nullable|string',
-                'whatsapp_display_name' => 'nullable|string|max:255',
-                'whatsapp_access_token' => 'nullable|string',
-                'whatsapp_app_id' => 'nullable|string',
-                'whatsapp_app_secret' => 'nullable|string',
-                'whatsapp_api_version' => 'nullable|string|in:v18.0,v19.0,v20.0',
-                'whatsapp_webhook_verify_token' => 'nullable|string',
+                'whatsapp_api_version' => 'nullable|string',
+                'whatsapp_template_language' => 'nullable|string',
+                'whatsapp_template_name' => 'nullable|string',
             ]);
 
             foreach ($validated as $key => $value) {
@@ -239,12 +251,17 @@ class SettingsController extends Controller
                 $type = 'string';
                 if (str_ends_with($key, '_enabled')) {
                     $type = 'boolean';
-                } elseif ($key === 'nexaah_timeout') {
-                    $type = 'integer';
                 }
 
                 // Déterminer le groupe
-                $group = str_starts_with($key, 'nexaah') ? 'sms' : 'whatsapp';
+                $group = 'sms'; // default
+                if (str_starts_with($key, 'whatsapp')) {
+                    $group = 'whatsapp';
+                } elseif (str_starts_with($key, 'nexaah')) {
+                    $group = 'sms';
+                } elseif ($key === 'otp_default_service') {
+                    $group = 'sms'; // Store in sms group for convenience
+                }
 
                 Setting::set($key, $value ?? '', $type, $group);
             }
@@ -306,6 +323,32 @@ class SettingsController extends Controller
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Erreur lors de la suppression: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mettre à jour les configurations de service (FreemoPay, etc).
+     *
+     * @param array $validated
+     * @return void
+     */
+    private function updateServiceConfiguration(array $validated): void
+    {
+        // FreemoPay Configuration
+        if (isset($validated['freemopay_app_key']) || isset($validated['freemopay_secret_key'])) {
+            $freemopayConfig = [
+                'app_key' => $validated['freemopay_app_key'] ?? '',
+                'secret_key' => $validated['freemopay_secret_key'] ?? '',
+                'callback_url' => $validated['freemopay_callback_url'] ?? '',
+                'mode' => $validated['freemopay_mode'] ?? 'sandbox',
+            ];
+
+            ServiceConfiguration::setConfig(
+                ServiceConfiguration::SERVICE_FREEMOPAY,
+                $freemopayConfig,
+                isset($validated['freemopay_enabled']) && $validated['freemopay_enabled'] == true,
+                'Configuration FreemoPay pour les paiements mobiles'
+            );
         }
     }
 }

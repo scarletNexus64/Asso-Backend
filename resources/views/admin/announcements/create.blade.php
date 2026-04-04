@@ -243,6 +243,22 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Push Notification Info -->
+                <div x-show="channel === 'push'" x-cloak class="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
+                    <div class="flex items-start">
+                        <i class="fas fa-bell text-orange-500 text-lg mt-0.5 mr-2"></i>
+                        <div>
+                            <h4 class="text-sm font-semibold text-orange-400 mb-2">Notification Push (FCM)</h4>
+                            <ul class="text-xs text-orange-300/80 space-y-1">
+                                <li>• Utilise Firebase Cloud Messaging</li>
+                                <li>• Envoi via topics pour les groupes</li>
+                                <li>• Envoi progressif par batch</li>
+                                <li>• Gestion automatique des tokens invalides</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

@@ -191,6 +191,30 @@
                                    class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                    required>
                         </div>
+
+                        <!-- Minimum Deposit Amount -->
+                        <div>
+                            <label for="min_deposit_amount" class="block text-sm font-medium text-gray-300 mb-2">
+                                Montant minimum de dépôt (FCFA) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" name="min_deposit_amount" id="min_deposit_amount"
+                                   value="{{ old('min_deposit_amount', $systemSettings['min_deposit_amount']->value ?? '100') }}"
+                                   class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                   min="1" step="1"
+                                   required>
+                        </div>
+
+                        <!-- Minimum Withdrawal Amount -->
+                        <div>
+                            <label for="min_withdrawal_amount" class="block text-sm font-medium text-gray-300 mb-2">
+                                Montant minimum de retrait (FCFA) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" name="min_withdrawal_amount" id="min_withdrawal_amount"
+                                   value="{{ old('min_withdrawal_amount', $systemSettings['min_withdrawal_amount']->value ?? '100') }}"
+                                   class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                                   min="1" step="1"
+                                   required>
+                        </div>
                     </div>
 
                     <!-- Submit Button -->

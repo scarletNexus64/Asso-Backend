@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Announcement;
 use App\Models\User;
+use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AnnouncementController extends Controller
 {
@@ -148,27 +150,95 @@ class AnnouncementController extends Controller
         }
 
         try {
-            // TODO: Implémenter la logique d'envoi selon le canal
-            // Pour l'instant, on marque simplement comme envoyé
-
-            // Calculer le nombre de destinataires
+            $successCount = 0;
+            $failureCount = 0;
             $recipientCount = 0;
-            if ($announcement->target_type === 'all') {
-                $recipientCount = User::count();
+
+            // Logique d'envoi selon le canal
+            if ($announcement->channel === 'push') {
+                $fcmService = new FirebaseMessagingService();
+
+                // Préparer les données de la notification
+                $title = $announcement->title ?? 'Nouvelle annonce';
+                $body = $announcement->message;
+                $data = [
+                    'type' => 'announcement',
+                    'announcement_id' => $announcement->id,
+                    'created_at' => $announcement->created_at->toIso8601String(),
+                ];
+
+                if ($announcement->target_type === 'all') {
+                    Log::info("Envoi de notification push à tous les utilisateurs via topic");
+
+                    // Envoi via topic pour tous les utilisateurs (plus efficace)
+                    $result = $fcmService->sendToAll($title, $body, $data);
+
+                    if ($result['success']) {
+                        $successCount = User::count(); // Estimation pour le topic
+                        $recipientCount = $successCount;
+                        Log::info("Notification push envoyée avec succès à tous les utilisateurs");
+                    } else {
+                        // Si le topic échoue, utiliser l'envoi par batch
+                        Log::warning("Échec de l'envoi via topic, utilisation de l'envoi par batch");
+                        $batchResult = $fcmService->sendToAllByBatch($title, $body, $data);
+
+                        if ($batchResult['success']) {
+                            $successCount = $batchResult['success_count'];
+                            $failureCount = $batchResult['failure_count'];
+                            $recipientCount = $successCount + $failureCount;
+                        }
+                    }
+                } else {
+                    // Envoi à un utilisateur spécifique
+                    $user = User::find($announcement->user_id);
+
+                    if ($user) {
+                        Log::info("Envoi de notification push à l'utilisateur {$user->id}");
+                        $result = $fcmService->sendToUser($user, $title, $body, $data);
+
+                        if ($result['success']) {
+                            $successCount = $result['success_count'] ?? 1;
+                            $failureCount = $result['failure_count'] ?? 0;
+                            $recipientCount = 1;
+                        }
+                    }
+                }
             } else {
-                $recipientCount = 1;
+                // Pour les autres canaux (SMS, WhatsApp, Email), à implémenter plus tard
+                Log::info("Canal {$announcement->channel} pas encore implémenté");
+
+                // Calculer le nombre de destinataires
+                if ($announcement->target_type === 'all') {
+                    $recipientCount = User::count();
+                } else {
+                    $recipientCount = 1;
+                }
+
+                $successCount = $recipientCount;
             }
 
+            // Mettre à jour le statut de l'annonce
             $announcement->update([
                 'status' => 'sent',
                 'sent_at' => now(),
-                'sent_count' => $recipientCount,
-                'failed_count' => 0,
+                'sent_count' => $successCount,
+                'failed_count' => $failureCount,
             ]);
 
+            $message = 'Annonce envoyée avec succès';
+            if ($announcement->channel === 'push') {
+                $message .= " - {$successCount} envoi(s) réussi(s)";
+                if ($failureCount > 0) {
+                    $message .= ", {$failureCount} échec(s)";
+                }
+            } else {
+                $message .= " à {$recipientCount} utilisateur(s)";
+            }
+
             return redirect()->route('admin.announcements.index')
-                ->with('success', 'Annonce envoyée avec succès à ' . $recipientCount . ' utilisateur(s)');
+                ->with('success', $message);
         } catch (\Exception $e) {
+            Log::error('Erreur lors de l\'envoi de l\'annonce: ' . $e->getMessage());
             return redirect()->back()
                 ->with('error', 'Erreur lors de l\'envoi: ' . $e->getMessage());
         }

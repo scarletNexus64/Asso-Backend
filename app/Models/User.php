@@ -7,11 +7,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -24,6 +26,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'roles',
         'gender',
         'birth_date',
         'phone',
@@ -39,6 +42,12 @@ class User extends Authenticatable
         'total_earnings',
         'pending_earnings',
         'withdrawn_earnings',
+        'freemopay_wallet_balance',
+        'paypal_wallet_balance',
+        'otp_code',
+        'otp_expires_at',
+        'is_profile_complete',
+        'preferences',
     ];
 
     /**
@@ -49,6 +58,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_code',
+        'otp_expires_at',
     ];
 
     /**
@@ -62,6 +73,10 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'birth_date' => 'date',
             'password' => 'hashed',
+            'preferences' => 'array',
+            'roles' => 'array',
+            'is_profile_complete' => 'boolean',
+            'otp_expires_at' => 'datetime',
         ];
     }
 
@@ -87,6 +102,22 @@ class User extends Authenticatable
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    /**
+     * Get all orders for this user
+     */
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    /**
+     * Get favorite products for this user
+     */
+    public function favorites()
+    {
+        return $this->belongsToMany(Product::class, 'favorites')->withTimestamps();
     }
 
     /**
@@ -130,6 +161,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get all device tokens for this user
+     */
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
+    }
+
+    /**
      * Get the user who referred this user
      */
     public function referrer()
@@ -159,6 +198,73 @@ class User extends Authenticatable
     public function commissionsGenerated(): HasMany
     {
         return $this->hasMany(AffiliateCommission::class, 'referred_user_id');
+    }
+
+    /**
+     * Get all vendor packages for this user
+     */
+    public function vendorPackages(): HasMany
+    {
+        return $this->hasMany(VendorPackage::class);
+    }
+
+    /**
+     * Get the active vendor package for this user
+     */
+    public function activeVendorPackage(): HasOne
+    {
+        return $this->hasOne(VendorPackage::class)
+            ->where('status', 'active')
+            ->where('expires_at', '>', now())
+            ->latest('purchased_at');
+    }
+
+    /**
+     * Get all wallet transactions for this user
+     */
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(WalletTransaction::class);
+    }
+
+    /**
+     * Get all withdrawals for this user
+     */
+    public function withdrawals(): HasMany
+    {
+        return $this->hasMany(PlatformWithdrawal::class);
+    }
+
+    /**
+     * Get total wallet balance (FreeMoPay + PayPal)
+     */
+    public function getTotalWalletBalanceAttribute(): float
+    {
+        return ($this->freemopay_wallet_balance ?? 0) + ($this->paypal_wallet_balance ?? 0);
+    }
+
+    /**
+     * Get formatted total wallet balance
+     */
+    public function getFormattedWalletBalanceAttribute(): string
+    {
+        return number_format($this->total_wallet_balance, 0, ',', ' ') . ' FCFA';
+    }
+
+    /**
+     * Get formatted FreeMoPay wallet balance
+     */
+    public function getFormattedFreemopayBalanceAttribute(): string
+    {
+        return number_format($this->freemopay_wallet_balance ?? 0, 0, ',', ' ') . ' FCFA';
+    }
+
+    /**
+     * Get formatted PayPal wallet balance
+     */
+    public function getFormattedPaypalBalanceAttribute(): string
+    {
+        return number_format($this->paypal_wallet_balance ?? 0, 0, ',', ' ') . ' FCFA';
     }
 
     /**
@@ -211,6 +317,77 @@ class User extends Authenticatable
         });
 
         return $result;
+    }
+
+    // ================================
+    // ROLES MANAGEMENT
+    // ================================
+
+    /**
+     * Check if user has a specific role
+     */
+    public function hasRole(string $role): bool
+    {
+        if (is_array($this->roles)) {
+            return in_array($role, $this->roles);
+        }
+        // Fallback to old role column
+        return $this->role === $role;
+    }
+
+    /**
+     * Check if user has any of the given roles
+     */
+    public function hasAnyRole(array $roles): bool
+    {
+        foreach ($roles as $role) {
+            if ($this->hasRole($role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Add a role to the user
+     */
+    public function addRole(string $role): void
+    {
+        $roles = is_array($this->roles) ? $this->roles : [$this->role];
+
+        if (!in_array($role, $roles)) {
+            $roles[] = $role;
+            $this->roles = $roles;
+            // Keep role column updated with primary role
+            $this->role = $roles[0];
+            $this->save();
+        }
+    }
+
+    /**
+     * Remove a role from the user
+     */
+    public function removeRole(string $role): void
+    {
+        $roles = is_array($this->roles) ? $this->roles : [$this->role];
+
+        $roles = array_filter($roles, fn($r) => $r !== $role);
+
+        if (empty($roles)) {
+            $roles = ['client']; // Default role
+        }
+
+        $this->roles = array_values($roles);
+        $this->role = $roles[0];
+        $this->save();
+    }
+
+    /**
+     * Get all user roles
+     */
+    public function getRoles(): array
+    {
+        return is_array($this->roles) ? $this->roles : [$this->role];
     }
 }
 

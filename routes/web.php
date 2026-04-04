@@ -22,6 +22,8 @@ use App\Http\Controllers\Admin\DelivererController;
 use App\Http\Controllers\Admin\DocumentController;
 use App\Http\Controllers\Admin\DatabaseController;
 use App\Http\Controllers\Admin\VaultController;
+use App\Http\Controllers\Admin\PreferenceController;
+use App\Http\Controllers\Admin\FcmTokenController;
 
 // Redirect root to admin login
 Route::get('/', function () {
@@ -47,11 +49,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Users management
         Route::resource('users', UserController::class);
 
+        // Preferences management
+        Route::get('/preferences', [PreferenceController::class, 'index'])->name('preferences.index');
+
         // Deliverers (Livreurs partenaires)
         Route::resource('deliverers', DelivererController::class);
 
         // Shops management
         Route::resource('shops', ShopController::class);
+        Route::post('/shops/{shop}/verify', [\App\Http\Controllers\Admin\ShopVerificationController::class, 'verify'])->name('shops.verify');
+        Route::post('/shops/{shop}/reject', [\App\Http\Controllers\Admin\ShopVerificationController::class, 'reject'])->name('shops.reject');
+        Route::post('/shops/{shop}/toggle-status', [\App\Http\Controllers\Admin\ShopVerificationController::class, 'toggleStatus'])->name('shops.toggleStatus');
 
         // Products management
         Route::resource('products', ProductController::class);
@@ -171,5 +179,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/vault/{credential}/reveal', [VaultController::class, 'reveal'])->name('vault.reveal');
         Route::post('/vault/{credential}/toggle-favorite', [VaultController::class, 'toggleFavorite'])->name('vault.toggle-favorite');
         Route::get('/vault-categories', [VaultController::class, 'categories'])->name('vault.categories');
+
+        // FCM Tokens - Gestion des tokens de notifications push
+        Route::get('/fcm-tokens', [FcmTokenController::class, 'index'])->name('fcm-tokens.index');
+        Route::get('/fcm-tokens/{user}', [FcmTokenController::class, 'show'])->name('fcm-tokens.show');
+        Route::delete('/fcm-tokens/token/{token}', [FcmTokenController::class, 'destroyToken'])->name('fcm-tokens.token.destroy');
+        Route::post('/fcm-tokens/token/{token}/toggle', [FcmTokenController::class, 'toggleToken'])->name('fcm-tokens.token.toggle');
+
     });
 });

@@ -29,7 +29,7 @@
                     <select name="user_id"
                             id="user_id"
                             required
-                            class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('user_id') border-red-500 @enderror">
+                            class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white @error('user_id') border-red-500 @enderror">
                         <option value="">Sélectionnez un utilisateur</option>
                         @foreach($users as $user)
                             <option value="{{ $user->id }}" {{ old('user_id', request('user_id')) == $user->id ? 'selected' : '' }}>
@@ -55,7 +55,7 @@
                            value="{{ old('name') }}"
                            required
                            placeholder="Ex: Boutique de Marie"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('name') border-red-500 @enderror">
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white placeholder-gray-400 @error('name') border-red-500 @enderror">
                     @error('name')
                         <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                     @enderror
@@ -72,7 +72,7 @@
                               id="description"
                               rows="4"
                               placeholder="Décrivez l'activité de la boutique..."
-                              class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('description') border-red-500 @enderror">{{ old('description') }}</textarea>
+                              class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white placeholder-gray-400 @error('description') border-red-500 @enderror">{{ old('description') }}</textarea>
                     @error('description')
                         <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                     @enderror
@@ -89,7 +89,7 @@
                            id="shop_link"
                            value="{{ old('shop_link') }}"
                            placeholder="https://exemple.com/ma-boutique"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('shop_link') border-red-500 @enderror">
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white placeholder-gray-400 @error('shop_link') border-red-500 @enderror">
                     @error('shop_link')
                         <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                     @enderror
@@ -106,7 +106,7 @@
                            name="logo"
                            id="logo"
                            accept="image/jpeg,image/png,image/jpg,image/gif,image/webp"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('logo') border-red-500 @enderror"
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-white @error('logo') border-red-500 @enderror"
                            onchange="previewLogo(event)">
                     @error('logo')
                         <p class="mt-1 text-sm text-red-400">{{ $message }}</p>

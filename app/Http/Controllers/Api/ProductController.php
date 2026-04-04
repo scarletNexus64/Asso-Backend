@@ -1,0 +1,423 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Product;
+use App\Models\Category;
+use Illuminate\Http\Request;
+
+class ProductController extends Controller
+{
+    /**
+     * List products with pagination, filters, search
+     */
+    public function index(Request $request)
+    {
+        $query = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user'])
+            ->where('status', 'active')
+            ->whereHas('shop', function ($q) {
+                $q->where('status', 'active');
+            });
+
+        // Search
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'LIKE', "%{$search}%")
+                    ->orWhere('description', 'LIKE', "%{$search}%");
+            });
+        }
+
+        // Filter by category
+        if ($request->has('category_id') && $request->category_id) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        // Filter by subcategory
+        if ($request->has('subcategory_id') && $request->subcategory_id) {
+            $query->where('subcategory_id', $request->subcategory_id);
+        }
+
+        // Filter by shop
+        if ($request->has('shop_id') && $request->shop_id) {
+            $query->where('shop_id', $request->shop_id);
+        }
+
+        // Filter by type (service/article)
+        if ($request->has('type') && $request->type) {
+            $query->where('type', $request->type);
+        }
+
+        // Filter by price range
+        if ($request->has('min_price') && $request->min_price) {
+            $query->where('price', '>=', $request->min_price);
+        }
+        if ($request->has('max_price') && $request->max_price) {
+            $query->where('price', '<=', $request->max_price);
+        }
+
+        // Sort
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        // Paginate
+        $perPage = $request->get('per_page', 20);
+        $products = $query->paginate($perPage);
+
+        // Check favorites if authenticated
+        $favoriteIds = [];
+        if ($request->user()) {
+            $favoriteIds = \DB::table('favorites')
+                ->where('user_id', $request->user()->id)
+                ->pluck('product_id')
+                ->toArray();
+        }
+
+        $productsData = $products->getCollection()->map(function ($product) use ($favoriteIds) {
+            return $this->formatProduct($product, $favoriteIds);
+        });
+
+        return response()->json([
+            'success' => true,
+            'products' => $productsData,
+            'pagination' => [
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+                'has_more' => $products->hasMorePages(),
+            ],
+        ]);
+    }
+
+    /**
+     * Get nearby products (6 items)
+     * Returns products close to user location
+     */
+    public function nearby(Request $request)
+    {
+        $limit = $request->input('limit', 6);
+
+        // Get user's favorite IDs if authenticated
+        $favoriteIds = $request->user()
+            ? $request->user()->favorites()->pluck('product_id')->toArray()
+            : [];
+
+        // For now, return random active products
+        // TODO: Implement actual location-based filtering when location data is available
+        $products = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user'])
+            ->where('status', 'active')
+            ->whereHas('shop', function ($q) {
+                $q->where('status', 'active');
+            })
+            ->inRandomOrder()
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'products' => $products->map(fn($product) => $this->formatProduct($product, $favoriteIds)),
+        ]);
+    }
+
+    /**
+     * Get recent products (6 items)
+     * Returns recently posted products
+     */
+    public function recent(Request $request)
+    {
+        $limit = $request->input('limit', 6);
+
+        // Get user's favorite IDs if authenticated
+        $favoriteIds = $request->user()
+            ? $request->user()->favorites()->pluck('product_id')->toArray()
+            : [];
+
+        $products = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user'])
+            ->where('status', 'active')
+            ->whereHas('shop', function ($q) {
+                $q->where('status', 'active');
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'products' => $products->map(fn($product) => $this->formatProduct($product, $favoriteIds)),
+        ]);
+    }
+
+    /**
+     * Show a single product
+     */
+    public function show(Request $request, $id)
+    {
+        $product = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user', 'reviews.user'])
+            ->findOrFail($id);
+
+        $favoriteIds = [];
+        if ($request->user()) {
+            $favoriteIds = \DB::table('favorites')
+                ->where('user_id', $request->user()->id)
+                ->pluck('product_id')
+                ->toArray();
+        }
+
+        return response()->json([
+            'success' => true,
+            'product' => $this->formatProduct($product, $favoriteIds, true),
+        ]);
+    }
+
+    /**
+     * Toggle favorite
+     */
+    public function toggleFavorite(Request $request, $id)
+    {
+        $user = $request->user();
+        $product = Product::findOrFail($id);
+
+        $exists = \DB::table('favorites')
+            ->where('user_id', $user->id)
+            ->where('product_id', $product->id)
+            ->exists();
+
+        if ($exists) {
+            \DB::table('favorites')
+                ->where('user_id', $user->id)
+                ->where('product_id', $product->id)
+                ->delete();
+            $isFavorite = false;
+        } else {
+            \DB::table('favorites')->insert([
+                'user_id' => $user->id,
+                'product_id' => $product->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $isFavorite = true;
+        }
+
+        return response()->json([
+            'success' => true,
+            'is_favorite' => $isFavorite,
+            'message' => $isFavorite ? 'Ajouté aux favoris' : 'Retiré des favoris',
+        ]);
+    }
+
+    /**
+     * List user favorites
+     */
+    public function favorites(Request $request)
+    {
+        $user = $request->user();
+        $favoriteProductIds = \DB::table('favorites')
+            ->where('user_id', $user->id)
+            ->pluck('product_id');
+
+        $products = Product::with(['images', 'primaryImage', 'category', 'shop', 'user'])
+            ->whereIn('id', $favoriteProductIds)
+            ->where('status', 'active')
+            ->paginate($request->get('per_page', 20));
+
+        $productsData = $products->getCollection()->map(function ($product) {
+            return $this->formatProduct($product, [$product->id]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'products' => $productsData,
+            'pagination' => [
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+                'has_more' => $products->hasMorePages(),
+            ],
+        ]);
+    }
+
+    /**
+     * Create a new product
+     */
+    public function store(Request $request)
+    {
+        // Validate input
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'required|string',
+            'price' => 'required|numeric|min:0',
+            'category_id' => 'required|exists:categories,id',
+            'type' => 'required|in:article,service',
+            'condition' => 'required|in:new,used,refurbished',
+            'images' => 'required|array|min:1',
+            'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
+        ]);
+
+        // 1. Verify that the user has an active package
+        $vendorPackage = $request->user()->activeVendorPackage;
+        if (!$vendorPackage) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous devez souscrire à un package de stockage pour ajouter des produits',
+                'error_code' => 'NO_ACTIVE_PACKAGE',
+            ], 403);
+        }
+
+        // 2. Calculate total image size
+        $totalImageSizeMb = 0;
+        if ($request->hasFile('images')) {
+            foreach ($request->file('images') as $image) {
+                $totalImageSizeMb += $image->getSize() / 1048576; // Convert bytes to MB
+            }
+        }
+
+        // 3. Check if enough storage space
+        if (!$vendorPackage->hasEnoughStorage($totalImageSizeMb)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Espace de stockage insuffisant. Veuillez souscrire à un package supplémentaire.',
+                'error_code' => 'INSUFFICIENT_STORAGE',
+                'required_mb' => round($totalImageSizeMb, 2),
+                'available_mb' => round($vendorPackage->storage_remaining_mb, 2),
+            ], 403);
+        }
+
+        // Create the product with authenticated user
+        $product = Product::create([
+            'user_id' => $request->user()->id,
+            'name' => $validated['name'],
+            'description' => $validated['description'],
+            'price' => $validated['price'],
+            'category_id' => $validated['category_id'],
+            'type' => $validated['type'],
+            'condition' => $validated['condition'],
+            'slug' => \Str::slug($validated['name']) . '-' . \Str::random(5),
+            'status' => 'pending', // Products need approval
+        ]);
+
+        // Store images
+        if ($request->hasFile('images')) {
+            $isPrimary = true;
+            foreach ($request->file('images') as $image) {
+                $path = $image->store('products', 'public');
+
+                // Create product image record
+                $product->images()->create([
+                    'image_path' => $path,
+                    'is_primary' => $isPrimary,
+                ]);
+
+                $isPrimary = false; // Only first image is primary
+            }
+        }
+
+        // 4. Deduct storage space from package
+        $vendorPackage->deductStorage($totalImageSizeMb);
+
+        // Load relations for response
+        $product->load(['images', 'primaryImage', 'category', 'user']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Product created successfully',
+            'product' => $this->formatProduct($product, []),
+            'storage_info' => [
+                'used_mb' => round($totalImageSizeMb, 2),
+                'remaining_mb' => round($vendorPackage->storage_remaining_mb, 2),
+            ],
+        ], 201);
+    }
+
+    /**
+     * Format product for API response
+     */
+    private function formatProduct($product, $favoriteIds = [], $detailed = false): array
+    {
+        $data = [
+            'id' => $product->id,
+            'name' => $product->name,
+            'slug' => $product->slug,
+            'price' => (float) $product->price,
+            'min_price' => $product->min_price ? (float) $product->min_price : null,
+            'max_price' => $product->max_price ? (float) $product->max_price : null,
+            'price_type' => $product->price_type ?? 'fixed',
+            'formatted_price' => $product->formatted_price,
+            'type' => $product->type ?? 'article',
+            'stock' => $product->stock,
+            'status' => $product->status,
+            'is_favorite' => in_array($product->id, $favoriteIds),
+            'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,
+            'images' => $product->images->map(fn($img) => [
+                'id' => $img->id,
+                'url' => $this->getImageUrl($img->image_path),
+                'is_primary' => (bool) $img->is_primary,
+            ]),
+            'category' => $product->category ? [
+                'id' => $product->category->id,
+                'name' => $product->category->name,
+                'slug' => $product->category->slug,
+            ] : null,
+            'subcategory' => $product->subcategory ? [
+                'id' => $product->subcategory->id,
+                'name' => $product->subcategory->name,
+            ] : null,
+            'seller' => $product->user ? [
+                'id' => $product->user->id,
+                'name' => $product->user->name,
+                'avatar' => $product->user->avatar,
+                'rating' => $product->average_rating,
+                'reviews_count' => $product->reviews_count,
+            ] : null,
+            'shop' => $product->shop ? [
+                'id' => $product->shop->id,
+                'name' => $product->shop->name,
+                'slug' => $product->shop->slug,
+                'logo' => $product->shop->logo,
+            ] : null,
+            'location' => $product->shop ? $product->shop->address : ($product->user ? $product->user->address : null),
+            'created_at' => $product->created_at->toIso8601String(),
+        ];
+
+        if ($detailed) {
+            $data['description'] = $product->description;
+            $data['reviews'] = $product->reviews->map(fn($review) => [
+                'id' => $review->id,
+                'user' => [
+                    'id' => $review->user->id,
+                    'name' => $review->user->name,
+                    'avatar' => $review->user->avatar,
+                ],
+                'rating' => $review->rating,
+                'comment' => $review->comment,
+                'is_verified' => (bool) $review->is_verified_purchase,
+                'created_at' => $review->created_at->toIso8601String(),
+            ]);
+            $data['average_rating'] = $product->average_rating;
+            $data['reviews_count'] = $product->reviews_count;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Helper to get correct image URL
+     * Handles both 'products/image.jpg' and 'storage/products/image.jpg' formats
+     */
+    private function getImageUrl($imagePath)
+    {
+        if (empty($imagePath)) {
+            return null;
+        }
+
+        // Remove 'storage/' prefix if it exists (to avoid double storage/ in URL)
+        $cleanPath = str_starts_with($imagePath, 'storage/')
+            ? substr($imagePath, 8)  // Remove 'storage/'
+            : $imagePath;
+
+        return asset('storage/' . $cleanPath);
+    }
+}

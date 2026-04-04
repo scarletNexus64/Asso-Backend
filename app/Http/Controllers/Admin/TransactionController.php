@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Transaction;
+use App\Models\WalletTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -15,22 +15,22 @@ class TransactionController extends Controller
      */
     public function index(Request $request)
     {
-        // Filtres
-        $query = Transaction::with(['buyer', 'seller', 'product']);
+        // Filtres - Utilise WalletTransactions (vraies transactions)
+        $query = WalletTransaction::with(['user', 'admin']);
 
-        // Filtre par méthode de paiement
+        // Filtre par provider (méthode de paiement)
         if ($request->filled('payment_method')) {
-            if ($request->payment_method === 'paypal') {
-                // PayPal inclut visa et mastercard
-                $query->whereIn('payment_method', ['paypal', 'visa', 'mastercard']);
-            } else {
-                $query->where('payment_method', $request->payment_method);
-            }
+            $query->where('provider', $request->payment_method);
         }
 
         // Filtre par statut
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        // Filtre par type (credit, debit, refund, bonus)
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
         }
 
         // Filtre par période
@@ -52,34 +52,38 @@ class TransactionController extends Controller
         // Pagination
         $transactions = $query->latest()->paginate(20)->withQueryString();
 
-        // Statistiques globales
-        $statsQuery = Transaction::query();
+        // Statistiques globales - Créer la requête de base
+        $baseStatsQuery = WalletTransaction::query();
         if ($startDate && $endDate) {
-            $statsQuery->whereBetween('created_at', [$startDate, $endDate]);
+            $baseStatsQuery->whereBetween('created_at', [$startDate, $endDate]);
         }
 
         $stats = [
-            'total_revenue' => $statsQuery->completed()->sum('amount'),
-            'total_fees' => $statsQuery->completed()->sum('fees'),
-            'net_revenue' => $statsQuery->completed()->sum('net_amount'),
-            'total_transactions' => $statsQuery->completed()->count(),
-            'pending_transactions' => $statsQuery->pending()->count(),
-            'cancelled_transactions' => $statsQuery->cancelled()->count(),
+            // Total des crédits (recharges)
+            'total_credits' => (clone $baseStatsQuery)->completed()->whereIn('type', ['credit', 'refund', 'bonus'])->sum('amount'),
+            // Total des débits (retraits/paiements)
+            'total_debits' => (clone $baseStatsQuery)->completed()->where('type', 'debit')->sum('amount'),
+            // Net = crédits - débits
+            'net_revenue' => (clone $baseStatsQuery)->completed()->whereIn('type', ['credit', 'refund', 'bonus'])->sum('amount')
+                           - (clone $baseStatsQuery)->completed()->where('type', 'debit')->sum('amount'),
+            'total_transactions' => (clone $baseStatsQuery)->completed()->count(),
+            'pending_transactions' => (clone $baseStatsQuery)->where('status', 'pending')->count(),
+            'failed_transactions' => (clone $baseStatsQuery)->where('status', 'failed')->count(),
         ];
 
-        // Statistiques par méthode de paiement regroupées
+        // Statistiques par provider (méthode de paiement)
         $paymentMethodStats = collect([
+            (object)[
+                'payment_method' => 'freemopay',
+                'label' => 'FreeMoPay',
+                'count' => (clone $baseStatsQuery)->completed()->where('provider', 'freemopay')->count(),
+                'total' => (clone $baseStatsQuery)->completed()->where('provider', 'freemopay')->sum('amount'),
+            ],
             (object)[
                 'payment_method' => 'paypal',
                 'label' => 'PayPal',
-                'count' => $statsQuery->completed()->whereIn('payment_method', ['paypal', 'visa', 'mastercard'])->count(),
-                'total' => $statsQuery->completed()->whereIn('payment_method', ['paypal', 'visa', 'mastercard'])->sum('amount'),
-            ],
-            (object)[
-                'payment_method' => 'fedapay',
-                'label' => 'FedaPay',
-                'count' => $statsQuery->completed()->where('payment_method', 'fedapay')->count(),
-                'total' => $statsQuery->completed()->where('payment_method', 'fedapay')->sum('amount'),
+                'count' => (clone $baseStatsQuery)->completed()->where('provider', 'paypal')->count(),
+                'total' => (clone $baseStatsQuery)->completed()->where('provider', 'paypal')->sum('amount'),
             ],
         ]);
 
@@ -91,8 +95,9 @@ class TransactionController extends Controller
         $currentDate = $chartStartDate->copy();
 
         while ($currentDate <= $chartEndDate) {
-            $dayRevenue = Transaction::completed()
+            $dayRevenue = WalletTransaction::completed()
                 ->whereDate('created_at', $currentDate)
+                ->whereIn('type', ['credit', 'refund', 'bonus'])
                 ->sum('amount');
 
             $chartData[] = [
@@ -104,14 +109,16 @@ class TransactionController extends Controller
             $currentDate->addDay();
         }
 
-        // Données pour le graphique par méthode de paiement (regroupées)
+        // Données pour le graphique par provider
         $paymentMethodChartData = [
-            'paypal' => Transaction::completed()
-                ->whereIn('payment_method', ['paypal', 'visa', 'mastercard'])
+            'freemopay' => WalletTransaction::query()
+                ->completed()
+                ->where('provider', 'freemopay')
                 ->whereBetween('created_at', [$chartStartDate, $chartEndDate])
                 ->sum('amount'),
-            'fedapay' => Transaction::completed()
-                ->where('payment_method', 'fedapay')
+            'paypal' => WalletTransaction::query()
+                ->completed()
+                ->where('provider', 'paypal')
                 ->whereBetween('created_at', [$chartStartDate, $chartEndDate])
                 ->sum('amount'),
         ];
@@ -130,19 +137,19 @@ class TransactionController extends Controller
      */
     public function exportExcel(Request $request)
     {
-        $query = Transaction::with(['buyer', 'seller', 'product']);
+        $query = WalletTransaction::with(['user', 'admin']);
 
         // Appliquer les mêmes filtres que l'index
         if ($request->filled('payment_method')) {
-            if ($request->payment_method === 'paypal') {
-                $query->whereIn('payment_method', ['paypal', 'visa', 'mastercard']);
-            } else {
-                $query->where('payment_method', $request->payment_method);
-            }
+            $query->where('provider', $request->payment_method);
         }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
         }
 
         if ($request->filled('start_date')) {
@@ -167,35 +174,34 @@ class TransactionController extends Controller
 
             // En-têtes CSV
             fputcsv($file, [
-                'Référence',
-                'Transaction ID',
+                'ID',
                 'Date',
-                'Acheteur',
-                'Vendeur',
-                'Produit',
-                'Montant (CFA)',
-                'Frais (CFA)',
-                'Net (CFA)',
-                'Méthode de paiement',
+                'Utilisateur',
+                'Type',
+                'Montant (FCFA)',
+                'Solde avant',
+                'Solde après',
+                'Provider',
                 'Statut',
-                'Type'
+                'Description',
+                'Référence externe'
             ]);
 
             // Données
             foreach ($transactions as $transaction) {
+                $metadata = $transaction->metadata ?? [];
                 fputcsv($file, [
-                    $transaction->reference,
-                    $transaction->transaction_id,
+                    $transaction->id,
                     $transaction->created_at->format('d/m/Y H:i'),
-                    $transaction->buyer?->first_name . ' ' . $transaction->buyer?->last_name,
-                    $transaction->seller?->first_name . ' ' . $transaction->seller?->last_name,
-                    $transaction->product?->name,
+                    $transaction->user?->name ?? 'N/A',
+                    $transaction->type_label,
                     $transaction->amount,
-                    $transaction->fees,
-                    $transaction->net_amount,
-                    $transaction->payment_method_label,
-                    $transaction->status_label,
-                    $transaction->type_label
+                    $transaction->balance_before,
+                    $transaction->balance_after,
+                    ucfirst($transaction->provider ?? 'N/A'),
+                    ucfirst($transaction->status),
+                    $transaction->description,
+                    $metadata['provider_reference'] ?? 'N/A'
                 ]);
             }
 
@@ -210,19 +216,19 @@ class TransactionController extends Controller
      */
     public function exportPdf(Request $request)
     {
-        $query = Transaction::with(['buyer', 'seller', 'product']);
+        $query = WalletTransaction::with(['user', 'admin']);
 
         // Appliquer les mêmes filtres que l'index
         if ($request->filled('payment_method')) {
-            if ($request->payment_method === 'paypal') {
-                $query->whereIn('payment_method', ['paypal', 'visa', 'mastercard']);
-            } else {
-                $query->where('payment_method', $request->payment_method);
-            }
+            $query->where('provider', $request->payment_method);
         }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
         }
 
         if ($request->filled('start_date')) {
@@ -236,12 +242,12 @@ class TransactionController extends Controller
         $transactions = $query->latest()->limit(100)->get(); // Limiter à 100 pour le PDF
 
         // Statistiques
-        $totalRevenue = $transactions->where('status', 'completed')->sum('amount');
-        $totalFees = $transactions->where('status', 'completed')->sum('fees');
-        $netRevenue = $transactions->where('status', 'completed')->sum('net_amount');
+        $totalCredits = $transactions->where('status', 'completed')->whereIn('type', ['credit', 'refund', 'bonus'])->sum('amount');
+        $totalDebits = $transactions->where('status', 'completed')->where('type', 'debit')->sum('amount');
+        $netRevenue = $totalCredits - $totalDebits;
 
         // Générer le HTML pour le PDF
-        $html = view('admin.transactions.pdf', compact('transactions', 'totalRevenue', 'totalFees', 'netRevenue'))->render();
+        $html = view('admin.transactions.pdf', compact('transactions', 'totalCredits', 'totalDebits', 'netRevenue'))->render();
 
         // Retourner le HTML (l'utilisateur peut imprimer en PDF depuis le navigateur)
         return response($html)->header('Content-Type', 'text/html');
@@ -250,9 +256,9 @@ class TransactionController extends Controller
     /**
      * Show the specified transaction.
      */
-    public function show(Transaction $transaction)
+    public function show(WalletTransaction $transaction)
     {
-        $transaction->load(['buyer', 'seller', 'product']);
+        $transaction->load(['user', 'admin']);
         return view('admin.transactions.show', compact('transaction'));
     }
 }

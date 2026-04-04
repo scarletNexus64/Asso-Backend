@@ -4,6 +4,68 @@
 @section('header', 'Dashboard')
 
 @section('content')
+<!-- Pending Shops Notifications -->
+@if($pendingShops->count() > 0)
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+        <i class="fas fa-bell text-primary-500 mr-2"></i>
+        Notifications
+    </h2>
+    <div class="space-y-4">
+        @foreach($pendingShops as $shop)
+        <div class="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-l-4 border-yellow-500 rounded-lg p-4 hover:shadow-lg transition-all">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0">
+                    @if($shop->logo_url)
+                        <img src="{{ $shop->logo_url }}"
+                             alt="Logo {{ $shop->name }}"
+                             class="w-16 h-16 object-cover rounded-lg border-2 border-yellow-500 shadow-md"
+                             onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\'w-16 h-16 bg-yellow-500/20 rounded-lg flex items-center justify-center border-2 border-yellow-500\'><i class=\'fas fa-store text-yellow-500 text-2xl\'></i></div>';">
+                    @else
+                        <div class="w-16 h-16 bg-yellow-500/20 rounded-lg flex items-center justify-center border-2 border-yellow-500">
+                            <i class="fas fa-store text-yellow-500 text-2xl"></i>
+                        </div>
+                    @endif
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="text-lg font-bold text-white mb-1">Boutique en attente de vérification</h3>
+                    <p class="text-gray-300 text-sm mb-2">
+                        <i class="fas fa-store mr-1 text-yellow-500"></i>
+                        <strong>{{ $shop->name }}</strong> - Cette boutique a été créée par
+                        <strong>{{ $shop->user->name }}</strong> et attend votre validation.
+                    </p>
+                    @if($shop->description)
+                        <p class="text-gray-400 text-sm mb-3 line-clamp-2">{{ $shop->description }}</p>
+                    @endif
+                    <div class="flex gap-2">
+                        <form action="{{ route('admin.shops.verify', $shop) }}" method="POST" class="inline">
+                            @csrf
+                            <button type="submit"
+                                    class="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:shadow-lg transition-all text-sm font-semibold">
+                                <i class="fas fa-check-circle mr-1"></i>
+                                Vérifier et Activer
+                            </button>
+                        </form>
+                        <button type="button"
+                                onclick="showRejectModal({{ $shop->id }}, '{{ $shop->name }}')"
+                                class="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:shadow-lg transition-all text-sm font-semibold">
+                            <i class="fas fa-times-circle mr-1"></i>
+                            Rejeter
+                        </button>
+                        <a href="{{ route('admin.shops.show', $shop) }}"
+                           class="px-4 py-2 bg-dark-200 border border-dark-300 text-white rounded-lg hover:bg-dark-300 transition-all text-sm font-semibold">
+                            <i class="fas fa-eye mr-1"></i>
+                            Voir Détails
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
 <!-- Stats Cards -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
     <!-- Livreurs Card -->
@@ -272,10 +334,68 @@
         </div>
     </div>
 </div>
+
+<!-- Reject Modal -->
+<div id="rejectModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onclick="if(event.target === this) hideRejectModal()">
+    <div class="bg-dark-100 rounded-xl shadow-2xl max-w-md w-full mx-4 border border-dark-200">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold text-white flex items-center">
+                    <i class="fas fa-times-circle text-red-500 mr-2"></i>
+                    Rejeter la boutique
+                </h3>
+                <button onclick="hideRejectModal()" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="text-gray-400 mb-4">
+                Vous êtes sur le point de rejeter la boutique <strong id="rejectShopName" class="text-white"></strong>.
+            </p>
+            <form id="rejectForm" method="POST" action="">
+                @csrf
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-white mb-2">
+                        Raison du rejet <span class="text-red-500">*</span>
+                    </label>
+                    <textarea name="reason"
+                              rows="4"
+                              required
+                              maxlength="500"
+                              class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                              placeholder="Expliquez pourquoi cette boutique est rejetée..."></textarea>
+                    <p class="text-xs text-gray-400 mt-1">Maximum 500 caractères</p>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button"
+                            onclick="hideRejectModal()"
+                            class="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all">
+                        Annuler
+                    </button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:shadow-lg transition-all font-semibold">
+                        <i class="fas fa-times-circle mr-1"></i>
+                        Rejeter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('scripts')
 <script>
+function showRejectModal(shopId, shopName) {
+    document.getElementById('rejectShopName').textContent = shopName;
+    document.getElementById('rejectForm').action = '/admin/shops/' + shopId + '/reject';
+    document.getElementById('rejectModal').classList.remove('hidden');
+}
+
+function hideRejectModal() {
+    document.getElementById('rejectModal').classList.add('hidden');
+    document.getElementById('rejectForm').reset();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Configure Chart.js for dark mode
     Chart.defaults.color = '#9ca3af';

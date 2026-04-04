@@ -14,6 +14,7 @@ class Message extends Model
         'conversation_id',
         'sender_id',
         'message',
+        'product_id',
         'is_read',
         'read_at',
     ];
@@ -37,6 +38,14 @@ class Message extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    /**
+     * Produit tagué dans le message (optionnel)
+     */
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 
     /**

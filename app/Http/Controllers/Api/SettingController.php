@@ -98,6 +98,8 @@ class SettingController extends Controller
                 'default_language',
                 'currency',
                 'currency_symbol',
+                'min_deposit_amount',
+                'min_withdrawal_amount',
             ];
 
             if (!in_array($key, $publicKeys)) {

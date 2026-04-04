@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\Exchange;
 use App\Models\Category;
+use App\Models\Shop;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -81,7 +82,13 @@ class DashboardController extends Controller
         // Recent transactions
         $recentTransactions = Transaction::latest()->take(5)->get();
 
-        return view('admin.dashboard', compact('stats', 'chartData', 'topCategories', 'recentProducts', 'recentTransactions'));
+        // Pending shops (awaiting verification)
+        $pendingShops = Shop::pending()
+            ->with('user')
+            ->latest()
+            ->get();
+
+        return view('admin.dashboard', compact('stats', 'chartData', 'topCategories', 'recentProducts', 'recentTransactions', 'pendingShops'));
     }
 
     /**

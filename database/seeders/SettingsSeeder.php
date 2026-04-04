@@ -401,6 +401,20 @@ class SettingsSeeder extends Seeder
                 'group' => 'system',
                 'description' => 'Symbole de la devise',
             ],
+            [
+                'key' => 'min_deposit_amount',
+                'value' => '100',
+                'type' => 'integer',
+                'group' => 'system',
+                'description' => 'Montant minimum de dépôt (FCFA)',
+            ],
+            [
+                'key' => 'min_withdrawal_amount',
+                'value' => '100',
+                'type' => 'integer',
+                'group' => 'system',
+                'description' => 'Montant minimum de retrait (FCFA)',
+            ],
         ];
 
         foreach ($settings as $setting) {

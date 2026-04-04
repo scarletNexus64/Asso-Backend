@@ -70,6 +70,8 @@ class ShopController extends Controller
             'longitude' => 'nullable|numeric|between:-180,180',
             'status' => 'required|in:active,inactive',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'categories' => 'nullable|array',
+            'categories.*' => 'string',
         ]);
 
         $validated['slug'] = Str::slug($validated['name']) . '-' . time();
@@ -102,6 +104,7 @@ class ShopController extends Controller
      */
     public function edit(Shop $shop)
     {
+        $shop->load('verifier', 'rejector', 'user', 'products');
         $users = User::whereIn('role', ['vendeur', 'client'])->get();
         return view('admin.shops.edit', compact('shop', 'users'));
     }
@@ -120,7 +123,11 @@ class ShopController extends Controller
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'status' => 'required|in:active,inactive',
+            'verification_status' => 'required|in:pending,verified,rejected',
+            'rejection_reason' => 'required_if:verification_status,rejected|nullable|string|max:500',
             'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'categories' => 'nullable|array',
+            'categories.*' => 'string',
         ]);
 
         // Update slug only if name changed
@@ -140,6 +147,36 @@ class ShopController extends Controller
             $logo->move(public_path('storage/shops'), $logoName);
             $validated['logo'] = 'storage/shops/' . $logoName;
         }
+
+        // Handle verification status
+        switch ($validated['verification_status']) {
+            case 'verified':
+                $validated['verified_at'] = now();
+                $validated['verified_by'] = auth()->id();
+                $validated['rejected_at'] = null;
+                $validated['rejected_by'] = null;
+                $validated['rejection_reason'] = null;
+                break;
+
+            case 'rejected':
+                $validated['rejected_at'] = now();
+                $validated['rejected_by'] = auth()->id();
+                $validated['verified_at'] = null;
+                $validated['verified_by'] = null;
+                break;
+
+            case 'pending':
+            default:
+                $validated['verified_at'] = null;
+                $validated['verified_by'] = null;
+                $validated['rejected_at'] = null;
+                $validated['rejected_by'] = null;
+                $validated['rejection_reason'] = null;
+                break;
+        }
+
+        // Remove verification_status from validated array as it's not a database field
+        unset($validated['verification_status']);
 
         $shop->update($validated);
 

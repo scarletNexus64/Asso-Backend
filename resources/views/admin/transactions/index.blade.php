@@ -25,7 +25,7 @@
 
     <!-- Filters -->
     <div class="mb-6 bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
-        <form method="GET" action="{{ route('admin.transactions.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <form method="GET" action="{{ route('admin.transactions.index') }}" class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-300 mb-2">Date de début</label>
                 <input type="date" name="start_date" value="{{ request('start_date') }}"
@@ -37,12 +37,23 @@
                        class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-300 mb-2">Méthode de paiement</label>
+                <label class="block text-sm font-medium text-gray-300 mb-2">Type</label>
+                <select name="type"
+                        class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500">
+                    <option value="">Tous</option>
+                    <option value="credit" {{ request('type') == 'credit' ? 'selected' : '' }}>Crédit (Recharge)</option>
+                    <option value="debit" {{ request('type') == 'debit' ? 'selected' : '' }}>Débit (Retrait)</option>
+                    <option value="refund" {{ request('type') == 'refund' ? 'selected' : '' }}>Remboursement</option>
+                    <option value="bonus" {{ request('type') == 'bonus' ? 'selected' : '' }}>Bonus</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">Provider</label>
                 <select name="payment_method"
                         class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500">
-                    <option value="">Toutes</option>
-                    <option value="paypal" {{ in_array(request('payment_method'), ['paypal', 'visa', 'mastercard']) ? 'selected' : '' }}>PayPal (Visa, MasterCard)</option>
-                    <option value="fedapay" {{ request('payment_method') == 'fedapay' ? 'selected' : '' }}>FedaPay</option>
+                    <option value="">Tous</option>
+                    <option value="freemopay" {{ request('payment_method') == 'freemopay' ? 'selected' : '' }}>FreeMoPay</option>
+                    <option value="paypal" {{ request('payment_method') == 'paypal' ? 'selected' : '' }}>PayPal</option>
                 </select>
             </div>
             <div>
@@ -52,10 +63,10 @@
                     <option value="">Tous</option>
                     <option value="completed" {{ request('status') == 'completed' ? 'selected' : '' }}>Complété</option>
                     <option value="pending" {{ request('status') == 'pending' ? 'selected' : '' }}>En attente</option>
-                    <option value="cancelled" {{ request('status') == 'cancelled' ? 'selected' : '' }}>Annulé</option>
+                    <option value="failed" {{ request('status') == 'failed' ? 'selected' : '' }}>Échoué</option>
                 </select>
             </div>
-            <div class="md:col-span-4 flex gap-2">
+            <div class="md:col-span-5 flex gap-2">
                 <button type="submit"
                         class="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all">
                     <i class="fas fa-search mr-2"></i> Filtrer
@@ -69,15 +80,29 @@
     </div>
 
     <!-- Statistics Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div class="bg-gradient-to-br from-blue-500/10 to-blue-600/10 border border-blue-500/30 rounded-xl p-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div class="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/30 rounded-xl p-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm text-gray-400 mb-1">Revenu Total</p>
-                    <p class="text-2xl font-bold text-white">{{ number_format($stats['total_revenue'], 0, ',', ' ') }} <span class="text-sm">XOF</span></p>
+                    <p class="text-sm text-gray-400 mb-1">Total Crédits</p>
+                    <p class="text-2xl font-bold text-white">{{ number_format($stats['total_credits'], 0, ',', ' ') }} <span class="text-sm">FCFA</span></p>
+                    <p class="text-xs text-green-400 mt-1">Recharges + Remboursements</p>
                 </div>
-                <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <i class="fas fa-money-bill-wave text-blue-500 text-xl"></i>
+                <div class="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-arrow-down text-green-500 text-xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-gradient-to-br from-red-500/10 to-red-600/10 border border-red-500/30 rounded-xl p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-400 mb-1">Total Débits</p>
+                    <p class="text-2xl font-bold text-white">{{ number_format($stats['total_debits'], 0, ',', ' ') }} <span class="text-sm">FCFA</span></p>
+                    <p class="text-xs text-red-400 mt-1">Retraits + Paiements</p>
+                </div>
+                <div class="w-12 h-12 bg-red-500/20 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-arrow-up text-red-500 text-xl"></i>
                 </div>
             </div>
         </div>
@@ -88,7 +113,7 @@
                     <p class="text-sm text-gray-400 mb-1">Transactions</p>
                     <p class="text-2xl font-bold text-white">{{ $stats['total_transactions'] }}</p>
                     <p class="text-xs text-gray-500 mt-1">
-                        {{ $stats['pending_transactions'] }} en attente · {{ $stats['cancelled_transactions'] }} annulées
+                        {{ $stats['pending_transactions'] }} en attente · {{ $stats['failed_transactions'] }} échouées
                     </p>
                 </div>
                 <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center">
@@ -125,7 +150,7 @@
 
     <!-- Payment Methods Statistics -->
     <div class="mb-6 bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
-        <h3 class="text-lg font-semibold text-white mb-4">Statistiques par Méthode de Paiement</h3>
+        <h3 class="text-lg font-semibold text-white mb-4">Statistiques par Provider</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <!-- Total -->
             <div class="bg-gradient-to-br from-primary-500/10 to-primary-600/10 border border-primary-500/30 rounded-lg p-4">
@@ -135,7 +160,7 @@
                     </span>
                     <span class="text-xs bg-primary-500/20 text-primary-300 px-2 py-1 rounded">{{ $stats['total_transactions'] }}</span>
                 </div>
-                <p class="text-2xl font-bold text-white">{{ number_format($stats['total_revenue'], 0, ',', ' ') }} <span class="text-sm text-gray-400">XOF</span></p>
+                <p class="text-2xl font-bold text-white">{{ number_format($stats['total_credits'], 0, ',', ' ') }} <span class="text-sm text-gray-400">FCFA</span></p>
             </div>
 
             @foreach($paymentMethodStats as $stat)
@@ -144,13 +169,13 @@
                         <span class="text-sm text-gray-400">
                             @if($stat->payment_method == 'paypal')
                                 <i class="fab fa-paypal text-blue-500 mr-1"></i> PayPal
-                            @elseif($stat->payment_method == 'fedapay')
-                                <i class="fas fa-credit-card text-green-500 mr-1"></i> FedaPay
+                            @elseif($stat->payment_method == 'freemopay')
+                                <i class="fas fa-mobile-alt text-orange-500 mr-1"></i> FreeMoPay
                             @endif
                         </span>
                         <span class="text-xs bg-primary-500/20 text-primary-300 px-2 py-1 rounded">{{ $stat->count }}</span>
                     </div>
-                    <p class="text-lg font-bold text-white">{{ number_format($stat->total, 0, ',', ' ') }} <span class="text-sm text-gray-400">XOF</span></p>
+                    <p class="text-lg font-bold text-white">{{ number_format($stat->total, 0, ',', ' ') }} <span class="text-sm text-gray-400">FCFA</span></p>
                 </div>
             @endforeach
         </div>
@@ -163,11 +188,12 @@
                 <table class="min-w-full divide-y divide-dark-200">
                     <thead class="bg-dark-50">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Référence</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">ID</th>
                             <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Acheteur</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Utilisateur</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Type</th>
                             <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Montant</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Méthode</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Provider</th>
                             <th class="px-6 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Statut</th>
                             <th class="px-6 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">Actions</th>
                         </tr>
@@ -177,27 +203,64 @@
                             <tr class="hover:bg-dark-50 transition-colors">
                                 <td class="px-6 py-4">
                                     <div class="text-sm">
-                                        <div class="font-medium text-white">{{ $transaction->reference }}</div>
-                                        <div class="text-xs text-gray-500">{{ $transaction->transaction_id }}</div>
+                                        <div class="font-medium text-white">#{{ $transaction->id }}</div>
+                                        @php
+                                            $metadata = $transaction->metadata ?? [];
+                                            $providerRef = $metadata['provider_reference'] ?? null;
+                                        @endphp
+                                        @if($providerRef)
+                                            <div class="text-xs text-gray-500">{{ Str::limit($providerRef, 15) }}</div>
+                                        @endif
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-300">
                                     {{ $transaction->created_at->format('d/m/Y H:i') }}
                                 </td>
-                                <td class="px-6 py-4 text-sm text-gray-300">
-                                    {{ $transaction->buyer?->first_name }} {{ $transaction->buyer?->last_name }}
-                                </td>
                                 <td class="px-6 py-4">
                                     <div class="text-sm">
-                                        <div class="font-medium text-white">{{ number_format($transaction->amount, 0, ',', ' ') }} XOF</div>
-                                        <div class="text-xs text-gray-500">Frais: {{ number_format($transaction->fees, 0, ',', ' ') }} XOF</div>
+                                        <div class="font-medium text-white">{{ $transaction->user?->name ?? 'N/A' }}</div>
+                                        <div class="text-xs text-gray-500">{{ $transaction->user?->email }}</div>
                                     </div>
                                 </td>
                                 <td class="px-6 py-4">
-                                    <span class="px-3 py-1 text-xs font-semibold rounded-full bg-{{ $transaction->payment_method_color }}-500/20 text-{{ $transaction->payment_method_color }}-300 border border-{{ $transaction->payment_method_color }}-500/50">
-                                        <i class="fab {{ $transaction->payment_method_icon }} mr-1"></i>
-                                        {{ $transaction->payment_method_label }}
+                                    <span class="px-3 py-1 text-xs font-semibold rounded-full
+                                        @if($transaction->type == 'credit') bg-green-500/20 text-green-300 border border-green-500/50
+                                        @elseif($transaction->type == 'debit') bg-red-500/20 text-red-300 border border-red-500/50
+                                        @elseif($transaction->type == 'refund') bg-blue-500/20 text-blue-300 border border-blue-500/50
+                                        @else bg-yellow-500/20 text-yellow-300 border border-yellow-500/50
+                                        @endif">
+                                        <i class="{{ $transaction->type_icon }} mr-1"></i>
+                                        {{ $transaction->type_label }}
                                     </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="text-sm">
+                                        <div class="font-medium text-white">
+                                            @if($transaction->isCredit())
+                                                <span class="text-green-400">+{{ number_format($transaction->amount, 0, ',', ' ') }}</span>
+                                            @else
+                                                <span class="text-red-400">-{{ number_format(abs($transaction->amount), 0, ',', ' ') }}</span>
+                                            @endif
+                                            FCFA
+                                        </div>
+                                        <div class="text-xs text-gray-500">Solde: {{ number_format($transaction->balance_after, 0, ',', ' ') }}</div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    @if($transaction->provider)
+                                        <span class="px-3 py-1 text-xs font-semibold rounded-full
+                                            @if($transaction->provider == 'paypal') bg-blue-500/20 text-blue-300 border border-blue-500/50
+                                            @else bg-orange-500/20 text-orange-300 border border-orange-500/50
+                                            @endif">
+                                            @if($transaction->provider == 'paypal')
+                                                <i class="fab fa-paypal mr-1"></i> PayPal
+                                            @else
+                                                <i class="fas fa-mobile-alt mr-1"></i> FreeMoPay
+                                            @endif
+                                        </span>
+                                    @else
+                                        <span class="text-xs text-gray-500">-</span>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4">
                                     @if($transaction->status == 'completed')
@@ -210,7 +273,7 @@
                                         </span>
                                     @else
                                         <span class="px-3 py-1 text-xs font-semibold rounded-full bg-red-500/20 text-red-300 border border-red-500/50">
-                                            <i class="fas fa-times-circle mr-1"></i> Annulé
+                                            <i class="fas fa-times-circle mr-1"></i> Échoué
                                         </span>
                                     @endif
                                 </td>

@@ -130,9 +130,12 @@
                 <div class="bg-gradient-to-r from-primary-500 to-primary-600 p-4">
                     <div class="flex items-start justify-between gap-3">
                         <!-- Logo -->
-                        @if($shop->logo)
+                        @if($shop->logo_url)
                             <div class="flex-shrink-0">
-                                <img src="{{ asset($shop->logo) }}" alt="Logo {{ $shop->name }}" class="w-16 h-16 object-cover rounded-lg border-2 border-white shadow-md">
+                                <img src="{{ $shop->logo_url }}"
+                                     alt="Logo {{ $shop->name }}"
+                                     class="w-16 h-16 object-cover rounded-lg border-2 border-white shadow-md"
+                                     onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\'w-16 h-16 bg-white/20 rounded-lg flex items-center justify-center border-2 border-white shadow-md\'><i class=\'fas fa-store text-white text-2xl\'></i></div>';">
                             </div>
                         @else
                             <div class="flex-shrink-0 w-16 h-16 bg-white/20 rounded-lg flex items-center justify-center border-2 border-white shadow-md">
@@ -181,14 +184,60 @@
                         </div>
                     </div>
 
-                    @if($shop->shop_link)
-                        <a href="{{ $shop->shop_link }}"
-                           target="_blank"
-                           class="block w-full text-center px-4 py-2 bg-dark-50 border border-dark-300 text-primary-400 rounded-lg hover:bg-dark-200 transition-all text-sm mb-3">
-                            <i class="fas fa-external-link-alt mr-2"></i>
-                            Visiter la boutique
-                        </a>
-                    @endif
+                    <!-- Verification Status & Action -->
+                    <div class="mb-3">
+                        @if($shop->isVerified())
+                            <!-- Verified Badge -->
+                            <div class="p-3 bg-green-500/20 border border-green-500/50 rounded-lg">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-check-circle text-green-400"></i>
+                                    <div>
+                                        <p class="text-green-300 font-semibold text-xs">Vérifiée</p>
+                                        <p class="text-green-400 text-xs">{{ $shop->verified_at->format('d/m/Y') }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        @elseif($shop->isRejected())
+                            <!-- Rejected Badge -->
+                            <div class="p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-times-circle text-red-400"></i>
+                                    <div class="flex-1">
+                                        <p class="text-red-300 font-semibold text-xs">Rejetée</p>
+                                        @if($shop->rejection_reason)
+                                            <p class="text-red-400 text-xs mt-1 line-clamp-1">{{ $shop->rejection_reason }}</p>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <!-- Pending - Show Switch to Verify -->
+                            <div class="p-3 bg-orange-500/20 border border-orange-500/50 rounded-lg">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fas fa-clock text-orange-400"></i>
+                                        <p class="text-orange-300 font-semibold text-xs">En attente</p>
+                                    </div>
+                                    <!-- Switch Toggle -->
+                                    <form action="{{ route('admin.shops.verify', $shop) }}"
+                                          method="POST"
+                                          onsubmit="return confirm('Voulez-vous vérifier cette boutique ?');"
+                                          class="inline">
+                                        @csrf
+                                        <button type="submit"
+                                                class="relative inline-flex h-6 w-11 items-center rounded-full bg-dark-300 hover:bg-primary-500 transition-colors duration-200"
+                                                title="Cliquez pour vérifier">
+                                            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 translate-x-1"></span>
+                                        </button>
+                                    </form>
+                                </div>
+                                <p class="text-orange-400 text-xs">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Cliquez sur le switch pour approuver
+                                </p>
+                            </div>
+                        @endif
+                    </div>
 
                     <!-- Action Buttons -->
                     <div class="flex gap-2">
@@ -234,8 +283,11 @@
                         <!-- Left: Logo & Main Info -->
                         <div class="md:w-1/3 bg-gradient-to-r from-primary-500 to-primary-600 p-6">
                             <div class="flex items-start gap-4">
-                                @if($shop->logo)
-                                    <img src="{{ asset($shop->logo) }}" alt="Logo {{ $shop->name }}" class="w-20 h-20 object-cover rounded-lg border-2 border-white shadow-md flex-shrink-0">
+                                @if($shop->logo_url)
+                                    <img src="{{ $shop->logo_url }}"
+                                         alt="Logo {{ $shop->name }}"
+                                         class="w-20 h-20 object-cover rounded-lg border-2 border-white shadow-md flex-shrink-0"
+                                         onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\'w-20 h-20 bg-white/20 rounded-lg flex items-center justify-center border-2 border-white shadow-md flex-shrink-0\'><i class=\'fas fa-store text-white text-3xl\'></i></div>';">
                                 @else
                                     <div class="w-20 h-20 bg-white/20 rounded-lg flex items-center justify-center border-2 border-white shadow-md flex-shrink-0">
                                         <i class="fas fa-store text-white text-3xl"></i>
@@ -293,14 +345,58 @@
 
                         <!-- Right: Actions -->
                         <div class="md:w-1/3 p-6 flex flex-col justify-center gap-3">
-                            @if($shop->shop_link)
-                                <a href="{{ $shop->shop_link }}"
-                                   target="_blank"
-                                   class="w-full text-center px-4 py-2 bg-dark-50 border border-dark-300 text-primary-400 rounded-lg hover:bg-dark-200 transition-all text-sm">
-                                    <i class="fas fa-external-link-alt mr-2"></i>
-                                    Visiter la boutique
-                                </a>
-                            @endif
+                            <!-- Verification Status & Action -->
+                            <div class="mb-2">
+                                @if($shop->isVerified())
+                                    <!-- Verified Badge -->
+                                    <div class="flex items-center justify-between p-3 bg-green-500/20 border border-green-500/50 rounded-lg">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fas fa-check-circle text-green-400 text-lg"></i>
+                                            <div>
+                                                <p class="text-green-300 font-semibold text-sm">Vérifiée</p>
+                                                <p class="text-green-400 text-xs">{{ $shop->verified_at->format('d/m/Y') }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @elseif($shop->isRejected())
+                                    <!-- Rejected Badge -->
+                                    <div class="p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i class="fas fa-times-circle text-red-400 text-lg"></i>
+                                            <p class="text-red-300 font-semibold text-sm">Rejetée</p>
+                                        </div>
+                                        @if($shop->rejection_reason)
+                                            <p class="text-red-400 text-xs mt-1">{{ Str::limit($shop->rejection_reason, 50) }}</p>
+                                        @endif
+                                    </div>
+                                @else
+                                    <!-- Pending - Show Switch to Verify -->
+                                    <div class="p-3 bg-orange-500/20 border border-orange-500/50 rounded-lg">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fas fa-clock text-orange-400 text-lg"></i>
+                                                <p class="text-orange-300 font-semibold text-sm">En attente</p>
+                                            </div>
+                                            <!-- Switch Toggle -->
+                                            <form action="{{ route('admin.shops.verify', $shop) }}"
+                                                  method="POST"
+                                                  onsubmit="return confirm('Voulez-vous vérifier cette boutique ?');"
+                                                  class="inline">
+                                                @csrf
+                                                <button type="submit"
+                                                        class="relative inline-flex h-6 w-11 items-center rounded-full bg-dark-300 hover:bg-primary-500 transition-colors duration-200"
+                                                        title="Cliquez pour vérifier">
+                                                    <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 translate-x-1"></span>
+                                                </button>
+                                            </form>
+                                        </div>
+                                        <p class="text-orange-400 text-xs mt-2">
+                                            <i class="fas fa-info-circle mr-1"></i>
+                                            Cliquez sur le switch pour approuver
+                                        </p>
+                                    </div>
+                                @endif
+                            </div>
 
                             <div class="flex gap-2">
                                 <a href="{{ route('admin.shops.show', $shop) }}"

@@ -129,6 +129,12 @@
                         Utilisateurs
                     </a>
 
+                    <a href="{{ route('admin.preferences.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.preferences.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-heart w-5 mr-3"></i>
+                        Préférences
+                    </a>
+
                     <a href="{{ route('admin.deliverers.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.deliverers.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-truck w-5 mr-3"></i>
@@ -136,9 +142,16 @@
                     </a>
 
                     <a href="{{ route('admin.shops.index') }}"
-                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.shops.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
-                        <i class="fas fa-store w-5 mr-3"></i>
-                        Boutiques
+                       class="flex items-center justify-between px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.shops.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <span class="flex items-center">
+                            <i class="fas fa-store w-5 mr-3"></i>
+                            Boutiques
+                        </span>
+                        @if(isset($pendingShopsCount) && $pendingShopsCount > 0)
+                            <span class="flex items-center justify-center min-w-[1.5rem] h-6 px-2 bg-yellow-500 text-dark-100 text-xs font-bold rounded-full animate-pulse">
+                                {{ $pendingShopsCount }}
+                            </span>
+                        @endif
                     </a>
 
                     <a href="{{ route('admin.products.index') }}"
@@ -244,6 +257,12 @@
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.vault.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-lock w-5 mr-3"></i>
                         Vault (Credentials)
+                    </a>
+
+                    <a href="{{ route('admin.fcm-tokens.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.fcm-tokens.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-bell w-5 mr-3"></i>
+                        FCM Tokens
                     </a>
                 </div>
 

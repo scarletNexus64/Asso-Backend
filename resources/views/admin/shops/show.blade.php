@@ -36,18 +36,99 @@
         </div>
     </div>
 
+    <!-- Verification Status Alert -->
+    @if($shop->status === 'pending')
+        <div class="mb-6 p-6 bg-orange-900/20 border-l-4 border-orange-500 rounded-lg">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-orange-300 mb-2">
+                        <i class="fas fa-clock mr-2"></i>
+                        Boutique en attente de vérification
+                    </h3>
+                    <p class="text-orange-200 text-sm mb-4">
+                        Cette boutique a été créée par {{ $shop->user->name }} et attend votre validation.
+                    </p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <form action="{{ route('admin.shops.verify', $shop) }}" method="POST" class="inline">
+                    @csrf
+                    <button type="submit" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        Vérifier et Activer
+                    </button>
+                </form>
+
+                <button onclick="openRejectModal()" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all flex items-center gap-2">
+                    <i class="fas fa-times-circle"></i>
+                    Rejeter
+                </button>
+            </div>
+        </div>
+    @endif
+
+    @if($shop->status === 'rejected')
+        <div class="mb-6 p-6 bg-red-900/20 border-l-4 border-red-500 rounded-lg">
+            <h3 class="text-lg font-semibold text-red-300 mb-2">
+                <i class="fas fa-ban mr-2"></i>
+                Boutique rejetée
+            </h3>
+            <p class="text-red-200 text-sm mb-2">
+                <strong>Raison du rejet:</strong> {{ $shop->rejection_reason ?? 'Non spécifiée' }}
+            </p>
+            <p class="text-red-200 text-xs">
+                Rejetée le {{ $shop->rejected_at ? $shop->rejected_at->format('d/m/Y à H:i') : 'N/A' }}
+            </p>
+            <div class="mt-4">
+                <form action="{{ route('admin.shops.verify', $shop) }}" method="POST" class="inline">
+                    @csrf
+                    <button type="submit" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all flex items-center gap-2">
+                        <i class="fas fa-check-circle"></i>
+                        Vérifier quand même
+                    </button>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    @if($shop->status === 'active' && $shop->verified_at)
+        <div class="mb-6 p-6 bg-green-900/20 border-l-4 border-green-500 rounded-lg">
+            <div class="flex items-start justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-green-300 mb-2">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        Boutique vérifiée et active
+                    </h3>
+                    <p class="text-green-200 text-sm">
+                        Vérifiée le {{ $shop->verified_at->format('d/m/Y à H:i') }}
+                    </p>
+                </div>
+                <form action="{{ route('admin.shops.toggleStatus', $shop) }}" method="POST">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all text-sm">
+                        <i class="fas fa-pause mr-2"></i>
+                        Désactiver
+                    </button>
+                </form>
+            </div>
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Shop Info Card -->
         <div class="lg:col-span-1">
             <div class="bg-dark-100 rounded-xl shadow-lg p-6">
                 <!-- Shop Header -->
                 <div class="text-center mb-6 pb-6 border-b border-dark-200">
-                    @if($shop->logo)
+                    @if($shop->logo_url)
                         <div class="h-32 w-32 mx-auto mb-4">
-                            <img src="{{ asset($shop->logo) }}" alt="Logo {{ $shop->name }}" class="w-full h-full object-cover rounded-xl border-4 border-primary-500 shadow-lg">
+                            <img src="{{ $shop->logo_url }}"
+                                 alt="Logo {{ $shop->name }}"
+                                 class="w-full h-full object-cover rounded-xl border-4 border-primary-500 shadow-lg"
+                                 onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\'h-full w-full rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-primary-500/30\'><i class=\'fas fa-store\'></i></div>';">
                         </div>
                     @else
-                        <div class="h-24 w-24 mx-auto rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-3xl font-bold mb-4 shadow-lg shadow-primary-500/30">
+                        <div class="h-32 w-32 mx-auto rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-3xl font-bold mb-4 shadow-lg shadow-primary-500/30">
                             <i class="fas fa-store"></i>
                         </div>
                     @endif
@@ -90,6 +171,23 @@
                         <span class="font-semibold text-white">{{ $shop->updated_at->format('d/m/Y') }}</span>
                     </div>
                 </div>
+
+                <!-- Categories Section -->
+                @if($shop->categories && count($shop->categories) > 0)
+                    <div class="mt-6 pt-6 border-t border-dark-200">
+                        <h4 class="text-sm font-semibold text-gray-400 mb-3">
+                            <i class="fas fa-tag text-primary-500 mr-2"></i>
+                            Catégories
+                        </h4>
+                        <div class="flex flex-wrap gap-2">
+                            @foreach($shop->categories as $category)
+                                <span class="px-3 py-1 text-xs rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/50">
+                                    {{ $category }}
+                                </span>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
 
                 <!-- External Link -->
                 @if($shop->shop_link)
@@ -246,5 +344,66 @@
             </div>
         </div>
     </div>
+
+    <!-- Reject Modal -->
+    <div id="rejectModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-dark-100 rounded-xl shadow-2xl max-w-md w-full mx-4">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold text-white">Rejeter la boutique</h3>
+                    <button onclick="closeRejectModal()" class="text-gray-400 hover:text-white">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <form action="{{ route('admin.shops.reject', $shop) }}" method="POST">
+                    @csrf
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-white mb-2">
+                            Raison du rejet <span class="text-red-500">*</span>
+                        </label>
+                        <textarea name="reason"
+                                  required
+                                  rows="4"
+                                  class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                  placeholder="Ex: Logo inapproprié, informations incomplètes..."></textarea>
+                    </div>
+
+                    <div class="flex gap-3 justify-end">
+                        <button type="button"
+                                onclick="closeRejectModal()"
+                                class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all">
+                            Annuler
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            Rejeter
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script>
+function openRejectModal() {
+    document.getElementById('rejectModal').classList.remove('hidden');
+    document.getElementById('rejectModal').classList.add('flex');
+}
+
+function closeRejectModal() {
+    document.getElementById('rejectModal').classList.add('hidden');
+    document.getElementById('rejectModal').classList.remove('flex');
+}
+
+// Close modal on outside click
+document.getElementById('rejectModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeRejectModal();
+    }
+});
+</script>
+
 @endsection

@@ -5,6 +5,115 @@
 
 @section('content')
 <div class="space-y-6" x-data="{ activeService: 'nexaah' }">
+    <!-- Service OTP par défaut -->
+    <div class="bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-xl shadow-lg border border-blue-500/20 p-6">
+        <form action="{{ route('admin.settings.services.update') }}" method="POST">
+            @csrf
+            @method('PUT')
+            <input type="hidden" name="service_type" value="otp_default">
+
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mr-4 shadow-lg">
+                        <i class="fas fa-shield-alt text-3xl text-white"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-2xl font-bold text-white">Service OTP par défaut</h3>
+                        <p class="text-gray-400 mt-1">Choisissez le service utilisé par défaut pour l'envoi des codes OTP</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                @php
+                    $defaultOtpService = $smsSettings['otp_default_service']->value ?? 'auto';
+                @endphp
+
+                <!-- Option Auto -->
+                <label class="relative flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all
+                    {{ $defaultOtpService === 'auto' ? 'border-blue-500 bg-blue-500/10' : 'border-dark-300 hover:border-dark-200' }}">
+                    <input type="radio" name="otp_default_service" value="auto"
+                           {{ $defaultOtpService === 'auto' ? 'checked' : '' }}
+                           class="sr-only peer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                            <i class="fas fa-magic text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <div class="font-semibold text-white">Automatique</div>
+                            <div class="text-xs text-gray-400">WhatsApp prioritaire</div>
+                        </div>
+                    </div>
+                    <div class="absolute top-2 right-2">
+                        <i class="fas fa-check-circle text-blue-500 text-xl {{ $defaultOtpService === 'auto' ? '' : 'hidden' }}"></i>
+                    </div>
+                </label>
+
+                <!-- Option WhatsApp -->
+                <label class="relative flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all
+                    {{ $defaultOtpService === 'whatsapp' ? 'border-green-500 bg-green-500/10' : 'border-dark-300 hover:border-dark-200' }}">
+                    <input type="radio" name="otp_default_service" value="whatsapp"
+                           {{ $defaultOtpService === 'whatsapp' ? 'checked' : '' }}
+                           class="sr-only peer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
+                            <i class="fab fa-whatsapp text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <div class="font-semibold text-white">WhatsApp</div>
+                            <div class="text-xs text-gray-400">Toujours WhatsApp</div>
+                        </div>
+                    </div>
+                    <div class="absolute top-2 right-2">
+                        <i class="fas fa-check-circle text-green-500 text-xl {{ $defaultOtpService === 'whatsapp' ? '' : 'hidden' }}"></i>
+                    </div>
+                </label>
+
+                <!-- Option SMS -->
+                <label class="relative flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all
+                    {{ $defaultOtpService === 'sms' ? 'border-purple-500 bg-purple-500/10' : 'border-dark-300 hover:border-dark-200' }}">
+                    <input type="radio" name="otp_default_service" value="sms"
+                           {{ $defaultOtpService === 'sms' ? 'checked' : '' }}
+                           class="sr-only peer">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                            <i class="fas fa-sms text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <div class="font-semibold text-white">SMS</div>
+                            <div class="text-xs text-gray-400">Toujours SMS</div>
+                        </div>
+                    </div>
+                    <div class="absolute top-2 right-2">
+                        <i class="fas fa-check-circle text-purple-500 text-xl {{ $defaultOtpService === 'sms' ? '' : 'hidden' }}"></i>
+                    </div>
+                </label>
+            </div>
+
+            <div class="mt-4 flex justify-end">
+                <button type="submit"
+                        class="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg hover:shadow-xl">
+                    <i class="fas fa-save mr-2"></i> Enregistrer le choix
+                </button>
+            </div>
+
+            <div class="mt-4 bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                <div class="flex items-start">
+                    <i class="fas fa-info-circle text-blue-500 text-lg mr-3 mt-0.5"></i>
+                    <div class="text-sm text-blue-300/80">
+                        <strong>Comment ça fonctionne ?</strong>
+                        <ul class="mt-2 space-y-1 list-disc list-inside">
+                            <li><strong>Automatique :</strong> WhatsApp en priorité, puis SMS si WhatsApp échoue</li>
+                            <li><strong>WhatsApp :</strong> Force l'utilisation de WhatsApp uniquement</li>
+                            <li><strong>SMS :</strong> Force l'utilisation de SMS (Nexaah) uniquement</li>
+                        </ul>
+                        <p class="mt-2">Le service choisi doit être activé et correctement configuré ci-dessous.</p>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
     <!-- Sticky Tabs Navigation -->
     <div class="bg-dark-100 rounded-lg shadow-lg border border-dark-200 sticky top-0 z-10">
         <div class="border-b border-dark-200">
@@ -60,60 +169,78 @@
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
                 <h4 class="text-lg font-semibold text-white mb-6 flex items-center">
                     <i class="fas fa-key text-purple-500 mr-2"></i>
-                    Identifiants API
+                    Configuration Nexah API
                 </h4>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- API Key -->
-                    <div>
-                        <label for="nexaah_api_key" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-key text-purple-400 mr-1"></i> API Key <span class="text-red-500">*</span>
+                    <!-- URL de base -->
+                    <div class="md:col-span-2">
+                        <label for="nexaah_base_url" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-link text-purple-400 mr-1"></i> URL de base <span class="text-red-500">*</span>
                         </label>
-                        <div class="relative">
-                            <input type="password" name="nexaah_api_key" id="nexaah_api_key"
-                                   value="{{ old('nexaah_api_key', $smsSettings['nexaah_api_key']->value ?? '') }}"
-                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                   placeholder="Entrez votre clé API Nexaah">
-                            <button type="button" onclick="togglePassword('nexaah_api_key')"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Clé d'authentification fournie par Nexaah</p>
-                    </div>
-
-                    <!-- API Secret -->
-                    <div>
-                        <label for="nexaah_api_secret" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-lock text-purple-400 mr-1"></i> API Secret <span class="text-red-500">*</span>
-                        </label>
-                        <div class="relative">
-                            <input type="password" name="nexaah_api_secret" id="nexaah_api_secret"
-                                   value="{{ old('nexaah_api_secret', $smsSettings['nexaah_api_secret']->value ?? '') }}"
-                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                   placeholder="Entrez votre secret API">
-                            <button type="button" onclick="togglePassword('nexaah_api_secret')"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Clé secrète pour sécuriser les requêtes</p>
-                    </div>
-
-                    <!-- Account SID -->
-                    <div>
-                        <label for="nexaah_account_sid" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-user-circle text-purple-400 mr-1"></i> Account SID
-                        </label>
-                        <input type="text" name="nexaah_account_sid" id="nexaah_account_sid"
-                               value="{{ old('nexaah_account_sid', $smsSettings['nexaah_account_sid']->value ?? '') }}"
+                        <input type="url" name="nexaah_base_url" id="nexaah_base_url"
+                               value="{{ old('nexaah_base_url', $smsSettings['nexaah_base_url']->value ?? 'https://smsvas.com/bulk/public/index.php/api/v1') }}"
                                class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                               placeholder="Ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
-                        <p class="mt-1 text-xs text-gray-500">Identifiant unique de votre compte Nexaah</p>
+                               placeholder="https://smsvas.com/bulk/public/index.php/api/v1">
+                        <p class="mt-1 text-xs text-gray-500">URL de base de l'API Nexah</p>
+                    </div>
+
+                    <!-- Endpoint d'envoi -->
+                    <div>
+                        <label for="nexaah_send_endpoint" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-paper-plane text-purple-400 mr-1"></i> Endpoint d'envoi <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="nexaah_send_endpoint" id="nexaah_send_endpoint"
+                               value="{{ old('nexaah_send_endpoint', $smsSettings['nexaah_send_endpoint']->value ?? '/sendsms') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                               placeholder="/sendsms">
+                        <p class="mt-1 text-xs text-gray-500">Endpoint pour l'envoi de SMS</p>
+                    </div>
+
+                    <!-- Endpoint crédits -->
+                    <div>
+                        <label for="nexaah_credits_endpoint" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-coins text-purple-400 mr-1"></i> Endpoint crédits <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="nexaah_credits_endpoint" id="nexaah_credits_endpoint"
+                               value="{{ old('nexaah_credits_endpoint', $smsSettings['nexaah_credits_endpoint']->value ?? '/smscredit') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                               placeholder="/smscredit">
+                        <p class="mt-1 text-xs text-gray-500">Endpoint pour vérifier les crédits</p>
+                    </div>
+
+                    <!-- Utilisateur (email) -->
+                    <div>
+                        <label for="nexaah_user" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-user text-purple-400 mr-1"></i> Utilisateur <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="nexaah_user" id="nexaah_user"
+                               value="{{ old('nexaah_user', $smsSettings['nexaah_user']->value ?? '') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                               placeholder="steve.boussa@outlook.com">
+                        <p class="mt-1 text-xs text-gray-500">Email de votre compte Nexah</p>
+                    </div>
+
+                    <!-- Mot de passe -->
+                    <div>
+                        <label for="nexaah_password" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-lock text-purple-400 mr-1"></i> Mot de passe <span class="text-red-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <input type="password" name="nexaah_password" id="nexaah_password"
+                                   value="{{ old('nexaah_password', $smsSettings['nexaah_password']->value ?? '') }}"
+                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                   placeholder="••••••••">
+                            <button type="button" onclick="togglePassword('nexaah_password')"
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Mot de passe de votre compte Nexah</p>
                     </div>
 
                     <!-- Sender ID -->
-                    <div>
+                    <div class="md:col-span-2">
                         <label for="nexaah_sender_id" class="block text-sm font-medium text-gray-300 mb-2">
                             <i class="fas fa-signature text-purple-400 mr-1"></i> Sender ID <span class="text-red-500">*</span>
                         </label>
@@ -122,54 +249,7 @@
                                maxlength="11"
                                class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                                placeholder="ASSO">
-                        <p class="mt-1 text-xs text-gray-500">Nom affiché comme expéditeur (max 11 caractères)</p>
-                    </div>
-
-                    <!-- Base URL -->
-                    <div class="md:col-span-2">
-                        <label for="nexaah_base_url" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-link text-purple-400 mr-1"></i> URL de l'API
-                        </label>
-                        <input type="url" name="nexaah_base_url" id="nexaah_base_url"
-                               value="{{ old('nexaah_base_url', $smsSettings['nexaah_base_url']->value ?? 'https://api.nexaah.com/v1') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                               placeholder="https://api.nexaah.com/v1">
-                        <p class="mt-1 text-xs text-gray-500">URL de base de l'API Nexaah</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Advanced Settings Card -->
-            <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
-                <h4 class="text-lg font-semibold text-white mb-6 flex items-center">
-                    <i class="fas fa-cogs text-purple-500 mr-2"></i>
-                    Paramètres Avancés
-                </h4>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Default Country Code -->
-                    <div>
-                        <label for="nexaah_country_code" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-flag text-purple-400 mr-1"></i> Indicatif pays par défaut
-                        </label>
-                        <input type="text" name="nexaah_country_code" id="nexaah_country_code"
-                               value="{{ old('nexaah_country_code', $smsSettings['nexaah_country_code']->value ?? '+229') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                               placeholder="+229">
-                        <p class="mt-1 text-xs text-gray-500">Code international pour le Bénin</p>
-                    </div>
-
-                    <!-- Timeout -->
-                    <div>
-                        <label for="nexaah_timeout" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-clock text-purple-400 mr-1"></i> Timeout (secondes)
-                        </label>
-                        <input type="number" name="nexaah_timeout" id="nexaah_timeout"
-                               value="{{ old('nexaah_timeout', $smsSettings['nexaah_timeout']->value ?? '30') }}"
-                               min="10" max="120"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                               placeholder="30">
-                        <p class="mt-1 text-xs text-gray-500">Délai d'attente des requêtes API</p>
+                        <p class="mt-1 text-xs text-gray-500">Nom affiché comme expéditeur (max 11 caractères alphanumériques)</p>
                     </div>
                 </div>
             </div>
@@ -181,23 +261,23 @@
                         <i class="fas fa-info-circle text-purple-500 text-2xl mt-1"></i>
                     </div>
                     <div class="ml-4">
-                        <h4 class="text-base font-semibold text-purple-400 mb-2">Comment obtenir vos identifiants Nexaah ?</h4>
+                        <h4 class="text-base font-semibold text-purple-400 mb-2">Comment configurer Nexah SMS ?</h4>
                         <ul class="text-sm text-purple-300/80 space-y-2">
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-purple-500 mr-2 mt-0.5"></i>
-                                <span>Créez un compte sur <a href="https://nexaah.com" target="_blank" class="underline hover:text-purple-300">nexaah.com</a></span>
+                                <span>Contactez Nexah pour créer un compte SMS</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-purple-500 mr-2 mt-0.5"></i>
-                                <span>Accédez à votre tableau de bord et récupérez vos clés API</span>
+                                <span>Récupérez vos identifiants (email et mot de passe)</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-purple-500 mr-2 mt-0.5"></i>
-                                <span>Enregistrez un Sender ID pour identifier vos SMS</span>
+                                <span>Renseignez l'URL de base et les endpoints fournis</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-purple-500 mr-2 mt-0.5"></i>
-                                <span>Rechargez votre compte pour commencer à envoyer des SMS</span>
+                                <span>Configurez votre Sender ID et rechargez votre compte</span>
                             </li>
                         </ul>
                     </div>
@@ -251,150 +331,77 @@
                 </div>
             </div>
 
-            <!-- Business Account Configuration -->
+            <!-- Configuration Card -->
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
                 <h4 class="text-lg font-semibold text-white mb-6 flex items-center">
-                    <i class="fas fa-building text-green-500 mr-2"></i>
-                    Compte WhatsApp Business
+                    <i class="fas fa-key text-green-500 mr-2"></i>
+                    Configuration WhatsApp API
                 </h4>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Business Account ID -->
-                    <div>
-                        <label for="whatsapp_business_account_id" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-id-card text-green-400 mr-1"></i> Business Account ID <span class="text-red-500">*</span>
+                    <!-- API Token -->
+                    <div class="md:col-span-2">
+                        <label for="whatsapp_api_token" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-key text-green-400 mr-1"></i> API Token <span class="text-red-500">*</span>
                         </label>
-                        <input type="text" name="whatsapp_business_account_id" id="whatsapp_business_account_id"
-                               value="{{ old('whatsapp_business_account_id', $whatsappSettings['whatsapp_business_account_id']->value ?? '') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                               placeholder="Ex: 123456789012345">
-                        <p class="mt-1 text-xs text-gray-500">ID de votre compte WhatsApp Business</p>
+                        <div class="relative">
+                            <input type="password" name="whatsapp_api_token" id="whatsapp_api_token"
+                                   value="{{ old('whatsapp_api_token', $whatsappSettings['whatsapp_api_token']->value ?? '') }}"
+                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                                   placeholder="EAAKKZAdFNYMIBO0hDRveRPtiyxXUUn17odxTOdKKqOErdNqZCyUolMWrTXY2ZAsNw9BmZAON1NjqQalUExLXbfazZBO9X0HnPvQ0v3lG7xLEyDuiWZC8ZCcu5QGY7FYlZA6ynaG4el8gekN1fY3C0zQRZAzDbTmkRSM2IVoiv7vdPPMy7yAB8RdDirnFoMSZAENwZDZD">
+                            <button type="button" onclick="togglePassword('whatsapp_api_token')"
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Token d'accès depuis Meta Business Suite</p>
                     </div>
 
                     <!-- Phone Number ID -->
-                    <div>
+                    <div class="md:col-span-2">
                         <label for="whatsapp_phone_number_id" class="block text-sm font-medium text-gray-300 mb-2">
                             <i class="fas fa-phone text-green-400 mr-1"></i> Phone Number ID <span class="text-red-500">*</span>
                         </label>
                         <input type="text" name="whatsapp_phone_number_id" id="whatsapp_phone_number_id"
                                value="{{ old('whatsapp_phone_number_id', $whatsappSettings['whatsapp_phone_number_id']->value ?? '') }}"
                                class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                               placeholder="Ex: 987654321098765">
-                        <p class="mt-1 text-xs text-gray-500">ID unique de votre numéro WhatsApp</p>
+                               placeholder="672988359234155">
+                        <p class="mt-1 text-xs text-gray-500">ID du numéro de téléphone WhatsApp Business</p>
                     </div>
 
-                    <!-- Business Phone -->
-                    <div>
-                        <label for="whatsapp_business_phone" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-mobile-alt text-green-400 mr-1"></i> Numéro WhatsApp Business <span class="text-red-500">*</span>
-                        </label>
-                        <input type="text" name="whatsapp_business_phone" id="whatsapp_business_phone"
-                               value="{{ old('whatsapp_business_phone', $whatsappSettings['whatsapp_business_phone']->value ?? '') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                               placeholder="+229XXXXXXXXX">
-                        <p class="mt-1 text-xs text-gray-500">Numéro au format international avec indicatif</p>
-                    </div>
-
-                    <!-- Display Name -->
-                    <div>
-                        <label for="whatsapp_display_name" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-tag text-green-400 mr-1"></i> Nom d'affichage
-                        </label>
-                        <input type="text" name="whatsapp_display_name" id="whatsapp_display_name"
-                               value="{{ old('whatsapp_display_name', $whatsappSettings['whatsapp_display_name']->value ?? 'ASSO') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                               placeholder="ASSO">
-                        <p class="mt-1 text-xs text-gray-500">Nom affiché dans les conversations</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- API Configuration -->
-            <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
-                <h4 class="text-lg font-semibold text-white mb-6 flex items-center">
-                    <i class="fas fa-key text-green-500 mr-2"></i>
-                    Configuration API
-                </h4>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Access Token -->
-                    <div class="md:col-span-2">
-                        <label for="whatsapp_access_token" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-key text-green-400 mr-1"></i> Access Token (Permanent) <span class="text-red-500">*</span>
-                        </label>
-                        <div class="relative">
-                            <input type="password" name="whatsapp_access_token" id="whatsapp_access_token"
-                                   value="{{ old('whatsapp_access_token', $whatsappSettings['whatsapp_access_token']->value ?? '') }}"
-                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                                   placeholder="Entrez votre token d'accès permanent">
-                            <button type="button" onclick="togglePassword('whatsapp_access_token')"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Token permanent généré depuis Meta Business Suite</p>
-                    </div>
-
-                    <!-- App ID -->
-                    <div>
-                        <label for="whatsapp_app_id" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-cube text-green-400 mr-1"></i> App ID
-                        </label>
-                        <input type="text" name="whatsapp_app_id" id="whatsapp_app_id"
-                               value="{{ old('whatsapp_app_id', $whatsappSettings['whatsapp_app_id']->value ?? '') }}"
-                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                               placeholder="Ex: 123456789012345">
-                        <p class="mt-1 text-xs text-gray-500">ID de votre application Meta</p>
-                    </div>
-
-                    <!-- App Secret -->
-                    <div>
-                        <label for="whatsapp_app_secret" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-lock text-green-400 mr-1"></i> App Secret
-                        </label>
-                        <div class="relative">
-                            <input type="password" name="whatsapp_app_secret" id="whatsapp_app_secret"
-                                   value="{{ old('whatsapp_app_secret', $whatsappSettings['whatsapp_app_secret']->value ?? '') }}"
-                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                                   placeholder="Entrez le secret de l'application">
-                            <button type="button" onclick="togglePassword('whatsapp_app_secret')"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Clé secrète de votre application</p>
-                    </div>
-
-                    <!-- Graph API Version -->
+                    <!-- API Version -->
                     <div>
                         <label for="whatsapp_api_version" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-code-branch text-green-400 mr-1"></i> Version de l'API Graph
+                            <i class="fas fa-code-branch text-green-400 mr-1"></i> Version API <span class="text-red-500">*</span>
                         </label>
-                        <select name="whatsapp_api_version" id="whatsapp_api_version"
-                                class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all">
-                            <option value="v18.0" {{ old('whatsapp_api_version', $whatsappSettings['whatsapp_api_version']->value ?? 'v18.0') == 'v18.0' ? 'selected' : '' }}>v18.0</option>
-                            <option value="v19.0" {{ old('whatsapp_api_version', $whatsappSettings['whatsapp_api_version']->value ?? '') == 'v19.0' ? 'selected' : '' }}>v19.0</option>
-                            <option value="v20.0" {{ old('whatsapp_api_version', $whatsappSettings['whatsapp_api_version']->value ?? '') == 'v20.0' ? 'selected' : '' }}>v20.0</option>
-                        </select>
-                        <p class="mt-1 text-xs text-gray-500">Version de l'API Graph Facebook/Meta</p>
+                        <input type="text" name="whatsapp_api_version" id="whatsapp_api_version"
+                               value="{{ old('whatsapp_api_version', $whatsappSettings['whatsapp_api_version']->value ?? 'v22.0') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                               placeholder="v22.0">
                     </div>
 
-                    <!-- Webhook Verify Token -->
+                    <!-- Template Language -->
                     <div>
-                        <label for="whatsapp_webhook_verify_token" class="block text-sm font-medium text-gray-300 mb-2">
-                            <i class="fas fa-shield-alt text-green-400 mr-1"></i> Webhook Verify Token
+                        <label for="whatsapp_template_language" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-language text-green-400 mr-1"></i> Langue du template <span class="text-red-500">*</span>
                         </label>
-                        <div class="relative">
-                            <input type="password" name="whatsapp_webhook_verify_token" id="whatsapp_webhook_verify_token"
-                                   value="{{ old('whatsapp_webhook_verify_token', $whatsappSettings['whatsapp_webhook_verify_token']->value ?? '') }}"
-                                   class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                                   placeholder="Token de vérification webhook">
-                            <button type="button" onclick="togglePassword('whatsapp_webhook_verify_token')"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Token pour valider les webhooks entrants</p>
+                        <input type="text" name="whatsapp_template_language" id="whatsapp_template_language"
+                               value="{{ old('whatsapp_template_language', $whatsappSettings['whatsapp_template_language']->value ?? 'fr') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                               placeholder="fr">
+                        <p class="mt-1 text-xs text-gray-500">Ex: fr, en, fr_FR, en_US</p>
+                    </div>
+
+                    <!-- Template Name -->
+                    <div class="md:col-span-2">
+                        <label for="whatsapp_template_name" class="block text-sm font-medium text-gray-300 mb-2">
+                            <i class="fas fa-file-alt text-green-400 mr-1"></i> Nom du template <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="whatsapp_template_name" id="whatsapp_template_name"
+                               value="{{ old('whatsapp_template_name', $whatsappSettings['whatsapp_template_name']->value ?? '') }}"
+                               class="w-full px-4 py-3 bg-dark-50 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                               placeholder="ngoma_auth_fr">
+                        <p class="mt-1 text-xs text-gray-500">Nom du template approuvé dans WhatsApp Business Manager</p>
                     </div>
                 </div>
             </div>
@@ -406,29 +413,35 @@
                         <i class="fas fa-info-circle text-green-500 text-2xl mt-1"></i>
                     </div>
                     <div class="ml-4">
-                        <h4 class="text-base font-semibold text-green-400 mb-2">Configuration de WhatsApp Business API</h4>
+                        <h4 class="text-base font-semibold text-green-400 mb-2">Aide</h4>
+                        <p class="text-sm text-green-300/80 mb-3"><strong>Configuration requise:</strong></p>
                         <ul class="text-sm text-green-300/80 space-y-2">
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-green-500 mr-2 mt-0.5"></i>
-                                <span>Créez une application sur <a href="https://developers.facebook.com" target="_blank" class="underline hover:text-green-300">Meta for Developers</a></span>
+                                <span>Compte Meta Business</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-green-500 mr-2 mt-0.5"></i>
-                                <span>Activez l'API WhatsApp Business dans votre application</span>
+                                <span>WhatsApp Business API</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-green-500 mr-2 mt-0.5"></i>
-                                <span>Configurez un numéro de téléphone vérifié pour WhatsApp Business</span>
+                                <span>Template de message approuvé</span>
                             </li>
                             <li class="flex items-start">
                                 <i class="fas fa-check-circle text-green-500 mr-2 mt-0.5"></i>
-                                <span>Générez un token d'accès permanent depuis Meta Business Suite</span>
-                            </li>
-                            <li class="flex items-start">
-                                <i class="fas fa-check-circle text-green-500 mr-2 mt-0.5"></i>
-                                <span>Configurez les webhooks pour recevoir les messages entrants</span>
+                                <span>Numéro WhatsApp vérifié</span>
                             </li>
                         </ul>
+                        <hr class="my-3 border-green-500/20">
+                        <p class="text-sm text-green-300/80 mb-2"><strong>Où trouver ces informations:</strong></p>
+                        <ol class="text-sm text-green-300/80 space-y-1 list-decimal list-inside">
+                            <li>Connectez-vous à <a href="https://business.facebook.com" target="_blank" class="underline hover:text-green-300">Meta Business Suite</a></li>
+                            <li>Accédez à WhatsApp Manager</li>
+                            <li>Sélectionnez votre compte WhatsApp Business</li>
+                            <li><strong>API Token:</strong> Paramètres → API Token</li>
+                            <li><strong>Phone Number ID:</strong> Numéros de téléphone</li>
+                        </ol>
                     </div>
                 </div>
             </div>
