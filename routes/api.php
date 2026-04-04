@@ -209,6 +209,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Notifications
         Route::prefix('notifications')->group(function () {
+            // Get user notifications (history)
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::get('/unread', [NotificationController::class, 'unread']);
+            Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+
+            // Mark notifications as read
+            Route::post('/{id}/mark-as-read', [NotificationController::class, 'markAsRead']);
+            Route::post('/mark-all-as-read', [NotificationController::class, 'markAllAsRead']);
+
+            // Delete notifications
+            Route::delete('/{id}', [NotificationController::class, 'destroy']);
+            Route::delete('/', [NotificationController::class, 'destroyAll']);
+
             // Send test notification to yourself
             Route::post('/test', [NotificationController::class, 'sendTestNotification']);
 

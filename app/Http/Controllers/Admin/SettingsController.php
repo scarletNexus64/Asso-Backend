@@ -159,7 +159,7 @@ class SettingsController extends Controller
                 'paypal_enabled' => 'nullable|boolean',
                 'paypal_mode' => 'nullable|in:sandbox,live',
                 'paypal_client_id' => 'nullable|string',
-                'paypal_secret' => 'nullable|string',
+                'paypal_client_secret' => 'nullable|string',
                 'paypal_webhook_id' => 'nullable|string',
                 'paypal_currency' => 'nullable|string|in:USD,EUR,XOF',
                 // Fedapay
@@ -178,6 +178,14 @@ class SettingsController extends Controller
                 'freemopay_app_key' => 'nullable|string',
                 'freemopay_secret_key' => 'nullable|string',
                 'freemopay_callback_url' => 'nullable|url',
+                // FreemoPay Advanced Settings
+                'freemopay_base_url' => 'nullable|url',
+                'freemopay_timeout_init' => 'nullable|integer|min:1|max:120',
+                'freemopay_timeout_verify' => 'nullable|integer|min:1|max:120',
+                'freemopay_timeout_token' => 'nullable|integer|min:1|max:120',
+                'freemopay_token_cache_duration' => 'nullable|integer|min:60|max:3600',
+                'freemopay_retry_attempts' => 'nullable|integer|min:1|max:10',
+                'freemopay_retry_delay' => 'nullable|string',
             ]);
 
             foreach ($validated as $key => $value) {
@@ -185,7 +193,14 @@ class SettingsController extends Controller
                 $type = 'string';
                 if (str_ends_with($key, '_enabled') || str_ends_with($key, '_commission')) {
                     $type = 'boolean';
-                } elseif ($key === 'fedapay_timeout') {
+                } elseif (in_array($key, [
+                    'fedapay_timeout',
+                    'freemopay_timeout_init',
+                    'freemopay_timeout_verify',
+                    'freemopay_timeout_token',
+                    'freemopay_token_cache_duration',
+                    'freemopay_retry_attempts'
+                ])) {
                     $type = 'integer';
                 }
 
@@ -341,6 +356,13 @@ class SettingsController extends Controller
                 'secret_key' => $validated['freemopay_secret_key'] ?? '',
                 'callback_url' => $validated['freemopay_callback_url'] ?? '',
                 'mode' => $validated['freemopay_mode'] ?? 'sandbox',
+                'base_url' => $validated['freemopay_base_url'] ?? 'https://api-v2.freemopay.com',
+                'timeout_init' => $validated['freemopay_timeout_init'] ?? 30,
+                'timeout_verify' => $validated['freemopay_timeout_verify'] ?? 30,
+                'timeout_token' => $validated['freemopay_timeout_token'] ?? 30,
+                'token_cache_duration' => $validated['freemopay_token_cache_duration'] ?? 3000,
+                'retry_attempts' => $validated['freemopay_retry_attempts'] ?? 5,
+                'retry_delay' => $validated['freemopay_retry_delay'] ?? '0.5',
             ];
 
             ServiceConfiguration::setConfig(

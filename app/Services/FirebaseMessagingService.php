@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\DeviceToken;
 use App\Models\User;
+use App\Models\Notification as NotificationModel;
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Messaging\CloudMessage;
 use Kreait\Firebase\Messaging\Notification;
@@ -58,13 +59,20 @@ class FirebaseMessagingService
 
         if (empty($tokens)) {
             Log::info("No active tokens found for user {$user->id}");
+            // Enregistrer quand même la notification dans la BDD
+            $this->saveNotificationToDatabase($user->id, $title, $body, $data);
             return [
                 'success' => false,
                 'message' => 'No active device tokens found for this user',
             ];
         }
 
-        return $this->sendToTokens($tokens, $title, $body, $data);
+        $result = $this->sendToTokens($tokens, $title, $body, $data);
+
+        // Enregistrer la notification dans la BDD
+        $this->saveNotificationToDatabase($user->id, $title, $body, $data);
+
+        return $result;
     }
 
     /**
@@ -84,13 +92,24 @@ class FirebaseMessagingService
             ->toArray();
 
         if (empty($tokens)) {
+            // Enregistrer quand même les notifications dans la BDD
+            foreach ($userIds as $userId) {
+                $this->saveNotificationToDatabase($userId, $title, $body, $data);
+            }
             return [
                 'success' => false,
                 'message' => 'No active device tokens found for these users',
             ];
         }
 
-        return $this->sendToTokens($tokens, $title, $body, $data);
+        $result = $this->sendToTokens($tokens, $title, $body, $data);
+
+        // Enregistrer les notifications dans la BDD pour chaque utilisateur
+        foreach ($userIds as $userId) {
+            $this->saveNotificationToDatabase($userId, $title, $body, $data);
+        }
+
+        return $result;
     }
 
     /**
@@ -104,6 +123,12 @@ class FirebaseMessagingService
      */
     public function sendToAll(string $title, string $body, array $data = []): array
     {
+        // Enregistrer la notification pour tous les utilisateurs
+        $allUserIds = User::pluck('id')->toArray();
+        foreach ($allUserIds as $userId) {
+            $this->saveNotificationToDatabase($userId, $title, $body, $data);
+        }
+
         // Utiliser le topic pour les envois en masse (plus efficace)
         return $this->sendToTopic('all_users', $title, $body, $data);
     }
@@ -385,6 +410,34 @@ class FirebaseMessagingService
                 'message' => 'Failed to unsubscribe from topic',
                 'error' => $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Enregistre une notification dans la base de données
+     *
+     * @param int $userId
+     * @param string $title
+     * @param string $body
+     * @param array $data
+     * @return void
+     */
+    private function saveNotificationToDatabase(int $userId, string $title, string $body, array $data = []): void
+    {
+        try {
+            NotificationModel::create([
+                'user_id' => $userId,
+                'title' => $title,
+                'body' => $body,
+                'type' => $data['type'] ?? null,
+                'data' => $data,
+                'is_read' => false,
+                'sent_at' => now(),
+            ]);
+
+            Log::info("Notification saved to database for user {$userId}");
+        } catch (Exception $e) {
+            Log::error("Error saving notification to database: {$e->getMessage()}");
         }
     }
 }

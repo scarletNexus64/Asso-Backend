@@ -214,7 +214,7 @@ class PayPalService
             ]);
 
             $response = Http::withToken($token)
-                ->asJson()
+                ->withBody('{}', 'application/json')
                 ->post("{$this->baseUrl}/v2/checkout/orders/{$orderId}/capture");
 
             if (!$response->successful()) {

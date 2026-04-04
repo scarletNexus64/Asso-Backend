@@ -169,6 +169,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get all notifications for this user
+     */
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class)->latest();
+    }
+
+    /**
      * Get the user who referred this user
      */
     public function referrer()

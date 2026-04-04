@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\PlatformWithdrawal;
 use App\Models\Setting;
 use App\Services\WalletService;
+use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -14,10 +15,12 @@ use Illuminate\Support\Facades\Log;
 class WalletController extends Controller
 {
     protected WalletService $walletService;
+    protected FirebaseMessagingService $fcmService;
 
-    public function __construct(WalletService $walletService)
+    public function __construct(WalletService $walletService, FirebaseMessagingService $fcmService)
     {
         $this->walletService = $walletService;
+        $this->fcmService = $fcmService;
     }
 
     /**
@@ -534,6 +537,28 @@ class WalletController extends Controller
             // Récupérer le nouveau solde après débit
             $user->refresh();
 
+            // Envoyer notification FCM
+            try {
+                $this->fcmService->sendToUser(
+                    $user,
+                    '💸 Retrait FreeMoPay en cours',
+                    "Votre demande de retrait de {$amount} FCFA vers {$phone} ({$paymentMethod}) est en cours de traitement.",
+                    [
+                        'type' => 'wallet_withdrawal_processing',
+                        'provider' => 'freemopay',
+                        'amount' => $amount,
+                        'withdrawal_id' => $withdrawal->id,
+                        'transaction_reference' => $withdrawal->transaction_reference,
+                        'phone' => $phone,
+                        'payment_method' => $paymentMethod,
+                        'new_balance' => $user->freemopay_wallet_balance,
+                    ]
+                );
+                Log::info("[WalletController] 📬 FCM notification sent for FreeMoPay withdrawal");
+            } catch (\Exception $e) {
+                Log::error("[WalletController] ❌ Failed to send FCM notification: " . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Retrait en cours de traitement.',
@@ -652,6 +677,27 @@ class WalletController extends Controller
             $withdrawal->markAsProcessing();
 
             DB::commit();
+
+            // Envoyer notification FCM
+            try {
+                $this->fcmService->sendToUser(
+                    $user,
+                    '💸 Retrait PayPal en cours',
+                    "Votre demande de retrait de \${$amountUsd} USD ({$amountXaf} FCFA) vers {$paypalEmail} est en cours de traitement.",
+                    [
+                        'type' => 'wallet_withdrawal_processing',
+                        'provider' => 'paypal',
+                        'amount_usd' => $amountUsd,
+                        'amount_xaf' => $amountXaf,
+                        'withdrawal_id' => $withdrawal->id,
+                        'transaction_reference' => $withdrawal->transaction_reference,
+                        'paypal_email' => $paypalEmail,
+                    ]
+                );
+                Log::info("[WalletController] 📬 FCM notification sent for PayPal withdrawal");
+            } catch (\Exception $e) {
+                Log::error("[WalletController] ❌ Failed to send FCM notification: " . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -970,6 +1016,26 @@ class WalletController extends Controller
                 ]);
                 $walletTransaction->save();
 
+                // Envoyer notification FCM d'échec
+                try {
+                    $this->fcmService->sendToUser(
+                        $user,
+                        '❌ Échec de paiement PayPal',
+                        "Votre paiement de {$walletTransaction->amount} FCFA via PayPal a échoué. Veuillez réessayer.",
+                        [
+                            'type' => 'wallet_deposit_failed',
+                            'provider' => 'paypal',
+                            'amount' => $walletTransaction->amount,
+                            'payment_id' => $walletTransaction->id,
+                            'order_id' => $orderId,
+                            'error' => $captureResult['message'] ?? 'Capture failed',
+                        ]
+                    );
+                    Log::info("[WalletController] 📬 FCM notification sent for PayPal deposit failure");
+                } catch (\Exception $e) {
+                    Log::error("[WalletController] ❌ Failed to send FCM notification: " . $e->getMessage());
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => $captureResult['message'] ?? 'Échec de la capture du paiement',
@@ -999,7 +1065,25 @@ class WalletController extends Controller
                 'new_balance' => $user->paypal_wallet_balance,
             ]);
 
-            // TODO: Envoyer notification FCM si configuré
+            // Envoyer notification FCM
+            try {
+                $this->fcmService->sendToUser(
+                    $user,
+                    '💰 Recharge PayPal réussie',
+                    "Votre wallet a été crédité de {$amount} FCFA via PayPal. Nouveau solde: " . number_format($user->paypal_wallet_balance, 0, ',', ' ') . " FCFA",
+                    [
+                        'type' => 'wallet_deposit_success',
+                        'provider' => 'paypal',
+                        'amount' => $amount,
+                        'new_balance' => $user->paypal_wallet_balance,
+                        'payment_id' => $walletTransaction->id,
+                        'order_id' => $orderId,
+                    ]
+                );
+                Log::info("[WalletController] 📬 FCM notification sent for PayPal deposit");
+            } catch (\Exception $e) {
+                Log::error("[WalletController] ❌ Failed to send FCM notification: " . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,

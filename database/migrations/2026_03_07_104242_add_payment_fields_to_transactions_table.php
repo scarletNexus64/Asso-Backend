@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -11,9 +12,14 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Pour PostgreSQL, on doit d'abord supprimer puis recréer la colonne enum
         Schema::table('transactions', function (Blueprint $table) {
-            // Modifier payment_method pour ajouter paypal, visa, mastercard, fedapay
-            $table->enum('payment_method', ['cash', 'card', 'mobile', 'paypal', 'visa', 'mastercard', 'fedapay'])->default('cash')->change();
+            $table->dropColumn('payment_method');
+        });
+
+        Schema::table('transactions', function (Blueprint $table) {
+            // Recréer payment_method avec les nouvelles valeurs
+            $table->enum('payment_method', ['cash', 'card', 'mobile', 'paypal', 'visa', 'mastercard', 'fedapay'])->default('cash')->after('status');
 
             // Ajouter nouveaux champs
             $table->string('transaction_id')->nullable()->unique()->after('reference')->comment('ID unique de la transaction (externe)');
