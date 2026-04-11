@@ -28,14 +28,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-pink-100 text-sm mb-1">Sans préférences</p>
-                    <p class="text-3xl font-bold">
-                        {{ \App\Models\User::where(function($q) {
-                            $q->whereNull('preferences')
-                              ->orWhere('preferences', 'LIKE', '[]')
-                              ->orWhere('preferences', 'LIKE', 'null')
-                              ->orWhere('preferences', '=', '');
-                        })->count() }}
-                    </p>
+                    <p class="text-3xl font-bold">{{ $usersWithoutPreferences }}</p>
                 </div>
                 <div class="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">
                     <i class="fas fa-user-slash text-2xl"></i>

@@ -10,8 +10,8 @@
                     <i class="fas fa-arrow-left"></i>
                 </a>
                 <div>
-                    <h1 class="text-2xl font-bold text-white">Profil Livreur Partenaire</h1>
-                    <p class="text-gray-400">{{ $deliverer->company_name }}</p>
+                    <h1 class="text-2xl font-bold text-white">{{ $deliverer->name }}</h1>
+                    <p class="text-gray-400">Entreprise de livraison</p>
                 </div>
             </div>
             <div class="flex gap-3">
@@ -20,7 +20,7 @@
                     <i class="fas fa-edit mr-2"></i> Modifier
                 </a>
                 <form action="{{ route('admin.deliverers.destroy', $deliverer) }}" method="POST"
-                      onsubmit="return confirm('Supprimer ce livreur partenaire ?');">
+                      onsubmit="return confirm('Supprimer cette entreprise de livraison ? Toutes les zones et tarifs associés seront également supprimés.');">
                     @csrf
                     @method('DELETE')
                     <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all">
@@ -32,60 +32,112 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Left: Company & Profile Card -->
+        <!-- Left: Company Card -->
         <div class="lg:col-span-1 space-y-6">
             <!-- Company Card -->
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
                 <div class="flex flex-col items-center mb-6">
-                    @if($deliverer->company_logo)
-                        <img src="{{ Storage::url($deliverer->company_logo) }}" alt="{{ $deliverer->company_name }}"
+                    @if($deliverer->logo)
+                        <img src="{{ Storage::url($deliverer->logo) }}" alt="{{ $deliverer->name }}"
                              class="w-28 h-28 rounded-xl object-cover border-2 border-dark-300 mb-4 shadow-lg">
                     @else
                         <div class="w-28 h-28 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-4xl font-bold mb-4 shadow-lg">
-                            {{ strtoupper(substr($deliverer->company_name ?? 'L', 0, 2)) }}
+                            {{ strtoupper(substr($deliverer->name, 0, 2)) }}
                         </div>
                     @endif
-                    <h2 class="text-xl font-bold text-white text-center">{{ $deliverer->company_name ?? 'Sans entreprise' }}</h2>
-                    <span class="mt-2 px-4 py-1 inline-flex text-sm font-semibold rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/50">
-                        <i class="fas fa-truck mr-2"></i> Livreur Partenaire
-                    </span>
+                    <h2 class="text-xl font-bold text-white text-center">{{ $deliverer->name }}</h2>
+
+                    <div class="mt-3 flex flex-col gap-2 w-full">
+                        @if($deliverer->user_id)
+                            <span class="px-4 py-2 inline-flex items-center justify-center text-sm font-semibold rounded-lg bg-green-900/30 text-green-400 border border-green-500/50">
+                                <i class="fas fa-check-circle mr-2"></i> Synchronisé
+                            </span>
+                        @else
+                            <span class="px-4 py-2 inline-flex items-center justify-center text-sm font-semibold rounded-lg bg-yellow-900/30 text-yellow-400 border border-yellow-500/50">
+                                <i class="fas fa-clock mr-2"></i> En attente
+                            </span>
+                        @endif
+
+                        <span class="px-4 py-2 inline-flex items-center justify-center text-sm font-semibold rounded-lg {{ $deliverer->is_active ? 'bg-blue-900/30 text-blue-400 border-blue-500/50' : 'bg-gray-900/30 text-gray-400 border-gray-500/50' }} border">
+                            <i class="fas fa-{{ $deliverer->is_active ? 'toggle-on' : 'toggle-off' }} mr-2"></i>
+                            {{ $deliverer->is_active ? 'Active' : 'Inactive' }}
+                        </span>
+                    </div>
                 </div>
 
                 <div class="border-t border-dark-200 pt-4 space-y-3">
                     <div class="flex items-center justify-between">
-                        <span class="text-gray-400"><i class="fas fa-globe text-primary-500 mr-2"></i> Pays</span>
-                        <span class="font-medium text-white">{{ $deliverer->country ?? 'Non renseigné' }}</span>
+                        <span class="text-gray-400"><i class="fas fa-map-marked-alt text-primary-500 mr-2"></i> Zones</span>
+                        <span class="font-medium text-white">{{ $deliverer->deliveryZones->count() }}</span>
                     </div>
                     <div class="flex items-center justify-between">
-                        <span class="text-gray-400"><i class="fas fa-calendar text-primary-500 mr-2"></i> Inscrit</span>
+                        <span class="text-gray-400"><i class="fas fa-calendar text-primary-500 mr-2"></i> Créé</span>
                         <span class="font-medium text-white">{{ $deliverer->created_at->format('d/m/Y') }}</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Agent Profile -->
-            <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
-                <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
-                    <i class="fas fa-user text-primary-500 mr-2"></i> Agent de livraison
-                </h3>
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-xl font-bold shadow-lg">
-                        {{ strtoupper(substr($deliverer->first_name, 0, 1)) }}{{ strtoupper(substr($deliverer->last_name, 0, 1)) }}
-                    </div>
-                    <div>
-                        <p class="text-white font-semibold text-lg">{{ $deliverer->name }}</p>
-                        <p class="text-gray-400 text-sm">
-                            @if($deliverer->gender == 'male')
-                                <i class="fas fa-mars text-blue-400 mr-1"></i> Homme
-                            @elseif($deliverer->gender == 'female')
-                                <i class="fas fa-venus text-pink-400 mr-1"></i> Femme
-                            @else
-                                Non renseigné
-                            @endif
-                        </p>
+            <!-- Sync Status -->
+            @if($deliverer->user_id)
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-green-500/30 p-6">
+                    <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                        <i class="fas fa-user-check text-green-500 mr-2"></i> Livreur Synchronisé
+                    </h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-sm text-gray-500">Nom</label>
+                            <p class="text-white font-medium">{{ $deliverer->user->name ?? 'N/A' }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-500">Email</label>
+                            <p class="text-white font-medium">{{ $deliverer->user->email ?? 'N/A' }}</p>
+                        </div>
+                        <div>
+                            <label class="text-sm text-gray-500">Téléphone</label>
+                            <p class="text-white font-medium">{{ $deliverer->user->phone ?? 'N/A' }}</p>
+                        </div>
                     </div>
                 </div>
-            </div>
+            @else
+                <!-- Sync Code -->
+                @if($deliverer->syncCodes->first())
+                    @php $latestCode = $deliverer->syncCodes->first(); @endphp
+                    <div class="bg-dark-100 rounded-xl shadow-lg border border-yellow-500/30 p-6">
+                        <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
+                            <i class="fas fa-key text-yellow-500 mr-2"></i> Code de Synchronisation
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="p-4 bg-dark-50 rounded-lg border border-dark-300 text-center">
+                                <code class="text-2xl font-mono text-primary-400 font-bold">{{ $latestCode->sync_code }}</code>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Statut:</span>
+                                    @if($latestCode->is_used)
+                                        <span class="text-green-400">Utilisé</span>
+                                    @elseif($latestCode->isExpired())
+                                        <span class="text-red-400">Expiré</span>
+                                    @else
+                                        <span class="text-green-400">Valide</span>
+                                    @endif
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Envoyé via:</span>
+                                    <span class="text-white">
+                                        @if($latestCode->sent_via == 'email')
+                                            <i class="fas fa-envelope"></i> Email
+                                        @endif
+                                    </span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Expire le:</span>
+                                    <span class="text-white">{{ $latestCode->expires_at->format('d/m/Y') }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            @endif
         </div>
 
         <!-- Right: Details -->
@@ -94,17 +146,9 @@
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
                 <h3 class="text-xl font-bold text-white mb-4 flex items-center">
                     <i class="fas fa-address-card text-primary-500 mr-2"></i>
-                    Coordonnées
+                    Informations de Contact
                 </h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="text-sm text-gray-500">Prénom</label>
-                        <p class="text-white font-medium">{{ $deliverer->first_name }}</p>
-                    </div>
-                    <div>
-                        <label class="text-sm text-gray-500">Nom</label>
-                        <p class="text-white font-medium">{{ $deliverer->last_name }}</p>
-                    </div>
                     <div>
                         <label class="text-sm text-gray-500">Email</label>
                         <p class="text-white font-medium">
@@ -115,88 +159,116 @@
                     <div>
                         <label class="text-sm text-gray-500">Téléphone</label>
                         <p class="text-white font-medium">
-                            @if($deliverer->phone)
-                                <i class="fas fa-phone text-primary-500 mr-1"></i>
-                                {{ $deliverer->phone }}
-                            @else
-                                <span class="text-gray-500">Non renseigné</span>
-                            @endif
+                            <i class="fas fa-phone text-primary-500 mr-1"></i>
+                            {{ $deliverer->phone }}
                         </p>
-                    </div>
-                    <div>
-                        <label class="text-sm text-gray-500">Date de naissance</label>
-                        <p class="text-white font-medium">
-                            {{ $deliverer->birth_date ? $deliverer->birth_date->format('d/m/Y') : 'Non renseigné' }}
-                        </p>
-                    </div>
-                    <div>
-                        <label class="text-sm text-gray-500">Pays</label>
-                        <p class="text-white font-medium">{{ $deliverer->country ?? 'Non renseigné' }}</p>
                     </div>
                 </div>
+
+                @if($deliverer->description)
+                    <div class="mt-4 pt-4 border-t border-dark-200">
+                        <label class="text-sm text-gray-500">Description</label>
+                        <p class="text-white mt-1">{{ $deliverer->description }}</p>
+                    </div>
+                @endif
             </div>
 
-            <!-- Entreprise Details -->
+            <!-- Delivery Zones -->
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
                 <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                    <i class="fas fa-building text-primary-500 mr-2"></i>
-                    Entreprise
+                    <i class="fas fa-map-marked-alt text-primary-500 mr-2"></i>
+                    Zones de Livraison ({{ $deliverer->deliveryZones->count() }})
                 </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="text-sm text-gray-500">Nom de l'entreprise</label>
-                        <p class="text-white font-medium text-lg">{{ $deliverer->company_name ?? 'Non renseigné' }}</p>
-                    </div>
-                    <div>
-                        <label class="text-sm text-gray-500">Logo</label>
-                        @if($deliverer->company_logo)
-                            <div class="mt-1">
-                                <img src="{{ Storage::url($deliverer->company_logo) }}" alt="{{ $deliverer->company_name }}"
-                                     class="w-20 h-20 rounded-lg object-cover border border-dark-300">
+
+                @forelse($deliverer->deliveryZones as $zone)
+                    <div class="mb-4 last:mb-0 p-4 bg-dark-50 rounded-lg border border-dark-300">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <h4 class="text-white font-semibold text-lg flex items-center gap-2">
+                                    <i class="fas fa-map-pin text-primary-500"></i>
+                                    {{ $zone->name }}
+                                </h4>
+                                <p class="text-gray-400 text-sm mt-1">
+                                    <i class="fas fa-crosshairs mr-1"></i>
+                                    Centre: {{ number_format($zone->center_latitude, 6) }}, {{ number_format($zone->center_longitude, 6) }}
+                                </p>
+                            </div>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold {{ $zone->is_active ? 'bg-green-900/30 text-green-400 border border-green-500/50' : 'bg-gray-900/30 text-gray-400 border border-gray-500/50' }}">
+                                {{ $zone->is_active ? 'Active' : 'Inactive' }}
+                            </span>
+                        </div>
+
+                        @if($zone->pricelist)
+                            <div class="mt-3 p-3 bg-dark-100 rounded border border-dark-200">
+                                <p class="text-sm text-gray-400 mb-2">
+                                    <i class="fas fa-dollar-sign text-primary-500 mr-1"></i>
+                                    Type de tarification:
+                                    <span class="text-white font-medium">
+                                        @if($zone->pricelist->pricing_type == 'fixed')
+                                            Prix Fixe
+                                        @elseif($zone->pricelist->pricing_type == 'weight_category')
+                                            Par Catégorie de Poids
+                                        @elseif($zone->pricelist->pricing_type == 'volumetric_weight')
+                                            Poids Volumétrique
+                                        @endif
+                                    </span>
+                                </p>
+
+                                <div class="text-xs">
+                                    <p class="text-gray-500 mb-1">Données de tarification:</p>
+                                    <div class="bg-dark-50 p-2 rounded font-mono text-gray-300 overflow-x-auto">
+                                        {{ json_encode($zone->pricelist->pricing_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}
+                                    </div>
+                                </div>
                             </div>
                         @else
-                            <p class="text-gray-500">Aucun logo</p>
+                            <p class="text-gray-500 text-sm">Aucune tarification configurée</p>
                         @endif
                     </div>
-                </div>
+                @empty
+                    <div class="text-center py-8">
+                        <i class="fas fa-map text-gray-600 text-4xl mb-3"></i>
+                        <p class="text-gray-500">Aucune zone de livraison configurée</p>
+                    </div>
+                @endforelse
             </div>
 
-            <!-- Map Section -->
-            @if($deliverer->latitude && $deliverer->longitude)
+            <!-- Sync Codes History -->
+            @if($deliverer->syncCodes->count() > 0)
                 <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
                     <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                        <i class="fas fa-map-marker-alt text-primary-500 mr-2"></i>
-                        Localisation
+                        <i class="fas fa-history text-primary-500 mr-2"></i>
+                        Historique des Codes de Synchronisation
                     </h3>
-                    @include('admin.partials.google-map-view', [
-                        'id' => 'deliverer-location-map',
-                        'label' => 'Localisation du livreur',
-                        'latitude' => $deliverer->latitude,
-                        'longitude' => $deliverer->longitude,
-                        'address' => $deliverer->address,
-                        'zoom' => 15
-                    ])
-                </div>
-            @elseif($deliverer->address)
-                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
-                    <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                        <i class="fas fa-map-marker-alt text-primary-500 mr-2"></i>
-                        Adresse
-                    </h3>
-                    <p class="text-white">{{ $deliverer->address }}</p>
-                </div>
-            @endif
 
-            <!-- Referral Info -->
-            @if($deliverer->referral_code)
-                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
-                    <h3 class="text-xl font-bold text-white mb-4 flex items-center">
-                        <i class="fas fa-link text-primary-500 mr-2"></i>
-                        Code Parrainage
-                    </h3>
-                    <code class="px-4 py-2 bg-primary-500/20 text-primary-300 rounded-lg border border-primary-500/50 font-mono text-lg">
-                        {{ $deliverer->referral_code }}
-                    </code>
+                    <div class="space-y-3">
+                        @foreach($deliverer->syncCodes as $code)
+                            <div class="p-3 bg-dark-50 rounded-lg border border-dark-300 flex items-center justify-between">
+                                <div>
+                                    <code class="text-primary-400 font-mono font-bold">{{ $code->sync_code }}</code>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Créé le {{ $code->created_at->format('d/m/Y H:i') }}
+                                        • Expire le {{ $code->expires_at->format('d/m/Y') }}
+                                    </p>
+                                </div>
+                                <div>
+                                    @if($code->is_used)
+                                        <span class="px-2 py-1 bg-green-900/30 text-green-400 text-xs rounded-full border border-green-500/50">
+                                            <i class="fas fa-check-circle"></i> Utilisé
+                                        </span>
+                                    @elseif($code->isExpired())
+                                        <span class="px-2 py-1 bg-red-900/30 text-red-400 text-xs rounded-full border border-red-500/50">
+                                            <i class="fas fa-times-circle"></i> Expiré
+                                        </span>
+                                    @else
+                                        <span class="px-2 py-1 bg-blue-900/30 text-blue-400 text-xs rounded-full border border-blue-500/50">
+                                            <i class="fas fa-clock"></i> Valide
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
                 </div>
             @endif
         </div>

@@ -13,30 +13,38 @@ class PreferenceController extends Controller
      */
     public function index()
     {
-        // Get all users with preferences
+        // Get all users with non-empty preferences (PostgreSQL JSON compatible)
         $usersWithPreferences = User::whereNotNull('preferences')
-            ->where('preferences', 'NOT LIKE', '[]')
-            ->where('preferences', 'NOT LIKE', 'null')
-            ->where('preferences', '!=', '')
-            ->get();
+            ->get()
+            ->filter(function ($user) {
+                // Filter out empty arrays, null values, and empty strings
+                return !empty($user->preferences)
+                    && is_array($user->preferences)
+                    && count($user->preferences) > 0
+                    && isset($user->preferences['categories'])
+                    && is_array($user->preferences['categories'])
+                    && count($user->preferences['categories']) > 0;
+            });
 
         // Count preferences
         $preferenceStats = [];
         foreach ($usersWithPreferences as $user) {
-            if (is_array($user->preferences) && isset($user->preferences['categories'])) {
-                foreach ($user->preferences['categories'] as $pref) {
-                    if (!isset($preferenceStats[$pref])) {
-                        $preferenceStats[$pref] = ['count' => 0, 'users' => []];
-                    }
-                    $preferenceStats[$pref]['count']++;
-                    $preferenceStats[$pref]['users'][] = $user;
+            foreach ($user->preferences['categories'] as $pref) {
+                if (!isset($preferenceStats[$pref])) {
+                    $preferenceStats[$pref] = ['count' => 0, 'users' => []];
                 }
+                $preferenceStats[$pref]['count']++;
+                $preferenceStats[$pref]['users'][] = $user;
             }
         }
 
         // Sort by popularity
         arsort($preferenceStats);
 
-        return view('admin.preferences.index', compact('preferenceStats', 'usersWithPreferences'));
+        // Count users without preferences (PostgreSQL compatible)
+        $totalUsers = User::count();
+        $usersWithoutPreferences = $totalUsers - count($usersWithPreferences);
+
+        return view('admin.preferences.index', compact('preferenceStats', 'usersWithPreferences', 'usersWithoutPreferences'));
     }
 }

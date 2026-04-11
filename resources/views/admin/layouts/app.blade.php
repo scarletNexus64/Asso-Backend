@@ -361,11 +361,11 @@
                 <!-- Flash Messages -->
                 @if(session('success'))
                     <div class="mb-6 bg-green-50 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between shadow-sm" role="alert">
-                        <div class="flex items-center">
-                            <i class="fas fa-check-circle mr-2 text-green-500"></i>
-                            <span>{{ session('success') }}</span>
+                        <div class="flex items-center w-full">
+                            <i class="fas fa-check-circle mr-2 text-green-500 flex-shrink-0"></i>
+                            <div class="flex-1">{!! session('success') !!}</div>
                         </div>
-                        <button onclick="this.parentElement.remove()" class="text-green-700 hover:text-green-900">
+                        <button onclick="this.parentElement.remove()" class="text-green-700 hover:text-green-900 ml-4 flex-shrink-0">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -373,11 +373,11 @@
 
                 @if(session('error'))
                     <div class="mb-6 bg-red-900/20 border-l-4 border-red-500 text-red-400 px-4 py-3 rounded-lg flex items-center justify-between shadow-sm" role="alert">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-circle mr-2 text-red-500"></i>
-                            <span>{{ session('error') }}</span>
+                        <div class="flex items-center w-full">
+                            <i class="fas fa-exclamation-circle mr-2 text-red-500 flex-shrink-0"></i>
+                            <div class="flex-1">{!! session('error') !!}</div>
                         </div>
-                        <button onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-500">
+                        <button onclick="this.parentElement.remove()" class="text-red-400 hover:text-red-500 ml-4 flex-shrink-0">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>

@@ -48,8 +48,8 @@ class DashboardController extends Controller
 
         // Categories statistics
         $stats['categories'] = [
-            'total' => Category::whereNull('parent_id')->count(),
-            'sub_total' => Category::whereNotNull('parent_id')->count(),
+            'total' => Category::count(),
+            'sub_total' => \App\Models\Subcategory::count(),
         ];
 
         // Chart data for last 30 days

@@ -244,6 +244,36 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the deliverer company for this user
+     */
+    public function delivererCompany(): HasOne
+    {
+        return $this->hasOne(DelivererCompany::class);
+    }
+
+    /**
+     * Get all sync codes for this deliverer
+     */
+    public function delivererSyncCodes(): HasMany
+    {
+        return $this->hasMany(DelivererSyncCode::class);
+    }
+
+    /**
+     * Get the latest valid sync code
+     */
+    public function latestValidSyncCode(): HasOne
+    {
+        return $this->hasOne(DelivererSyncCode::class)
+            ->where('is_used', false)
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                      ->orWhere('expires_at', '>', now());
+            })
+            ->latest();
+    }
+
+    /**
      * Get total wallet balance (FreeMoPay + PayPal)
      */
     public function getTotalWalletBalanceAttribute(): float

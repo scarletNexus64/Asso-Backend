@@ -427,7 +427,6 @@ function showConfirm(message, onConfirm) {
     };
     document.addEventListener('keydown', escHandler);
 }
-</script>
 
 <script>
 let zoneCounter = 0;
@@ -975,24 +974,10 @@ removeZone = function(zoneId) {
 function initializeMapWithCoordinates(zoneId, lat, lng) {
     setTimeout(() => {
         const mapDiv = document.getElementById(`map-${zoneId}`);
-        if (!mapDiv) {
-            console.error(`❌ Map div not found for zone ${zoneId}`);
-            return;
-        }
-
-        // Validate coordinates
-        const latitude = parseFloat(lat);
-        const longitude = parseFloat(lng);
-
-        if (isNaN(latitude) || isNaN(longitude)) {
-            console.error(`❌ Invalid coordinates for zone ${zoneId}:`, lat, lng);
-            return;
-        }
-
-        console.log(`✅ Initializing map for zone ${zoneId} with coordinates:`, latitude, longitude);
+        if (!mapDiv) return;
 
         // Initialize map centered on the existing coordinates
-        const map = L.map(`map-${zoneId}`).setView([latitude, longitude], 15);
+        const map = L.map(`map-${zoneId}`).setView([lat, lng], 15);
 
         // Add OpenStreetMap tile layer
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1010,9 +995,6 @@ function initializeMapWithCoordinates(zoneId, lat, lng) {
                 map.removeLayer(marker);
             }
 
-            const markerLat = parseFloat(lat);
-            const markerLng = parseFloat(lng);
-
             // Create custom marker icon
             const customIcon = L.divIcon({
                 className: 'custom-marker',
@@ -1025,14 +1007,14 @@ function initializeMapWithCoordinates(zoneId, lat, lng) {
             });
 
             // Add new marker
-            marker = L.marker([markerLat, markerLng], {
+            marker = L.marker([lat, lng], {
                 icon: customIcon,
                 draggable: true
             }).addTo(map);
 
             // Update hidden inputs
-            document.getElementById(`center-lat-${zoneId}`).value = markerLat;
-            document.getElementById(`center-lng-${zoneId}`).value = markerLng;
+            document.getElementById(`center-lat-${zoneId}`).value = lat;
+            document.getElementById(`center-lng-${zoneId}`).value = lng;
 
             // Handle marker drag
             marker.on('dragend', function(e) {
@@ -1045,16 +1027,15 @@ function initializeMapWithCoordinates(zoneId, lat, lng) {
             marker.bindPopup(`
                 <div style="text-align: center;">
                     <p style="font-weight: bold; margin-bottom: 5px;">📍 Position de la zone</p>
-                    <p style="font-size: 12px; color: #666;">Lat: ${markerLat.toFixed(6)}</p>
-                    <p style="font-size: 12px; color: #666;">Lng: ${markerLng.toFixed(6)}</p>
+                    <p style="font-size: 12px; color: #666;">Lat: ${lat.toFixed(6)}</p>
+                    <p style="font-size: 12px; color: #666;">Lng: ${lng.toFixed(6)}</p>
                     <p style="font-size: 10px; color: #999; margin-top: 5px;">Déplacez le marqueur si besoin</p>
                 </div>
             `).openPopup();
         }
 
         // Place marker at existing coordinates
-        console.log(`📍 Placing marker for zone ${zoneId} at:`, latitude, longitude);
-        placeMarker(latitude, longitude);
+        placeMarker(lat, lng);
 
         // Click on map to place marker
         map.on('click', function(e) {
@@ -1205,8 +1186,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return [
                     'id' => $zone->id,
                     'name' => $zone->name,
-                    'center_latitude' => (float) $zone->center_latitude,
-                    'center_longitude' => (float) $zone->center_longitude,
+                    'center_latitude' => $zone->center_latitude,
+                    'center_longitude' => $zone->center_longitude,
                     'pricing_type' => $zone->pricelist->pricing_type ?? 'fixed',
                     'pricing_data' => $zone->pricelist->pricing_data ?? [],
                 ];
@@ -1214,7 +1195,6 @@ document.addEventListener('DOMContentLoaded', function() {
         @endphp
 
         const existingZones = @json($existingZonesData);
-        console.log('🗺️ Chargement des zones existantes:', existingZones);
 
         // Load existing zones
         existingZones.forEach((zoneData, index) => {
@@ -1282,19 +1262,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Update pricelists and set pricing data
         setTimeout(() => {
-            console.log('💰 Mise à jour des tarifs pour les zones existantes');
             updatePricelistZones();
 
             existingZones.forEach((zoneData, index) => {
                 const zoneId = index;
-                console.log(`💵 Chargement des tarifs pour zone ${zoneId}:`, zoneData.pricing_type, zoneData.pricing_data);
                 const pricingTypeSelect = document.getElementById(`pricing-type-${zoneId}`);
                 if (pricingTypeSelect) {
                     pricingTypeSelect.value = zoneData.pricing_type;
                     updatePricingFields(zoneId);
 
                     setTimeout(() => {
-                        if (zoneData.pricing_type === 'fixed' && zoneData.pricing_data && zoneData.pricing_data.price) {
+                        if (zoneData.pricing_type === 'fixed' && zoneData.pricing_data.price) {
                             const priceInput = document.querySelector(`[name="delivery_zones[${zoneId}][pricing_data][price]"]`);
                             if (priceInput) {
                                 priceInput.value = zoneData.pricing_data.price;
@@ -1355,16 +1333,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     }, 100);
                 }
             });
-
-            // Confirmation finale
-            setTimeout(() => {
-                console.log('✅ Chargement terminé! Zones chargées:', zones.length);
-                console.log('📊 Détails des zones:', existingZones);
-            }, 500);
         }, 200);
     @else
         // Add a new zone if none exist
-        console.log('ℹ️ Aucune zone existante, ajout d\'une nouvelle zone');
         addZone();
     @endif
 
@@ -1416,7 +1387,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const companyPhone = document.querySelector('[name="company_phone"]').value;
         const sendViaText = `📧 Email à ${companyEmail}`;
 
-        const confirmMessage = `🎯 <strong>Mise à jour de l'entreprise de livraison</strong>
+        const confirmMessage = `🎯 <strong>Création de l'entreprise de livraison</strong>
 
 <div style="margin: 15px 0; padding: 15px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 8px;">
     📦 <strong>Entreprise :</strong> ${companyName}
@@ -1425,15 +1396,17 @@ document.addEventListener('DOMContentLoaded', function() {
     🗺️ <strong>Zones :</strong> ${zones.length} zone(s) de livraison
 </div>
 
-<div style="margin: 15px 0; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid #f59e0b; border-radius: 8px;">
-    ⚠️ <strong>Cette action va :</strong>
-    • Mettre à jour les informations de l'entreprise
-    • Modifier les zones de livraison et les tarifs
-    • Les anciennes zones non incluses seront supprimées
+<div style="margin: 15px 0; padding: 15px; background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981; border-radius: 8px;">
+    📨 <strong>Le code de synchronisation sera envoyé par :</strong>
+    ${sendViaText}
 </div>
 
-<div style="margin: 15px 0; padding: 15px; background: rgba(99, 102, 241, 0.1); border-left: 3px solid #6366f1; border-radius: 8px;">
-    ℹ️ <strong>Note :</strong> Le code de synchronisation existant restera valide. Un nouveau code ne sera pas généré sauf si vous en demandez un explicitement.
+<div style="margin: 15px 0; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid #f59e0b; border-radius: 8px;">
+    ⚠️ <strong>Cette action va :</strong>
+    • Créer l'entreprise de livraison avec ses zones et tarifs
+    • Générer un code de synchronisation unique (valide 30 jours)
+    • Envoyer le code à l'entreprise
+    • Le livreur devra scanner ce code dans l'app mobile pour synchroniser son profil
 </div>`;
 
         showConfirm(confirmMessage, function() {
@@ -1470,4 +1443,391 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+</script>
+            const zoneId = zoneCounter++;
+            const container = document.getElementById('zones-container');
+
+            const zoneHtml = `
+                <div class="zone-item border border-dark-300 rounded-lg p-6 bg-dark-50" data-zone-id="${zoneId}">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-white font-semibold">
+                            <i class="fas fa-map-marker-alt text-primary-500 mr-2"></i>
+                            Zone de livraison #${zoneId + 1}
+                        </h4>
+                        <button type="button" onclick="removeZone(${zoneId})" class="text-red-400 hover:text-red-300">
+                            <i class="fas fa-trash"></i> Supprimer
+                        </button>
+                    </div>
+
+                    <!-- Hidden field for existing zone ID -->
+                    <input type="hidden" name="delivery_zones[${zoneId}][id]" value="${zoneData.id}">
+
+                    <!-- Zone Name -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-white mb-2">
+                            Nom de la zone <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="delivery_zones[${zoneId}][name]" id="zone-name-${zoneId}"
+                               value="${zoneData.name}" required
+                               placeholder="Ex: Centre ville, Zone périphérique..."
+                               onchange="updatePricelistZones()"
+                               class="w-full px-4 py-2 bg-dark-100 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+                    </div>
+
+                    <!-- Map with autocomplete search -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-white mb-2">
+                            Position de la zone sur la carte <span class="text-red-500">*</span>
+                        </label>
+                        <div class="relative mb-3">
+                            <div class="relative">
+                                <input type="text" id="search-input-${zoneId}" placeholder="🔍 Tapez pour rechercher un lieu (ex: Cotonou, Akpakpa, Calavi...)"
+                                       autocomplete="off"
+                                       class="w-full px-4 py-3 pl-10 bg-dark-50 border-2 border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-primary-500"></i>
+                                <div id="search-loader-${zoneId}" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2">
+                                    <i class="fas fa-spinner fa-spin text-primary-500"></i>
+                                </div>
+                            </div>
+                            <div id="search-results-${zoneId}" class="hidden absolute z-[9999] w-full mt-2 bg-dark-100 border-2 border-primary-500/50 rounded-lg shadow-2xl max-h-[500px] overflow-y-auto"></div>
+                        </div>
+                        <div id="map-${zoneId}" class="h-[600px] rounded-lg border-2 border-dark-300 shadow-xl"></div>
+                        <p class="mt-2 text-xs text-gray-400">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Cliquez sur la carte pour placer le marqueur de la zone, ou recherchez un lieu pour le positionner automatiquement
+                        </p>
+                        <input type="hidden" name="delivery_zones[${zoneId}][center_latitude]" id="center-lat-${zoneId}"
+                               value="${zoneData.center_latitude}" required>
+                        <input type="hidden" name="delivery_zones[${zoneId}][center_longitude]" id="center-lng-${zoneId}"
+                               value="${zoneData.center_longitude}" required>
+                    </div>
+                </div>
+            `;
+
+            container.insertAdjacentHTML('beforeend', zoneHtml);
+
+            // Initialize map with existing coordinates
+            initializeMapWithCoordinates(zoneId, zoneData.center_latitude, zoneData.center_longitude);
+
+            zones.push(zoneId);
+        });
+
+        // Update pricelists after loading zones
+        setTimeout(() => {
+            updatePricelistZones();
+
+            // Set pricing types and data for existing zones
+            existingZones.forEach((zoneData, index) => {
+                const zoneId = index;
+                const pricingTypeSelect = document.getElementById(`pricing-type-${zoneId}`);
+                if (pricingTypeSelect) {
+                    pricingTypeSelect.value = zoneData.pricing_type;
+                    updatePricingFields(zoneId);
+
+                    // Pre-fill pricing data
+                    setTimeout(() => {
+                        if (zoneData.pricing_type === 'fixed' && zoneData.pricing_data.price) {
+                            const priceInput = document.querySelector(`[name="delivery_zones[${zoneId}][pricing_data][price]"]`);
+                            if (priceInput) {
+                                priceInput.value = zoneData.pricing_data.price;
+                            }
+                        } else if (zoneData.pricing_type === 'weight_category') {
+                            for (const [category, price] of Object.entries(zoneData.pricing_data)) {
+                                const input = document.querySelector(`[name="delivery_zones[${zoneId}][pricing_data][${category}]"]`);
+                                if (input) {
+                                    input.value = price;
+                                }
+                            }
+                        } else if (zoneData.pricing_type === 'volumetric_weight' && zoneData.pricing_data.ranges) {
+                            // Clear existing ranges
+                            const rangesContainer = document.getElementById(`volumetric-ranges-${zoneId}`);
+                            if (rangesContainer) {
+                                rangesContainer.innerHTML = '';
+                            }
+
+                            // Add existing ranges
+                            Object.entries(zoneData.pricing_data.ranges).forEach(([rangeId, rangeData]) => {
+                                if (!volumetricRangeCounters[zoneId]) {
+                                    volumetricRangeCounters[zoneId] = 0;
+                                }
+                                const newRangeId = volumetricRangeCounters[zoneId]++;
+                                const container = document.getElementById(`volumetric-ranges-${zoneId}`);
+
+                                const html = `
+                                    <div class="p-4 bg-dark-100 rounded-lg border border-dark-300" data-range-id="${newRangeId}">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <span class="text-white font-medium">Plage #${newRangeId + 1}</span>
+                                            <button type="button" onclick="removeVolumetricRange(${zoneId}, ${newRangeId})" class="text-red-400 hover:text-red-300 text-sm">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label class="block text-sm text-gray-400 mb-1">Poids min (kg)</label>
+                                                <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${newRangeId}][min]"
+                                                       value="${rangeData.min}" required step="0.01" min="0"
+                                                       class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-400 mb-1">Poids max (kg)</label>
+                                                <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${newRangeId}][max]"
+                                                       value="${rangeData.max}" required step="0.01" min="0"
+                                                       class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm text-gray-400 mb-1">Prix (FCFA)</label>
+                                                <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${newRangeId}][price]"
+                                                       value="${rangeData.price}" required step="0.01" min="0"
+                                                       class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+
+                                container.insertAdjacentHTML('beforeend', html);
+                            });
+                        }
+                    }, 100);
+                }
+            });
+        }, 200);
+    @endif
+});
+
+// Function to initialize map with existing coordinates
+function initializeMapWithCoordinates(zoneId, lat, lng) {
+    setTimeout(() => {
+        const mapDiv = document.getElementById(`map-${zoneId}`);
+        if (!mapDiv) return;
+
+        // Initialize map centered on the existing coordinates
+        const map = L.map(`map-${zoneId}`).setView([lat, lng], 15);
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Create marker at existing position
+        let marker = null;
+
+        // Function to place marker
+        function placeMarker(lat, lng) {
+            // Remove existing marker
+            if (marker) {
+                map.removeLayer(marker);
+            }
+
+            // Create custom marker icon
+            const customIcon = L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="position: relative;">
+                    <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); width: 40px; height: 40px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);"></div>
+                    <div style="position: absolute; top: 8px; left: 8px; width: 20px; height: 20px; background: white; border-radius: 50%; transform: rotate(45deg);"></div>
+                </div>`,
+                iconSize: [40, 40],
+                iconAnchor: [20, 40]
+            });
+
+            // Add new marker
+            marker = L.marker([lat, lng], {
+                icon: customIcon,
+                draggable: true
+            }).addTo(map);
+
+            // Update hidden inputs
+            document.getElementById(`center-lat-${zoneId}`).value = lat;
+            document.getElementById(`center-lng-${zoneId}`).value = lng;
+
+            // Handle marker drag
+            marker.on('dragend', function(e) {
+                const position = e.target.getLatLng();
+                document.getElementById(`center-lat-${zoneId}`).value = position.lat;
+                document.getElementById(`center-lng-${zoneId}`).value = position.lng;
+            });
+
+            // Add popup
+            marker.bindPopup(`
+                <div style="text-align: center;">
+                    <p style="font-weight: bold; margin-bottom: 5px;">📍 Position de la zone</p>
+                    <p style="font-size: 12px; color: #666;">Lat: ${lat.toFixed(6)}</p>
+                    <p style="font-size: 12px; color: #666;">Lng: ${lng.toFixed(6)}</p>
+                    <p style="font-size: 10px; color: #999; margin-top: 5px;">Déplacez le marqueur si besoin</p>
+                </div>
+            `).openPopup();
+        }
+
+        // Place marker at existing coordinates
+        placeMarker(lat, lng);
+
+        // Click on map to place marker
+        map.on('click', function(e) {
+            placeMarker(e.latlng.lat, e.latlng.lng);
+        });
+
+        // Autocomplete search setup (same as initializeMap)
+        const searchInput = document.getElementById(`search-input-${zoneId}`);
+        const searchResults = document.getElementById(`search-results-${zoneId}`);
+        const searchLoader = document.getElementById(`search-loader-${zoneId}`);
+        let searchTimeout;
+
+        searchInput.addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+
+            if (query.length < 2) {
+                searchResults.classList.add('hidden');
+                searchLoader.classList.add('hidden');
+                return;
+            }
+
+            searchLoader.classList.remove('hidden');
+
+            searchTimeout = setTimeout(() => {
+                const searchPromises = [
+                    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=cm,bj,tg,ci,sn,ne,ng,ga,cg,cd,ml,bf,gn&limit=50&addressdetails=1&dedupe=1`),
+                ];
+
+                Promise.all(searchPromises)
+                    .then(responses => Promise.all(responses.map(r => r.json())))
+                    .then(results => {
+                        searchLoader.classList.add('hidden');
+
+                        let allResults = [];
+                        results.forEach(data => {
+                            if (data && Array.isArray(data)) {
+                                allResults = [...allResults, ...data];
+                            }
+                        });
+
+                        const uniqueResults = Array.from(
+                            new Map(allResults.map(item => [item.place_id, item])).values()
+                        );
+
+                        uniqueResults.sort((a, b) => {
+                            const aName = a.display_name.toLowerCase();
+                            const bName = b.display_name.toLowerCase();
+                            const searchLower = query.toLowerCase();
+
+                            const aIsCameroun = aName.includes('cameroun') || aName.includes('cameroon');
+                            const bIsCameroun = bName.includes('cameroun') || bName.includes('cameroon');
+                            if (aIsCameroun && !bIsCameroun) return -1;
+                            if (!aIsCameroun && bIsCameroun) return 1;
+
+                            const aExact = aName.startsWith(searchLower);
+                            const bExact = bName.startsWith(searchLower);
+                            if (aExact && !bExact) return -1;
+                            if (!aExact && bExact) return 1;
+
+                            const aIndex = aName.indexOf(searchLower);
+                            const bIndex = bName.indexOf(searchLower);
+                            if (aIndex !== bIndex) return aIndex - bIndex;
+
+                            return (b.importance || 0) - (a.importance || 0);
+                        });
+
+                        if (uniqueResults.length > 0) {
+                            searchResults.innerHTML = `
+                                <div class="p-2">
+                                    <div class="sticky top-0 bg-dark-100 z-10 pb-2">
+                                        <p class="text-xs text-gray-400 px-2 py-1">
+                                            <i class="fas fa-search mr-1"></i>
+                                            ${uniqueResults.length} résultat(s) trouvé(s)
+                                            ${uniqueResults.some(r => r.display_name.toLowerCase().includes('cameroun') || r.display_name.toLowerCase().includes('cameroon')) ?
+                                                '<span class="ml-2 text-green-400">🇨🇲 Cameroun inclus</span>' : ''}
+                                        </p>
+                                    </div>
+                                    <div class="space-y-1">
+                                        ${uniqueResults.map((result, index) => {
+                                            const isCameroun = result.display_name.toLowerCase().includes('cameroun') ||
+                                                              result.display_name.toLowerCase().includes('cameroon');
+                                            const displayNameParts = result.display_name.split(',');
+                                            const mainName = displayNameParts[0];
+                                            const restName = displayNameParts.slice(1).join(',');
+
+                                            return `
+                                                <div class="p-3 hover:bg-primary-900/30 cursor-pointer rounded-lg transition-colors ${index < uniqueResults.length - 1 ? 'border-b border-dark-300/30' : ''} ${isCameroun ? 'bg-green-900/10' : ''}"
+                                                     onclick="selectSearchResult(${zoneId}, ${result.lat}, ${result.lon}, '${result.display_name.replace(/'/g, "\\'")}')">
+                                                    <div class="flex items-start gap-3">
+                                                        <div class="flex-shrink-0 w-8 h-8 ${isCameroun ? 'bg-green-500/20' : 'bg-primary-500/20'} rounded-full flex items-center justify-center mt-1">
+                                                            <i class="fas fa-map-marker-alt ${isCameroun ? 'text-green-400' : 'text-primary-500'} text-sm"></i>
+                                                        </div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-semibold ${isCameroun ? 'text-green-300' : 'text-white'}">${mainName}</p>
+                                                            <p class="text-xs text-gray-400 mt-0.5 line-clamp-1">${restName}</p>
+                                                            <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                                                                <span class="text-xs text-gray-500">
+                                                                    <i class="fas fa-location-dot mr-1"></i>
+                                                                    ${parseFloat(result.lat).toFixed(4)}, ${parseFloat(result.lon).toFixed(4)}
+                                                                </span>
+                                                                ${result.type ? `
+                                                                    <span class="text-xs bg-primary-900/30 text-primary-300 px-2 py-0.5 rounded">
+                                                                        ${result.type}
+                                                                    </span>
+                                                                ` : ''}
+                                                                ${result.class ? `
+                                                                    <span class="text-xs bg-dark-300/50 text-gray-400 px-2 py-0.5 rounded">
+                                                                        ${result.class}
+                                                                    </span>
+                                                                ` : ''}
+                                                                ${isCameroun ? `
+                                                                    <span class="text-xs bg-green-900/50 text-green-300 px-2 py-0.5 rounded font-medium">
+                                                                        🇨🇲 Cameroun
+                                                                    </span>
+                                                                ` : ''}
+                                                            </div>
+                                                        </div>
+                                                        <i class="fas fa-chevron-right text-gray-500 text-xs mt-2"></i>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `;
+                            searchResults.classList.remove('hidden');
+                        } else {
+                            searchResults.innerHTML = `
+                                <div class="p-6 text-center">
+                                    <i class="fas fa-search text-gray-600 text-3xl mb-2"></i>
+                                    <p class="text-gray-400 text-sm">Aucun résultat trouvé pour "${query}"</p>
+                                    <p class="text-gray-500 text-xs mt-1">Essayez avec un autre terme</p>
+                                    <p class="text-xs text-gray-600 mt-2">Pays supportés: 🇨🇲 Cameroun (priorité), 🇧🇯 Bénin, 🇹🇬 Togo, 🇨🇮 Côte d'Ivoire, 🇸🇳 Sénégal, 🇳🇪 Niger, 🇳🇬 Nigeria, etc.</p>
+                                </div>
+                            `;
+                            searchResults.classList.remove('hidden');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Search error:', err);
+                        searchLoader.classList.add('hidden');
+                        searchResults.innerHTML = `
+                            <div class="p-6 text-center">
+                                <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-2"></i>
+                                <p class="text-red-400 text-sm">Erreur de recherche</p>
+                                <p class="text-gray-500 text-xs mt-1">Veuillez réessayer</p>
+                            </div>
+                        `;
+                        searchResults.classList.remove('hidden');
+                    });
+            }, 300);
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.classList.add('hidden');
+            }
+        });
+
+        searchInput.addEventListener('focus', function() {
+            if (this.value.trim().length >= 2 && searchResults.innerHTML) {
+                searchResults.classList.remove('hidden');
+            }
+        });
+
+        window[`map_${zoneId}`] = map;
+        window[`placeMarker_${zoneId}`] = placeMarker;
+    }, 100);
+}
 </script>

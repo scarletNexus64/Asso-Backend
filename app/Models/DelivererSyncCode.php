@@ -1,0 +1,89 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
+
+class DelivererSyncCode extends Model
+{
+    protected $fillable = [
+        'user_id',
+        'company_id',
+        'sync_code',
+        'is_used',
+        'sent_via',
+        'sent_at',
+        'expires_at',
+        'used_at',
+    ];
+
+    protected $casts = [
+        'is_used' => 'boolean',
+        'sent_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'used_at' => 'datetime',
+    ];
+
+    /**
+     * Get the user that owns this sync code (after sync)
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the deliverer company that this code is for
+     */
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(DelivererCompany::class, 'company_id');
+    }
+
+    /**
+     * Generate a unique sync code in format: XXXX-XXXX-XXXX (14 chars)
+     * Format optimized for WhatsApp template (max 15 chars)
+     */
+    public static function generateSyncCode(): string
+    {
+        do {
+            $code = sprintf(
+                '%s-%s-%s',
+                strtoupper(Str::random(4)),
+                strtoupper(Str::random(4)),
+                strtoupper(Str::random(4))
+            );
+        } while (self::where('sync_code', $code)->exists());
+
+        return $code;
+    }
+
+    /**
+     * Check if the code is expired
+     */
+    public function isExpired(): bool
+    {
+        return $this->expires_at && $this->expires_at->isPast();
+    }
+
+    /**
+     * Check if the code is valid (not used and not expired)
+     */
+    public function isValid(): bool
+    {
+        return !$this->is_used && !$this->isExpired();
+    }
+
+    /**
+     * Mark the code as used
+     */
+    public function markAsUsed(): void
+    {
+        $this->update([
+            'is_used' => true,
+            'used_at' => now(),
+        ]);
+    }
+}

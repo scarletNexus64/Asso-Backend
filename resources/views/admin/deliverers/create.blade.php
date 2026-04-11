@@ -10,223 +10,991 @@
             </a>
             <h1 class="text-2xl font-bold text-white">Ajouter un Livreur Partenaire</h1>
         </div>
-        <p class="text-gray-400 ml-10">Enregistrez un nouveau partenaire de livraison avec les informations de son entreprise</p>
+        <p class="text-gray-400 ml-10">Créez un nouveau livreur avec ses zones de livraison et tarifs</p>
     </div>
 
-    <form action="{{ route('admin.deliverers.store') }}" method="POST" enctype="multipart/form-data">
+    <form id="delivererForm" action="{{ route('admin.deliverers.store') }}" method="POST" enctype="multipart/form-data">
         @csrf
 
         <!-- Company Section -->
         <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6 border border-dark-200">
             <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
                 <i class="fas fa-building text-primary-500 mr-2"></i>
-                Entreprise de livraison
+                Informations de l'entreprise
             </h3>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Company Name -->
                 <div>
-                    <label for="company_name" class="block text-sm font-medium text-white mb-2">
+                    <label class="block text-sm font-medium text-white mb-2">
                         <i class="fas fa-building text-primary-500 mr-1"></i>
                         Nom de l'entreprise <span class="text-red-500">*</span>
                     </label>
-                    <input type="text" name="company_name" id="company_name" value="{{ old('company_name') }}" required
+                    <input type="text" name="company_name" value="{{ old('company_name') }}" required
                            placeholder="Ex: DHL Express, Sogel Bénin..."
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('company_name') border-red-500 @enderror">
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 @error('company_name') border-red-500 @enderror">
                     @error('company_name')
                         <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                     @enderror
                 </div>
 
-                <!-- Company Logo -->
                 <div>
-                    <label for="company_logo" class="block text-sm font-medium text-white mb-2">
+                    <label class="block text-sm font-medium text-white mb-2">
+                        <i class="fas fa-phone text-primary-500 mr-1"></i>
+                        Téléphone de l'entreprise <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="company_phone" value="{{ old('company_phone') }}" required
+                           placeholder="+229 XX XX XX XX"
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 @error('company_phone') border-red-500 @enderror">
+                    @error('company_phone')
+                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-white mb-2">
+                        <i class="fas fa-envelope text-primary-500 mr-1"></i>
+                        Email de l'entreprise <span class="text-red-500">*</span>
+                    </label>
+                    <input type="email" name="company_email" value="{{ old('company_email') }}" required
+                           placeholder="contact@company.com"
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 @error('company_email') border-red-500 @enderror">
+                    @error('company_email')
+                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-white mb-2">
                         <i class="fas fa-image text-primary-500 mr-1"></i>
                         Logo de l'entreprise
                     </label>
-                    <input type="file" name="company_logo" id="company_logo" accept="image/*"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-500 file:text-white hover:file:bg-primary-600 @error('company_logo') border-red-500 @enderror">
-                    @error('company_logo')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
+                    <input type="file" name="company_logo" accept="image/*"
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-500 file:text-white hover:file:bg-primary-600">
                     <p class="mt-1 text-xs text-gray-400">Formats: JPEG, PNG, JPG, GIF, SVG, WEBP. Max: 2 Mo</p>
                 </div>
-            </div>
-        </div>
 
-        <!-- Personal Info Section -->
-        <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6 border border-dark-200">
-            <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
-                <i class="fas fa-user text-primary-500 mr-2"></i>
-                Informations personnelles du livreur
-            </h3>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- First Name -->
-                <div>
-                    <label for="first_name" class="block text-sm font-medium text-white mb-2">
-                        Prénom <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" name="first_name" id="first_name" value="{{ old('first_name') }}" required
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('first_name') border-red-500 @enderror">
-                    @error('first_name')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Last Name -->
-                <div>
-                    <label for="last_name" class="block text-sm font-medium text-white mb-2">
-                        Nom <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" name="last_name" id="last_name" value="{{ old('last_name') }}" required
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('last_name') border-red-500 @enderror">
-                    @error('last_name')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Email -->
-                <div>
-                    <label for="email" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-envelope text-primary-500 mr-1"></i>
-                        Email <span class="text-red-500">*</span>
-                    </label>
-                    <input type="email" name="email" id="email" value="{{ old('email') }}" required
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('email') border-red-500 @enderror">
-                    @error('email')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Phone -->
-                <div>
-                    <label for="phone" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-phone text-primary-500 mr-1"></i>
-                        Téléphone
-                    </label>
-                    <input type="text" name="phone" id="phone" value="{{ old('phone') }}" placeholder="+229 XX XX XX XX"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('phone') border-red-500 @enderror">
-                    @error('phone')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Password -->
-                <div>
-                    <label for="password" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-lock text-primary-500 mr-1"></i>
-                        Mot de passe <span class="text-red-500">*</span>
-                    </label>
-                    <input type="password" name="password" id="password" required
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 @error('password') border-red-500 @enderror">
-                    @error('password')
-                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                    @enderror
-                    <p class="mt-1 text-xs text-gray-400">Minimum 8 caractères</p>
-                </div>
-
-                <!-- Password Confirmation -->
-                <div>
-                    <label for="password_confirmation" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-lock text-primary-500 mr-1"></i>
-                        Confirmer le mot de passe <span class="text-red-500">*</span>
-                    </label>
-                    <input type="password" name="password_confirmation" id="password_confirmation" required
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                </div>
-
-                <!-- Gender -->
-                <div>
-                    <label for="gender" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-venus-mars text-primary-500 mr-1"></i>
-                        Genre
-                    </label>
-                    <select name="gender" id="gender"
-                            class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                        <option value="">Sélectionnez</option>
-                        <option value="male" {{ old('gender') == 'male' ? 'selected' : '' }}>Homme</option>
-                        <option value="female" {{ old('gender') == 'female' ? 'selected' : '' }}>Femme</option>
-                        <option value="other" {{ old('gender') == 'other' ? 'selected' : '' }}>Autre</option>
-                    </select>
-                </div>
-
-                <!-- Birth Date -->
-                <div>
-                    <label for="birth_date" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-calendar text-primary-500 mr-1"></i>
-                        Date de naissance
-                    </label>
-                    <input type="date" name="birth_date" id="birth_date" value="{{ old('birth_date') }}"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                </div>
-
-                <!-- Country -->
                 <div class="md:col-span-2">
-                    <label for="country" class="block text-sm font-medium text-white mb-2">
-                        <i class="fas fa-globe text-primary-500 mr-1"></i>
-                        Pays
+                    <label class="block text-sm font-medium text-white mb-2">
+                        <i class="fas fa-align-left text-primary-500 mr-1"></i>
+                        Description de l'entreprise
                     </label>
-                    <select name="country" id="country"
-                            class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
-                        <option value="">Sélectionnez un pays</option>
-                        @foreach([
-                            'Afghanistan', 'Afrique du Sud', 'Albanie', 'Algérie', 'Allemagne', 'Andorre', 'Angola', 'Arabie Saoudite',
-                            'Argentine', 'Arménie', 'Australie', 'Autriche', 'Azerbaïdjan', 'Bahamas', 'Bahreïn', 'Bangladesh',
-                            'Belgique', 'Bénin', 'Bhoutan', 'Bolivie', 'Bosnie-Herzégovine', 'Botswana', 'Brésil', 'Brunei',
-                            'Bulgarie', 'Burkina Faso', 'Burundi', 'Cambodge', 'Cameroun', 'Canada', 'Cap-Vert', 'Chili', 'Chine',
-                            'Chypre', 'Colombie', 'Comores', 'Congo', 'Corée du Nord', 'Corée du Sud', 'Costa Rica', 'Côte d\'Ivoire',
-                            'Croatie', 'Cuba', 'Danemark', 'Djibouti', 'Égypte', 'Émirats arabes unis', 'Équateur', 'Érythrée',
-                            'Espagne', 'Estonie', 'États-Unis', 'Éthiopie', 'Finlande', 'France', 'Gabon', 'Gambie', 'Géorgie',
-                            'Ghana', 'Grèce', 'Guatemala', 'Guinée', 'Guinée équatoriale', 'Guinée-Bissau', 'Guyana', 'Haïti',
-                            'Honduras', 'Hongrie', 'Inde', 'Indonésie', 'Irak', 'Iran', 'Irlande', 'Islande', 'Israël', 'Italie',
-                            'Jamaïque', 'Japon', 'Jordanie', 'Kazakhstan', 'Kenya', 'Kirghizistan', 'Koweït', 'Laos', 'Lesotho',
-                            'Lettonie', 'Liban', 'Libéria', 'Libye', 'Liechtenstein', 'Lituanie', 'Luxembourg', 'Macédoine du Nord',
-                            'Madagascar', 'Malaisie', 'Malawi', 'Maldives', 'Mali', 'Malte', 'Maroc', 'Maurice', 'Mauritanie',
-                            'Mexique', 'Moldavie', 'Monaco', 'Mongolie', 'Monténégro', 'Mozambique', 'Myanmar', 'Namibie', 'Népal',
-                            'Nicaragua', 'Niger', 'Nigeria', 'Norvège', 'Nouvelle-Zélande', 'Oman', 'Ouganda', 'Ouzbékistan',
-                            'Pakistan', 'Palestine', 'Panama', 'Papouasie-Nouvelle-Guinée', 'Paraguay', 'Pays-Bas', 'Pérou',
-                            'Philippines', 'Pologne', 'Portugal', 'Qatar', 'République centrafricaine', 'République démocratique du Congo',
-                            'République dominicaine', 'République tchèque', 'Roumanie', 'Royaume-Uni', 'Russie', 'Rwanda', 'Saint-Marin',
-                            'Salvador', 'Sénégal', 'Serbie', 'Seychelles', 'Sierra Leone', 'Singapour', 'Slovaquie', 'Slovénie',
-                            'Somalie', 'Soudan', 'Soudan du Sud', 'Sri Lanka', 'Suède', 'Suisse', 'Suriname', 'Syrie', 'Tadjikistan',
-                            'Tanzanie', 'Tchad', 'Thaïlande', 'Timor oriental', 'Togo', 'Trinité-et-Tobago', 'Tunisie', 'Turkménistan',
-                            'Turquie', 'Ukraine', 'Uruguay', 'Vanuatu', 'Vatican', 'Venezuela', 'Viêt Nam', 'Yémen', 'Zambie', 'Zimbabwe'
-                        ] as $c)
-                            <option value="{{ $c }}" {{ old('country', 'Bénin') == $c ? 'selected' : '' }}>{{ $c }}</option>
-                        @endforeach
-                    </select>
+                    <textarea name="company_description" rows="3"
+                              class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500"
+                              placeholder="Décrivez l'entreprise de livraison...">{{ old('company_description') }}</textarea>
                 </div>
+            </div>
+
+            <div class="mt-4 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
+                <p class="text-blue-300 text-sm">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    Ces informations représentent l'entreprise de livraison. Le livreur recevra un code de synchronisation qu'il devra scanner dans l'application mobile pour lier son compte utilisateur existant à cette entreprise.
+                </p>
             </div>
         </div>
 
-        <!-- Location Section -->
+        <!-- Delivery Zones Section -->
+        <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6 border border-dark-200">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-white flex items-center">
+                    <i class="fas fa-map-marked-alt text-primary-500 mr-2"></i>
+                    Zones de livraison
+                </h3>
+                <button type="button" onclick="addZone()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition">
+                    <i class="fas fa-plus mr-2"></i> Ajouter une zone
+                </button>
+            </div>
+
+            <div id="zones-container" class="space-y-6">
+                <!-- Zones will be added here dynamically -->
+            </div>
+
+            @error('delivery_zones')
+                <p class="mt-2 text-sm text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <!-- Pricelists Section -->
+        <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6 border border-dark-200">
+            <div class="flex items-center mb-4">
+                <h3 class="text-lg font-semibold text-white flex items-center">
+                    <i class="fas fa-dollar-sign text-primary-500 mr-2"></i>
+                    Tarification par zone
+                </h3>
+            </div>
+
+            <div id="pricelists-container" class="space-y-6">
+                <p class="text-gray-400 text-sm">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    Définissez les tarifs pour chaque zone de livraison créée ci-dessus
+                </p>
+            </div>
+        </div>
+
+        <!-- Notification Preferences -->
         <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6 border border-dark-200">
             <h3 class="text-lg font-semibold text-white mb-4 flex items-center">
-                <i class="fas fa-map-marker-alt text-primary-500 mr-2"></i>
-                Localisation
+                <i class="fas fa-bell text-primary-500 mr-2"></i>
+                Code de synchronisation
             </h3>
-            @include('admin.partials.google-map', [
-                'id' => 'deliverer-map',
-                'label' => 'Localisation du livreur',
-                'latitude' => old('latitude'),
-                'longitude' => old('longitude'),
-                'address' => old('address'),
-                'zoom' => 13
-            ])
+
+            <!-- Preview du code -->
+            <div class="mb-6 p-6 bg-gradient-to-r from-primary-900/30 to-purple-900/30 border border-primary-500/50 rounded-lg">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-400 text-sm mb-2">Code de synchronisation généré :</p>
+                        <p id="sync-code-preview" class="text-2xl font-mono font-bold text-white tracking-wider">
+                            ----  ----  ----
+                        </p>
+                        <p class="text-xs text-gray-400 mt-2">
+                            <i class="fas fa-clock mr-1"></i>
+                            Valide pendant 30 jours
+                        </p>
+                    </div>
+                    <div class="text-right">
+                        <button type="button" onclick="generatePreviewCode()" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition text-sm">
+                            <i class="fas fa-sync-alt mr-2"></i>
+                            Générer preview
+                        </button>
+                        <p class="text-xs text-gray-400 mt-2">
+                            (Le code final sera généré à la création)
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hidden field - Only email is used -->
+            <input type="hidden" name="send_code_via" value="email">
+
+            <div class="p-4 bg-gradient-to-r from-blue-900/30 to-primary-900/20 border border-blue-500/50 rounded-lg">
+                <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-envelope text-primary-400 text-2xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-white font-semibold mb-1">
+                            📧 Notification par Email
+                        </p>
+                        <p class="text-blue-300 text-sm">
+                            Un email professionnel sera automatiquement envoyé à l'adresse <strong>{{ old('company_email') }}</strong> avec le code de synchronisation.
+                            Le livreur pourra utiliser ce code pour lier son compte personnel à son entreprise dans l'application mobile.
+                        </p>
+                        <p class="text-gray-400 text-xs mt-2">
+                            <i class="fas fa-clock mr-1"></i>
+                            Validité du code : 30 jours
+                        </p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Action Buttons -->
         <div class="flex gap-4">
-            <button type="submit"
-                    class="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all duration-200 shadow-lg hover:shadow-xl">
+            <button type="submit" class="px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all duration-200 shadow-lg hover:shadow-xl">
                 <i class="fas fa-save mr-2"></i> Créer le livreur partenaire
             </button>
-            <a href="{{ route('admin.deliverers.index') }}"
-               class="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all">
+            <a href="{{ route('admin.deliverers.index') }}" class="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all">
                 <i class="fas fa-times mr-2"></i> Annuler
             </a>
         </div>
     </form>
 </div>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<!-- Custom Alert Styles -->
+<style>
+.custom-alert-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.custom-alert-box {
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border: 2px solid #374151;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    max-width: 500px;
+    width: 90%;
+    animation: slideDown 0.3s ease-out;
+}
+
+.custom-confirm-box {
+    max-width: 600px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+</style>
+
 @endsection
+
+@push('scripts')
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// Custom Alert Function
+function showAlert(message, type = 'error') {
+    const icons = {
+        error: '❌',
+        success: '✅',
+        warning: '⚠️',
+        info: 'ℹ️'
+    };
+
+    const colors = {
+        error: { bg: '#991b1b', border: '#dc2626', icon: '#ef4444' },
+        success: { bg: '#065f46', border: '#10b981', icon: '#34d399' },
+        warning: { bg: '#92400e', border: '#f59e0b', icon: '#fbbf24' },
+        info: { bg: '#1e40af', border: '#3b82f6', icon: '#60a5fa' }
+    };
+
+    const overlay = document.createElement('div');
+    overlay.className = 'custom-alert-overlay';
+    overlay.innerHTML = `
+        <div class="custom-alert-box">
+            <div class="p-6">
+                <div class="flex items-start gap-4">
+                    <div class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                         style="background: ${colors[type].bg}; border: 2px solid ${colors[type].border};">
+                        ${icons[type]}
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-bold text-white mb-2">
+                            ${type === 'error' ? 'Erreur de validation' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'}
+                        </h3>
+                        <div class="text-gray-300 text-sm whitespace-pre-line">${message}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 p-4">
+                <button onclick="this.closest('.custom-alert-overlay').remove()"
+                        class="w-full px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+
+    // Close on ESC key
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+}
+
+// Custom Confirm Function
+function showConfirm(message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'custom-alert-overlay';
+    overlay.innerHTML = `
+        <div class="custom-alert-box custom-confirm-box">
+            <div class="p-6">
+                <div class="flex items-start gap-4 mb-6">
+                    <div class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-blue-900/50 border-2 border-blue-500">
+                        🎯
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-bold text-white mb-2">Confirmation requise</h3>
+                        <div class="text-gray-300 text-sm whitespace-pre-line">${message}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 p-4 flex gap-3">
+                <button onclick="this.closest('.custom-alert-overlay').remove()"
+                        class="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-700 transition-all">
+                    <i class="fas fa-times mr-2"></i> Annuler
+                </button>
+                <button id="confirmBtn"
+                        class="flex-1 px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all">
+                    <i class="fas fa-check mr-2"></i> Continuer
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Handle confirm
+    overlay.querySelector('#confirmBtn').addEventListener('click', () => {
+        overlay.remove();
+        onConfirm();
+    });
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+
+    // Close on ESC key
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+}
+</script>
+
+<script>
+let zoneCounter = 0;
+const zones = [];
+
+// Weight categories from Amazon system
+const WEIGHT_CATEGORIES = {
+    'X-small': 'Très petit produit',
+    '30 Deep': 'Bac profondeur 30 cm',
+    '50 Deep': 'Bac profondeur 50 cm',
+    '60 Deep': 'Bac profondeur 60 cm',
+    'Rainbow XL': 'Grand bac trié (logistique interne)',
+    'Pallet': 'Palette pour gros volume'
+};
+
+function addZone() {
+    const zoneId = zoneCounter++;
+    const container = document.getElementById('zones-container');
+
+    const zoneHtml = `
+        <div class="zone-item border border-dark-300 rounded-lg p-6 bg-dark-50" data-zone-id="${zoneId}">
+            <div class="flex items-center justify-between mb-4">
+                <h4 class="text-white font-semibold">
+                    <i class="fas fa-map-marker-alt text-primary-500 mr-2"></i>
+                    Zone de livraison #${zoneId + 1}
+                </h4>
+                <button type="button" onclick="removeZone(${zoneId})" class="text-red-400 hover:text-red-300">
+                    <i class="fas fa-trash"></i> Supprimer
+                </button>
+            </div>
+
+            <!-- Zone Name -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-white mb-2">
+                    Nom de la zone <span class="text-red-500">*</span>
+                </label>
+                <input type="text" name="delivery_zones[${zoneId}][name]" id="zone-name-${zoneId}" required
+                       placeholder="Ex: Centre ville, Zone périphérique..."
+                       onchange="updatePricelistZones()"
+                       class="w-full px-4 py-2 bg-dark-100 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+            </div>
+
+            <!-- Map with autocomplete search -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-white mb-2">
+                    Position de la zone sur la carte <span class="text-red-500">*</span>
+                </label>
+                <div class="relative mb-3">
+                    <div class="relative">
+                        <input type="text" id="search-input-${zoneId}" placeholder="🔍 Tapez pour rechercher un lieu (ex: Cotonou, Akpakpa, Calavi...)"
+                               autocomplete="off"
+                               class="w-full px-4 py-3 pl-10 bg-dark-50 border-2 border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all">
+                        <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-primary-500"></i>
+                        <div id="search-loader-${zoneId}" class="hidden absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <i class="fas fa-spinner fa-spin text-primary-500"></i>
+                        </div>
+                    </div>
+                    <div id="search-results-${zoneId}" class="hidden absolute z-[9999] w-full mt-2 bg-dark-100 border-2 border-primary-500/50 rounded-lg shadow-2xl max-h-[500px] overflow-y-auto"></div>
+                </div>
+                <div id="map-${zoneId}" class="h-[600px] rounded-lg border-2 border-dark-300 shadow-xl"></div>
+                <p class="mt-2 text-xs text-gray-400">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Cliquez sur la carte pour placer le marqueur de la zone, ou recherchez un lieu pour le positionner automatiquement
+                </p>
+                <input type="hidden" name="delivery_zones[${zoneId}][center_latitude]" id="center-lat-${zoneId}" required>
+                <input type="hidden" name="delivery_zones[${zoneId}][center_longitude]" id="center-lng-${zoneId}" required>
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', zoneHtml);
+    initializeMap(zoneId);
+    zones.push(zoneId);
+    updatePricelistZones();
+}
+
+function removeZone(zoneId) {
+    const zoneElement = document.querySelector(`[data-zone-id="${zoneId}"]`);
+    if (zoneElement) {
+        zoneElement.remove();
+        const index = zones.indexOf(zoneId);
+        if (index > -1) {
+            zones.splice(index, 1);
+        }
+    }
+}
+
+function initializeMap(zoneId) {
+    setTimeout(() => {
+        const mapDiv = document.getElementById(`map-${zoneId}`);
+        if (!mapDiv) return;
+
+        // Initialize map centered on Benin (Cotonou)
+        const map = L.map(`map-${zoneId}`).setView([6.3703, 2.3912], 13);
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Create marker (initially null)
+        let marker = null;
+
+        // Function to place marker
+        function placeMarker(lat, lng) {
+            // Remove existing marker
+            if (marker) {
+                map.removeLayer(marker);
+            }
+
+            // Create custom marker icon
+            const customIcon = L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="position: relative;">
+                    <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); width: 40px; height: 40px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);"></div>
+                    <div style="position: absolute; top: 8px; left: 8px; width: 20px; height: 20px; background: white; border-radius: 50%; transform: rotate(45deg);"></div>
+                </div>`,
+                iconSize: [40, 40],
+                iconAnchor: [20, 40]
+            });
+
+            // Add new marker
+            marker = L.marker([lat, lng], {
+                icon: customIcon,
+                draggable: true
+            }).addTo(map);
+
+            // Update hidden inputs
+            document.getElementById(`center-lat-${zoneId}`).value = lat;
+            document.getElementById(`center-lng-${zoneId}`).value = lng;
+
+            // Handle marker drag
+            marker.on('dragend', function(e) {
+                const position = e.target.getLatLng();
+                document.getElementById(`center-lat-${zoneId}`).value = position.lat;
+                document.getElementById(`center-lng-${zoneId}`).value = position.lng;
+            });
+
+            // Add popup
+            marker.bindPopup(`
+                <div style="text-align: center;">
+                    <p style="font-weight: bold; margin-bottom: 5px;">📍 Position de la zone</p>
+                    <p style="font-size: 12px; color: #666;">Lat: ${lat.toFixed(6)}</p>
+                    <p style="font-size: 12px; color: #666;">Lng: ${lng.toFixed(6)}</p>
+                    <p style="font-size: 10px; color: #999; margin-top: 5px;">Déplacez le marqueur si besoin</p>
+                </div>
+            `).openPopup();
+        }
+
+        // Click on map to place marker
+        map.on('click', function(e) {
+            placeMarker(e.latlng.lat, e.latlng.lng);
+        });
+
+        // Autocomplete search with Nominatim - Real-time suggestions
+        const searchInput = document.getElementById(`search-input-${zoneId}`);
+        const searchResults = document.getElementById(`search-results-${zoneId}`);
+        const searchLoader = document.getElementById(`search-loader-${zoneId}`);
+        let searchTimeout;
+
+        searchInput.addEventListener('input', function(e) {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+
+            // Hide results if query too short
+            if (query.length < 2) {
+                searchResults.classList.add('hidden');
+                searchLoader.classList.add('hidden');
+                return;
+            }
+
+            // Show loader
+            searchLoader.classList.remove('hidden');
+
+            // Debounce search - 300ms for faster response
+            searchTimeout = setTimeout(() => {
+                // Search with multiple strategies for better results
+                const searchPromises = [
+                    // Strategy 1: Search with all African francophone countries + Cameroun (priorité)
+                    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=cm,bj,tg,ci,sn,ne,ng,ga,cg,cd,ml,bf,gn&limit=50&addressdetails=1&dedupe=1`),
+                ];
+
+                Promise.all(searchPromises)
+                    .then(responses => Promise.all(responses.map(r => r.json())))
+                    .then(results => {
+                        searchLoader.classList.add('hidden');
+
+                        // Merge and deduplicate results
+                        let allResults = [];
+                        results.forEach(data => {
+                            if (data && Array.isArray(data)) {
+                                allResults = [...allResults, ...data];
+                            }
+                        });
+
+                        // Remove duplicates based on place_id
+                        const uniqueResults = Array.from(
+                            new Map(allResults.map(item => [item.place_id, item])).values()
+                        );
+
+                        // Sort by relevance: prioritize exact matches and Cameroun
+                        uniqueResults.sort((a, b) => {
+                            const aName = a.display_name.toLowerCase();
+                            const bName = b.display_name.toLowerCase();
+                            const searchLower = query.toLowerCase();
+
+                            // Priority 1: Cameroun results first
+                            const aIsCameroun = aName.includes('cameroun') || aName.includes('cameroon');
+                            const bIsCameroun = bName.includes('cameroun') || bName.includes('cameroon');
+                            if (aIsCameroun && !bIsCameroun) return -1;
+                            if (!aIsCameroun && bIsCameroun) return 1;
+
+                            // Priority 2: Exact matches
+                            const aExact = aName.startsWith(searchLower);
+                            const bExact = bName.startsWith(searchLower);
+                            if (aExact && !bExact) return -1;
+                            if (!aExact && bExact) return 1;
+
+                            // Priority 3: Contains search term earlier
+                            const aIndex = aName.indexOf(searchLower);
+                            const bIndex = bName.indexOf(searchLower);
+                            if (aIndex !== bIndex) return aIndex - bIndex;
+
+                            // Priority 4: Importance
+                            return (b.importance || 0) - (a.importance || 0);
+                        });
+
+                        if (uniqueResults.length > 0) {
+                            searchResults.innerHTML = `
+                                <div class="p-2">
+                                    <div class="sticky top-0 bg-dark-100 z-10 pb-2">
+                                        <p class="text-xs text-gray-400 px-2 py-1">
+                                            <i class="fas fa-search mr-1"></i>
+                                            ${uniqueResults.length} résultat(s) trouvé(s)
+                                            ${uniqueResults.some(r => r.display_name.toLowerCase().includes('cameroun') || r.display_name.toLowerCase().includes('cameroon')) ?
+                                                '<span class="ml-2 text-green-400">🇨🇲 Cameroun inclus</span>' : ''}
+                                        </p>
+                                    </div>
+                                    <div class="space-y-1">
+                                        ${uniqueResults.map((result, index) => {
+                                            const isCameroun = result.display_name.toLowerCase().includes('cameroun') ||
+                                                              result.display_name.toLowerCase().includes('cameroon');
+                                            const displayNameParts = result.display_name.split(',');
+                                            const mainName = displayNameParts[0];
+                                            const restName = displayNameParts.slice(1).join(',');
+
+                                            return `
+                                                <div class="p-3 hover:bg-primary-900/30 cursor-pointer rounded-lg transition-colors ${index < uniqueResults.length - 1 ? 'border-b border-dark-300/30' : ''} ${isCameroun ? 'bg-green-900/10' : ''}"
+                                                     onclick="selectSearchResult(${zoneId}, ${result.lat}, ${result.lon}, '${result.display_name.replace(/'/g, "\\'")}')">
+                                                    <div class="flex items-start gap-3">
+                                                        <div class="flex-shrink-0 w-8 h-8 ${isCameroun ? 'bg-green-500/20' : 'bg-primary-500/20'} rounded-full flex items-center justify-center mt-1">
+                                                            <i class="fas fa-map-marker-alt ${isCameroun ? 'text-green-400' : 'text-primary-500'} text-sm"></i>
+                                                        </div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-semibold ${isCameroun ? 'text-green-300' : 'text-white'}">${mainName}</p>
+                                                            <p class="text-xs text-gray-400 mt-0.5 line-clamp-1">${restName}</p>
+                                                            <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                                                                <span class="text-xs text-gray-500">
+                                                                    <i class="fas fa-location-dot mr-1"></i>
+                                                                    ${parseFloat(result.lat).toFixed(4)}, ${parseFloat(result.lon).toFixed(4)}
+                                                                </span>
+                                                                ${result.type ? `
+                                                                    <span class="text-xs bg-primary-900/30 text-primary-300 px-2 py-0.5 rounded">
+                                                                        ${result.type}
+                                                                    </span>
+                                                                ` : ''}
+                                                                ${result.class ? `
+                                                                    <span class="text-xs bg-dark-300/50 text-gray-400 px-2 py-0.5 rounded">
+                                                                        ${result.class}
+                                                                    </span>
+                                                                ` : ''}
+                                                                ${isCameroun ? `
+                                                                    <span class="text-xs bg-green-900/50 text-green-300 px-2 py-0.5 rounded font-medium">
+                                                                        🇨🇲 Cameroun
+                                                                    </span>
+                                                                ` : ''}
+                                                            </div>
+                                                        </div>
+                                                        <i class="fas fa-chevron-right text-gray-500 text-xs mt-2"></i>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `;
+                            searchResults.classList.remove('hidden');
+                        } else {
+                            searchResults.innerHTML = `
+                                <div class="p-6 text-center">
+                                    <i class="fas fa-search text-gray-600 text-3xl mb-2"></i>
+                                    <p class="text-gray-400 text-sm">Aucun résultat trouvé pour "${query}"</p>
+                                    <p class="text-gray-500 text-xs mt-1">Essayez avec un autre terme</p>
+                                    <p class="text-xs text-gray-600 mt-2">Pays supportés: 🇨🇲 Cameroun (priorité), 🇧🇯 Bénin, 🇹🇬 Togo, 🇨🇮 Côte d'Ivoire, 🇸🇳 Sénégal, 🇳🇪 Niger, 🇳🇬 Nigeria, etc.</p>
+                                </div>
+                            `;
+                            searchResults.classList.remove('hidden');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Search error:', err);
+                        searchLoader.classList.add('hidden');
+                        searchResults.innerHTML = `
+                            <div class="p-6 text-center">
+                                <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-2"></i>
+                                <p class="text-red-400 text-sm">Erreur de recherche</p>
+                                <p class="text-gray-500 text-xs mt-1">Veuillez réessayer</p>
+                            </div>
+                        `;
+                        searchResults.classList.remove('hidden');
+                    });
+            }, 300);
+        });
+
+        // Close search results when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.classList.add('hidden');
+            }
+        });
+
+        // Show results on focus if there's a value
+        searchInput.addEventListener('focus', function() {
+            if (this.value.trim().length >= 2 && searchResults.innerHTML) {
+                searchResults.classList.remove('hidden');
+            }
+        });
+
+        // Store map instance and placeMarker function
+        window[`map_${zoneId}`] = map;
+        window[`placeMarker_${zoneId}`] = placeMarker;
+    }, 100);
+}
+
+function selectSearchResult(zoneId, lat, lon, displayName) {
+    const map = window[`map_${zoneId}`];
+    const placeMarker = window[`placeMarker_${zoneId}`];
+    const searchInput = document.getElementById(`search-input-${zoneId}`);
+    const searchResults = document.getElementById(`search-results-${zoneId}`);
+
+    if (map && placeMarker) {
+        // Center map on selected location with smooth animation
+        map.flyTo([lat, lon], 16, {
+            duration: 1.5
+        });
+
+        // Place marker at the selected location
+        placeMarker(lat, lon);
+    }
+
+    searchInput.value = displayName.split(',')[0];
+    searchResults.classList.add('hidden');
+
+    // Visual feedback
+    searchInput.classList.add('border-green-500');
+    setTimeout(() => searchInput.classList.remove('border-green-500'), 2000);
+}
+
+function updatePricingFields(zoneId) {
+    const pricingType = document.getElementById(`pricing-type-${zoneId}`).value;
+    const container = document.getElementById(`pricing-fields-${zoneId}`);
+
+    if (!pricingType) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    if (pricingType === 'fixed') {
+        html = `
+            <div class="p-4 bg-dark-100 rounded-lg border border-dark-300">
+                <label class="block text-sm font-medium text-white mb-2">
+                    Prix fixe (FCFA) <span class="text-red-500">*</span>
+                </label>
+                <input type="number" name="delivery_zones[${zoneId}][pricing_data][price]" required step="0.01" min="0"
+                       placeholder="Ex: 1500"
+                       class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+            </div>
+        `;
+    } else if (pricingType === 'weight_category') {
+        html = '<div class="space-y-3">';
+        for (const [category, description] of Object.entries(WEIGHT_CATEGORIES)) {
+            html += `
+                <div class="p-4 bg-dark-100 rounded-lg border border-dark-300">
+                    <label class="block text-sm font-medium text-white mb-2">
+                        ${category} - ${description} <span class="text-red-500">*</span>
+                    </label>
+                    <input type="number" name="delivery_zones[${zoneId}][pricing_data][${category}]" required step="0.01" min="0"
+                           placeholder="Prix en FCFA"
+                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+                </div>
+            `;
+        }
+        html += '</div>';
+    } else if (pricingType === 'volumetric_weight') {
+        html = `
+            <div class="space-y-3">
+                <div class="p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
+                    <p class="text-blue-300 text-sm">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Formule de calcul: (Longueur × Largeur × Hauteur) / 139
+                    </p>
+                </div>
+                <div id="volumetric-ranges-${zoneId}" class="space-y-3">
+                    <!-- Ranges will be added here -->
+                </div>
+                <button type="button" onclick="addVolumetricRange(${zoneId})"
+                        class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm">
+                    <i class="fas fa-plus mr-2"></i> Ajouter une plage
+                </button>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+
+    // If volumetric, add first range
+    if (pricingType === 'volumetric_weight') {
+        addVolumetricRange(zoneId);
+    }
+}
+
+let volumetricRangeCounters = {};
+
+function addVolumetricRange(zoneId) {
+    if (!volumetricRangeCounters[zoneId]) {
+        volumetricRangeCounters[zoneId] = 0;
+    }
+
+    const rangeId = volumetricRangeCounters[zoneId]++;
+    const container = document.getElementById(`volumetric-ranges-${zoneId}`);
+
+    const html = `
+        <div class="p-4 bg-dark-100 rounded-lg border border-dark-300" data-range-id="${rangeId}">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-white font-medium">Plage #${rangeId + 1}</span>
+                <button type="button" onclick="removeVolumetricRange(${zoneId}, ${rangeId})" class="text-red-400 hover:text-red-300 text-sm">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Poids min (kg)</label>
+                    <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${rangeId}][min]" required step="0.01" min="0"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Poids max (kg)</label>
+                    <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${rangeId}][max]" required step="0.01" min="0"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Prix (FCFA)</label>
+                    <input type="number" name="delivery_zones[${zoneId}][pricing_data][ranges][${rangeId}][price]" required step="0.01" min="0"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', html);
+}
+
+function removeVolumetricRange(zoneId, rangeId) {
+    const rangeElement = document.querySelector(`#volumetric-ranges-${zoneId} [data-range-id="${rangeId}"]`);
+    if (rangeElement) {
+        rangeElement.remove();
+    }
+}
+
+// Update pricelists when zones are added/removed
+function updatePricelistZones() {
+    const pricelistContainer = document.getElementById('pricelists-container');
+    const activeZones = [];
+
+    zones.forEach(zoneId => {
+        const zoneName = document.getElementById(`zone-name-${zoneId}`)?.value || `Zone #${zoneId + 1}`;
+        activeZones.push({ id: zoneId, name: zoneName });
+    });
+
+    if (activeZones.length === 0) {
+        pricelistContainer.innerHTML = `
+            <p class="text-gray-400 text-sm">
+                <i class="fas fa-info-circle mr-2"></i>
+                Définissez les tarifs pour chaque zone de livraison créée ci-dessus
+            </p>
+        `;
+        return;
+    }
+
+    pricelistContainer.innerHTML = activeZones.map(zone => `
+        <div class="p-6 bg-dark-50 rounded-lg border border-dark-300">
+            <h4 class="text-white font-semibold mb-4">
+                <i class="fas fa-map-pin text-primary-500 mr-2"></i>
+                ${zone.name}
+            </h4>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-white mb-2">
+                    Type de tarification <span class="text-red-500">*</span>
+                </label>
+                <select name="delivery_zones[${zone.id}][pricing_type]" id="pricing-type-${zone.id}"
+                        onchange="updatePricingFields(${zone.id})" required
+                        class="w-full px-4 py-2 bg-dark-100 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+                    <option value="">Sélectionnez le type</option>
+                    <option value="fixed">Prix fixe</option>
+                    <option value="weight_category">Par catégorie de poids</option>
+                    <option value="volumetric_weight">Par poids volumétrique</option>
+                </select>
+            </div>
+
+            <div id="pricing-fields-${zone.id}">
+                <!-- Pricing fields will be added dynamically -->
+            </div>
+        </div>
+    `).join('');
+}
+
+// Generate preview sync code (XXXX-XXXX-XXXX format = 14 chars)
+function generatePreviewCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const part1 = Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const part2 = Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const part3 = Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+    const previewCode = `${part1}-${part2}-${part3}`;
+    document.getElementById('sync-code-preview').textContent = previewCode;
+
+    // Add animation
+    const previewEl = document.getElementById('sync-code-preview');
+    previewEl.classList.add('animate-pulse');
+    setTimeout(() => previewEl.classList.remove('animate-pulse'), 1000);
+}
+
+// Override removeZone to update pricelists
+const originalRemoveZone = removeZone;
+removeZone = function(zoneId) {
+    originalRemoveZone(zoneId);
+    updatePricelistZones();
+};
+
+// Add first zone on page load
+document.addEventListener('DOMContentLoaded', function() {
+    addZone();
+    generatePreviewCode();
+
+    // Form validation before submit
+    const form = document.getElementById('delivererForm');
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        // Check if at least one zone has been drawn
+        let hasValidZones = false;
+        let validationErrors = [];
+
+        zones.forEach(zoneId => {
+            const zoneName = document.getElementById(`zone-name-${zoneId}`)?.value;
+            const centerLat = document.getElementById(`center-lat-${zoneId}`)?.value;
+            const centerLng = document.getElementById(`center-lng-${zoneId}`)?.value;
+            const pricingType = document.getElementById(`pricing-type-${zoneId}`)?.value;
+
+            if (!zoneName || !zoneName.trim()) {
+                validationErrors.push(`Zone #${zoneId + 1}: Le nom de la zone est requis`);
+            }
+
+            if (!centerLat || !centerLng || centerLat === '' || centerLng === '') {
+                validationErrors.push(`Zone #${zoneId + 1}: Vous devez placer le marqueur sur la carte`);
+            } else {
+                hasValidZones = true;
+            }
+
+            if (!pricingType) {
+                validationErrors.push(`Zone #${zoneId + 1}: Le type de tarification est requis`);
+            }
+        });
+
+        if (validationErrors.length > 0) {
+            showAlert('Veuillez corriger les erreurs suivantes :\n\n' + validationErrors.join('\n'), 'error');
+            return false;
+        }
+
+        if (!hasValidZones) {
+            showAlert('Vous devez créer au moins une zone de livraison et placer le marqueur sur la carte.', 'error');
+            return false;
+        }
+
+        // Show confirmation modal
+        const companyName = document.querySelector('[name="company_name"]').value;
+        const companyEmail = document.querySelector('[name="company_email"]').value;
+        const companyPhone = document.querySelector('[name="company_phone"]').value;
+        const sendViaText = `📧 Email à ${companyEmail}`;
+
+        const confirmMessage = `🎯 <strong>Création de l'entreprise de livraison</strong>
+
+<div style="margin: 15px 0; padding: 15px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 8px;">
+    📦 <strong>Entreprise :</strong> ${companyName}
+    📧 <strong>Email :</strong> ${companyEmail}
+    📱 <strong>Téléphone :</strong> ${companyPhone}
+    🗺️ <strong>Zones :</strong> ${zones.length} zone(s) de livraison
+</div>
+
+<div style="margin: 15px 0; padding: 15px; background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981; border-radius: 8px;">
+    📨 <strong>Le code de synchronisation sera envoyé par :</strong>
+    ${sendViaText}
+</div>
+
+<div style="margin: 15px 0; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid #f59e0b; border-radius: 8px;">
+    ⚠️ <strong>Cette action va :</strong>
+    • Créer l'entreprise de livraison avec ses zones et tarifs
+    • Générer un code de synchronisation unique (valide 30 jours)
+    • Envoyer le code à l'entreprise
+    • Le livreur devra scanner ce code dans l'app mobile pour synchroniser son profil
+</div>`;
+
+        showConfirm(confirmMessage, function() {
+            // Submit the form
+            form.submit();
+        });
+    });
+});
+</script>
+@endpush

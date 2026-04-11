@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\PackageController;
 use App\Http\Controllers\Api\VendorProductController;
 use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\DelivererSyncController;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
@@ -48,6 +49,11 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
 });
 
+// Deliverer Sync - verify-sync-code is public, sync-profile requires auth
+Route::prefix('v1/deliverer')->group(function () {
+    Route::post('/verify-sync-code', [DelivererSyncController::class, 'verifySyncCode']); // Public: just verify code validity
+});
+
 // OTP for registration (Nexaah implementation)
 Route::prefix('v1/register')->group(function () {
     Route::post('/send-otp', [OtpController::class, 'sendOtp']);
@@ -72,6 +78,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/{id}', [ProductController::class, 'show']);
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/banners', [BannerController::class, 'index']);
+
+    // Delivery zone availability check (public)
+    Route::post('/delivery/check-availability', [DeliveryController::class, 'checkDeliveryAvailability']);
 });
 
 // Payment webhooks (no auth)
@@ -96,6 +105,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('v1')->group(function () {
+
+        // Deliverer Sync (requires authentication)
+        Route::post('/deliverer/sync-profile', [DelivererSyncController::class, 'syncProfile']);
 
         // Favorites
         Route::get('/favorites', [ProductController::class, 'favorites']);
