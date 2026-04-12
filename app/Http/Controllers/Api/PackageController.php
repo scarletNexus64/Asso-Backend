@@ -5,11 +5,21 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Package;
 use App\Models\VendorPackage;
+use App\Services\WalletService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class PackageController extends Controller
 {
+    protected WalletService $walletService;
+
+    public function __construct(WalletService $walletService)
+    {
+        $this->walletService = $walletService;
+    }
+
     /**
      * List all active storage packages
      */
@@ -43,12 +53,26 @@ class PackageController extends Controller
      */
     public function subscribe(Request $request)
     {
+        Log::info("╔════════════════════════════════════════════════════════════════════╗");
+        Log::info("║ [PackageController] 📦 PACKAGE SUBSCRIPTION REQUEST               ║");
+        Log::info("╚════════════════════════════════════════════════════════════════════╝");
+
         $validated = $request->validate([
             'package_id' => 'required|exists:packages,id',
+            'wallet_type' => 'required|in:freemopay,paypal',
         ]);
 
         $user = $request->user();
         $package = Package::findOrFail($validated['package_id']);
+        $walletType = $validated['wallet_type'];
+
+        Log::info("[PackageController] 📝 Request details", [
+            'user_id' => $user->id,
+            'package_id' => $package->id,
+            'package_name' => $package->name,
+            'package_price' => $package->price,
+            'wallet_type' => $walletType,
+        ]);
 
         // Verify package is storage type
         if ($package->type !== 'storage') {
@@ -66,7 +90,78 @@ class PackageController extends Controller
             ], 422);
         }
 
+        // Check if user already has an active package
+        $existingPackage = $user->activeVendorPackage;
+        if ($existingPackage) {
+            Log::warning("[PackageController] ⚠️ User already has an active package", [
+                'user_id' => $user->id,
+                'existing_package_id' => $existingPackage->id,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous avez déjà un package actif. Veuillez attendre son expiration avant d\'en souscrire un nouveau.',
+                'existing_package' => [
+                    'name' => $existingPackage->package->name,
+                    'expires_at' => $existingPackage->expires_at->toIso8601String(),
+                ],
+            ], 422);
+        }
+
+        // Verify user has enough balance in the selected wallet
+        $canPay = $this->walletService->canPayWithWallet($user, $package->price, $walletType);
+
+        if (!$canPay['can_pay']) {
+            Log::warning("[PackageController] ❌ Insufficient balance", [
+                'user_id' => $user->id,
+                'wallet_type' => $walletType,
+                'current_balance' => $canPay['current_balance'],
+                'required_amount' => $package->price,
+                'missing_amount' => $canPay['missing_amount'],
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $canPay['message'],
+                'data' => [
+                    'current_balance' => $canPay['current_balance'],
+                    'required_amount' => $package->price,
+                    'missing_amount' => $canPay['missing_amount'],
+                    'wallet_type' => $walletType,
+                ],
+            ], 422);
+        }
+
         try {
+            DB::beginTransaction();
+
+            Log::info("[PackageController] 💳 Debiting wallet...", [
+                'wallet_type' => $walletType,
+                'amount' => $package->price,
+            ]);
+
+            // Debit the wallet
+            $walletTransaction = $this->walletService->debit(
+                user: $user,
+                amount: $package->price,
+                description: "Achat de package de stockage: {$package->name}",
+                referenceType: 'vendor_package',
+                referenceId: null, // Will be updated after creating the vendor package
+                metadata: [
+                    'package_id' => $package->id,
+                    'package_name' => $package->name,
+                    'storage_size_mb' => $package->storage_size_mb,
+                    'duration_days' => $package->duration_days,
+                ],
+                provider: $walletType
+            );
+
+            Log::info("[PackageController] ✅ Wallet debited successfully", [
+                'wallet_transaction_id' => $walletTransaction->id,
+                'balance_before' => $walletTransaction->balance_before,
+                'balance_after' => $walletTransaction->balance_after,
+            ]);
+
             // Create vendor package
             $vendorPackage = VendorPackage::create([
                 'user_id' => $user->id,
@@ -80,7 +175,23 @@ class PackageController extends Controller
                 'payment_reference' => 'PKG-' . strtoupper(Str::random(10)),
             ]);
 
+            // Update wallet transaction with vendor package reference
+            $walletTransaction->update([
+                'reference_id' => $vendorPackage->id,
+            ]);
+
+            Log::info("[PackageController] 📦 Vendor package created successfully", [
+                'vendor_package_id' => $vendorPackage->id,
+                'payment_reference' => $vendorPackage->payment_reference,
+            ]);
+
+            DB::commit();
+
             $vendorPackage->load('package');
+
+            Log::info("╔════════════════════════════════════════════════════════════════════╗");
+            Log::info("║ [PackageController] ✅ PACKAGE SUBSCRIPTION SUCCESSFUL            ║");
+            Log::info("╚════════════════════════════════════════════════════════════════════╝");
 
             return response()->json([
                 'success' => true,
@@ -94,6 +205,7 @@ class PackageController extends Controller
                     'expires_at' => $vendorPackage->expires_at->toIso8601String(),
                     'status' => $vendorPackage->status,
                     'payment_reference' => $vendorPackage->payment_reference,
+                    'wallet_type' => $walletType,
                     'package' => [
                         'id' => $vendorPackage->package->id,
                         'name' => $vendorPackage->package->name,
@@ -101,9 +213,18 @@ class PackageController extends Controller
                         'formatted_price' => $vendorPackage->package->formatted_price,
                     ],
                 ],
+                'wallet_transaction' => [
+                    'id' => $walletTransaction->id,
+                    'amount' => (float) $walletTransaction->amount,
+                    'balance_before' => (float) $walletTransaction->balance_before,
+                    'balance_after' => (float) $walletTransaction->balance_after,
+                    'provider' => $walletTransaction->provider,
+                ],
             ], 201);
         } catch (\Exception $e) {
-            \Log::error('[PACKAGE_SUBSCRIBE] Error:', [
+            DB::rollBack();
+
+            Log::error('[PackageController] ❌ Error during subscription:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);

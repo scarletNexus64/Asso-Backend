@@ -74,7 +74,24 @@ class ProfileController extends Controller
         }
 
         if ($request->filled('gender')) {
-            $userUpdates['gender'] = $request->gender;
+            // Convert French gender values to English for database
+            $genderMap = [
+                'Homme' => 'male',
+                'Femme' => 'female',
+                'homme' => 'male',
+                'femme' => 'female',
+                'male' => 'male',
+                'female' => 'female',
+                'other' => 'other',
+            ];
+
+            $gender = $request->gender;
+            $userUpdates['gender'] = $genderMap[$gender] ?? 'other';
+
+            \Log::info('[VENDOR_APPLY] Gender conversion:', [
+                'original' => $gender,
+                'converted' => $userUpdates['gender'],
+            ]);
         }
 
         if ($request->filled('company_name')) {
@@ -94,7 +111,7 @@ class ProfileController extends Controller
             'latitude' => $request->shop_latitude,
             'longitude' => $request->shop_longitude,
             'categories' => $request->categories ?? [],
-            'status' => 'pending', // Shop needs admin verification
+            'status' => 'inactive', // Shop starts as inactive, admin will activate after verification
         ];
 
         \Log::info('[VENDOR_APPLY] Shop data prepared:', $shopData);
@@ -411,6 +428,9 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
+        // Load deliverer company with zones
+        $user->load(['delivererCompany.deliveryZones.pricelist']);
+
         $deliveries = \App\Models\Order::where('delivery_person_id', $user->id)
             ->with(['items.product.primaryImage', 'user'])
             ->orderBy('created_at', 'desc')
@@ -424,8 +444,49 @@ class ProfileController extends Controller
             'pending' => \App\Models\Order::where('delivery_person_id', $user->id)->whereIn('status', ['confirmed', 'preparing'])->count(),
         ];
 
+        // Get company info if exists
+        $companyData = null;
+        if ($user->delivererCompany) {
+            $company = $user->delivererCompany;
+            $companyData = [
+                'id' => $company->id,
+                'user_id' => $company->user_id,
+                'name' => $company->name,
+                'phone' => $company->phone,
+                'email' => $company->email,
+                'description' => $company->description,
+                'logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+                'is_active' => $company->is_active,
+                'created_at' => $company->created_at?->toIso8601String(),
+                'updated_at' => $company->updated_at?->toIso8601String(),
+                'zones' => $company->deliveryZones->map(function ($zone) {
+                    return [
+                        'id' => $zone->id,
+                        'deliverer_company_id' => $zone->deliverer_company_id,
+                        'name' => $zone->name,
+                        'zone_data' => $zone->zone_data,
+                        'center_latitude' => $zone->center_latitude,
+                        'center_longitude' => $zone->center_longitude,
+                        'is_active' => $zone->is_active,
+                        'created_at' => $zone->created_at?->toIso8601String(),
+                        'updated_at' => $zone->updated_at?->toIso8601String(),
+                        'pricelist' => $zone->pricelist ? [
+                            'id' => $zone->pricelist->id,
+                            'delivery_zone_id' => $zone->pricelist->delivery_zone_id,
+                            'pricing_type' => $zone->pricelist->pricing_type,
+                            'pricing_data' => $zone->pricelist->pricing_data,
+                            'is_active' => $zone->pricelist->is_active,
+                            'created_at' => $zone->pricelist->created_at?->toIso8601String(),
+                            'updated_at' => $zone->pricelist->updated_at?->toIso8601String(),
+                        ] : null,
+                    ];
+                }),
+            ];
+        }
+
         return response()->json([
             'success' => true,
+            'company' => $companyData,
             'deliveries' => $deliveries->map(fn($order) => [
                 'id' => $order->id,
                 'order_number' => $order->order_number,

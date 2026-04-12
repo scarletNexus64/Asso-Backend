@@ -455,7 +455,28 @@ class AuthController extends Controller
      */
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+
+        Log::info('[AUTH] ========== LOGOUT ==========', [
+            'user_id' => $user->id,
+            'phone' => $user->phone
+        ]);
+
+        // Supprimer tous les device tokens FCM de l'utilisateur
+        $deletedTokensCount = \App\Models\DeviceToken::where('user_id', $user->id)->delete();
+
+        Log::info('[AUTH] FCM tokens deleted', [
+            'user_id' => $user->id,
+            'count' => $deletedTokensCount
+        ]);
+
+        // Révoquer le token Sanctum actuel
+        $user->currentAccessToken()->delete();
+
+        Log::info('[AUTH] Logout successful', [
+            'user_id' => $user->id,
+            'fcm_tokens_deleted' => $deletedTokensCount
+        ]);
 
         return response()->json([
             'success' => true,

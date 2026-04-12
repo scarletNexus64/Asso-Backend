@@ -81,6 +81,9 @@ Route::prefix('v1')->group(function () {
 
     // Delivery zone availability check (public)
     Route::post('/delivery/check-availability', [DeliveryController::class, 'checkDeliveryAvailability']);
+
+    // Get all delivery partners with their positions (public - for vendor map)
+    Route::get('/delivery/partners', [DeliveryController::class, 'getDeliveryPartners']);
 });
 
 // Payment webhooks (no auth)
@@ -108,6 +111,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Deliverer Sync (requires authentication)
         Route::post('/deliverer/sync-profile', [DelivererSyncController::class, 'syncProfile']);
+        Route::post('/deliverer/unsync-profile', [DelivererSyncController::class, 'unsyncProfile']);
 
         // Favorites
         Route::get('/favorites', [ProductController::class, 'favorites']);

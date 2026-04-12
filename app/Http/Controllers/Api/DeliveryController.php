@@ -240,6 +240,76 @@ class DeliveryController extends Controller
     }
 
     /**
+     * Get all delivery partners (deliverers) with their positions
+     * This is used to display deliverers on the map for vendors
+     */
+    public function getDeliveryPartners(Request $request)
+    {
+        \Log::info('========================================');
+        \Log::info('📍 GET DELIVERY PARTNERS REQUEST');
+        \Log::info('========================================');
+
+        try {
+            // Get all active delivery companies with their zones
+            $deliveryCompanies = \App\Models\DelivererCompany::where('is_active', true)
+                ->whereNotNull('user_id') // Only synced deliverers
+                ->with(['deliveryZones' => function($query) {
+                    $query->where('is_active', true)
+                          ->whereNotNull('center_latitude')
+                          ->whereNotNull('center_longitude');
+                }, 'user'])
+                ->get();
+
+            \Log::info("✅ Found {$deliveryCompanies->count()} active delivery companies");
+
+            // Format the response
+            $deliverers = [];
+            foreach ($deliveryCompanies as $company) {
+                foreach ($company->deliveryZones as $zone) {
+                    $deliverers[] = [
+                        'id' => $company->id,
+                        'name' => $company->name,
+                        'phone' => $company->phone,
+                        'email' => $company->email,
+                        'description' => $company->description,
+                        'logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+                        'zone' => [
+                            'id' => $zone->id,
+                            'name' => $zone->name,
+                            'latitude' => (float) $zone->center_latitude,
+                            'longitude' => (float) $zone->center_longitude,
+                        ],
+                        'user' => $company->user ? [
+                            'id' => $company->user->id,
+                            'name' => $company->user->first_name . ' ' . $company->user->last_name,
+                            'phone' => $company->user->phone,
+                        ] : null,
+                    ];
+                }
+            }
+
+            \Log::info("✅ Returning " . count($deliverers) . " delivery partners with positions");
+            \Log::info('========================================');
+
+            return response()->json([
+                'success' => true,
+                'deliverers' => $deliverers,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('❌ Error fetching delivery partners: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::info('========================================');
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des partenaires de livraison',
+                'deliverers' => [],
+            ], 500);
+        }
+    }
+
+    /**
      * Calculate distance between two coordinates using Haversine formula
      */
     private function calculateDistance($lat1, $lon1, $lat2, $lon2)

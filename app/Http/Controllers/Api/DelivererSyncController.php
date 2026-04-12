@@ -84,8 +84,16 @@ class DelivererSyncController extends Controller
             ], 404);
         }
 
-        // Link the user to the company
-        $company->update(['user_id' => $user->id]);
+        // Link the user to the company and activate it
+        $wasInactive = !$company->is_active;
+        $company->update([
+            'user_id' => $user->id,
+            'is_active' => true, // Activer automatiquement lors de la première sync
+        ]);
+
+        if ($wasInactive) {
+            \Log::info("✅ Deliverer company '{$company->name}' (ID: {$company->id}) has been automatically ACTIVATED during sync");
+        }
 
         // Update user role to add 'livreur' if not already present
         $roles = $user->roles ?? [];
@@ -198,6 +206,87 @@ class DelivererSyncController extends Controller
                 'is_expired' => $syncCode->isExpired(),
                 'expires_at' => $syncCode->expires_at,
                 'user_id' => $syncCode->user_id,
+            ]
+        ]);
+    }
+
+    /**
+     * Unsync deliverer profile
+     * Removes deliverer role and marks sync code as unused
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function unsyncProfile(Request $request)
+    {
+        // Get authenticated user
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Utilisateur non authentifié'
+            ], 401);
+        }
+
+        // Check if user has deliverer role
+        $roles = $user->roles ?? [];
+        if (!in_array('livreur', $roles)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous n\'êtes pas un livreur actif'
+            ], 400);
+        }
+
+        // Find the sync code used by this user
+        $syncCode = DelivererSyncCode::where('user_id', $user->id)
+            ->where('is_used', true)
+            ->first();
+
+        if ($syncCode) {
+            // Mark sync code as unused
+            $syncCode->update([
+                'user_id' => null,
+                'is_used' => false,
+                'used_at' => null,
+            ]);
+
+            \Log::info("🔓 Sync code {$syncCode->sync_code} marked as unused (user {$user->id} unsynced)");
+        }
+
+        // Find and update deliverer company
+        $company = $user->delivererCompany;
+        if ($company) {
+            $company->update([
+                'user_id' => null,
+                'is_active' => false,
+            ]);
+
+            \Log::info("🔒 Deliverer company '{$company->name}' (ID: {$company->id}) deactivated (user {$user->id} unsynced)");
+        }
+
+        // Remove 'livreur' role from user
+        $roles = array_values(array_diff($roles, ['livreur']));
+
+        // Set primary role to the first available role or 'client'
+        $primaryRole = !empty($roles) ? $roles[0] : 'client';
+
+        $user->update([
+            'role' => $primaryRole,
+            'roles' => $roles,
+        ]);
+
+        \Log::info("✅ User {$user->id} unsynced successfully. Role changed from 'livreur' to '{$primaryRole}'");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Désynchronisation réussie. Vous n\'êtes plus livreur.',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'role' => $user->role,
+                    'roles' => $user->roles,
+                ],
             ]
         ]);
     }
