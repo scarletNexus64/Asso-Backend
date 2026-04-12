@@ -21,6 +21,7 @@ class VendorPackage extends Model
         'expires_at',
         'status',
         'payment_reference',
+        'custom_name',
     ];
 
     protected $casts = [

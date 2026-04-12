@@ -19,6 +19,7 @@ class Notification extends Model
         'type',
         'data',
         'is_read',
+        'is_sent',
         'read_at',
         'sent_at',
     ];
@@ -31,6 +32,7 @@ class Notification extends Model
     protected $casts = [
         'data' => 'array',
         'is_read' => 'boolean',
+        'is_sent' => 'boolean',
         'read_at' => 'datetime',
         'sent_at' => 'datetime',
         'created_at' => 'datetime',

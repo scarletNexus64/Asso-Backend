@@ -17,10 +17,12 @@ use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\PackageController;
+use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\VendorProductController;
 use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\DelivererSyncController;
+use App\Http\Controllers\Api\ShopController;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
@@ -79,6 +81,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/banners', [BannerController::class, 'index']);
 
+    // Public shop routes
+    Route::get('/shops/{shopId}', [ShopController::class, 'showPublic']);
+
     // Delivery zone availability check (public)
     Route::post('/delivery/check-availability', [DeliveryController::class, 'checkDeliveryAvailability']);
 
@@ -133,10 +138,21 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/subscribe', [PackageController::class, 'subscribe']);
         });
 
+        // Invoices
+        Route::prefix('invoices')->group(function () {
+            Route::get('/package/{token}', [InvoiceController::class, 'showPackageInvoice']);
+            Route::get('/download/{vendorPackageId}', [InvoiceController::class, 'download'])->name('api.invoices.download');
+        });
+
         // Vendor process
         Route::post('/vendor/apply', [ProfileController::class, 'applyVendor']);
         Route::get('/vendor/dashboard', [ProfileController::class, 'vendorDashboard']);
         Route::get('/vendor/package/current', [PackageController::class, 'currentPackage']);
+
+        // Vendor shop management
+        Route::get('/vendor/shop', [ShopController::class, 'show']);
+        Route::put('/vendor/shop', [ShopController::class, 'update']);
+        Route::get('/vendor/shops', [ShopController::class, 'index']);
 
         // Delivery process
         Route::post('/delivery/apply', [ProfileController::class, 'applyDelivery']);

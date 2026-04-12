@@ -48,6 +48,7 @@ class User extends Authenticatable
         'otp_expires_at',
         'is_profile_complete',
         'preferences',
+        'fcm_token',
     ];
 
     /**

@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Package;
 use App\Models\VendorPackage;
 use App\Services\WalletService;
+use App\Services\InvoiceService;
+use App\Services\InvoiceGenerator;
+use App\Services\FcmService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,10 +17,20 @@ use Illuminate\Support\Str;
 class PackageController extends Controller
 {
     protected WalletService $walletService;
+    protected InvoiceService $invoiceService;
+    protected InvoiceGenerator $invoiceGenerator;
+    protected FcmService $fcmService;
 
-    public function __construct(WalletService $walletService)
-    {
+    public function __construct(
+        WalletService $walletService,
+        InvoiceService $invoiceService,
+        InvoiceGenerator $invoiceGenerator,
+        FcmService $fcmService
+    ) {
         $this->walletService = $walletService;
+        $this->invoiceService = $invoiceService;
+        $this->invoiceGenerator = $invoiceGenerator;
+        $this->fcmService = $fcmService;
     }
 
     /**
@@ -90,22 +103,16 @@ class PackageController extends Controller
             ], 422);
         }
 
-        // Check if user already has an active package
+        // Check if user already has an active package - we'll cumulate it
         $existingPackage = $user->activeVendorPackage;
         if ($existingPackage) {
-            Log::warning("[PackageController] ⚠️ User already has an active package", [
+            Log::info("[PackageController] ℹ️ User has an active package, will cumulate storage and extend expiration", [
                 'user_id' => $user->id,
                 'existing_package_id' => $existingPackage->id,
+                'existing_storage_total' => $existingPackage->storage_total_mb,
+                'new_storage_to_add' => $package->storage_size_mb,
+                'existing_expires_at' => $existingPackage->expires_at,
             ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Vous avez déjà un package actif. Veuillez attendre son expiration avant d\'en souscrire un nouveau.',
-                'existing_package' => [
-                    'name' => $existingPackage->package->name,
-                    'expires_at' => $existingPackage->expires_at->toIso8601String(),
-                ],
-            ], 422);
         }
 
         // Verify user has enough balance in the selected wallet
@@ -162,40 +169,106 @@ class PackageController extends Controller
                 'balance_after' => $walletTransaction->balance_after,
             ]);
 
-            // Create vendor package
-            $vendorPackage = VendorPackage::create([
-                'user_id' => $user->id,
-                'package_id' => $package->id,
-                'storage_total_mb' => $package->storage_size_mb,
-                'storage_used_mb' => 0,
-                'storage_remaining_mb' => $package->storage_size_mb,
-                'purchased_at' => now(),
-                'expires_at' => now()->addDays($package->duration_days),
-                'status' => 'active',
-                'payment_reference' => 'PKG-' . strtoupper(Str::random(10)),
-            ]);
+            // If user has an existing package, cumulate storage and extend expiration
+            if ($existingPackage) {
+                // Calculate new totals
+                $newStorageTotal = $existingPackage->storage_total_mb + $package->storage_size_mb;
+                $newStorageRemaining = $existingPackage->storage_remaining_mb + $package->storage_size_mb;
+
+                // Extend expiration date by adding new package duration
+                $newExpiresAt = $existingPackage->expires_at->addDays($package->duration_days);
+
+                $existingPackage->update([
+                    'storage_total_mb' => $newStorageTotal,
+                    'storage_remaining_mb' => $newStorageRemaining,
+                    'expires_at' => $newExpiresAt,
+                    'package_id' => null, // Set to null for cumulative packages
+                    'custom_name' => 'Espace Cumulé', // Custom name for cumulative packages
+                ]);
+
+                $vendorPackage = $existingPackage;
+
+                Log::info("[PackageController] ✅ Package cumulated successfully", [
+                    'vendor_package_id' => $vendorPackage->id,
+                    'new_storage_total' => $newStorageTotal,
+                    'new_storage_remaining' => $newStorageRemaining,
+                    'new_expires_at' => $newExpiresAt,
+                ]);
+            } else {
+                // Create new vendor package
+                $vendorPackage = VendorPackage::create([
+                    'user_id' => $user->id,
+                    'package_id' => $package->id,
+                    'storage_total_mb' => $package->storage_size_mb,
+                    'storage_used_mb' => 0,
+                    'storage_remaining_mb' => $package->storage_size_mb,
+                    'purchased_at' => now(),
+                    'expires_at' => now()->addDays($package->duration_days),
+                    'status' => 'active',
+                    'payment_reference' => 'PKG-' . strtoupper(Str::random(10)),
+                ]);
+
+                Log::info("[PackageController] 📦 New vendor package created successfully", [
+                    'vendor_package_id' => $vendorPackage->id,
+                    'payment_reference' => $vendorPackage->payment_reference,
+                ]);
+            }
 
             // Update wallet transaction with vendor package reference
             $walletTransaction->update([
                 'reference_id' => $vendorPackage->id,
             ]);
 
-            Log::info("[PackageController] 📦 Vendor package created successfully", [
-                'vendor_package_id' => $vendorPackage->id,
-                'payment_reference' => $vendorPackage->payment_reference,
-            ]);
-
             DB::commit();
 
-            $vendorPackage->load('package');
+            // Reload package relationship if exists (for non-cumulative packages)
+            if ($vendorPackage->package_id) {
+                $vendorPackage->load('package');
+            }
+
+            // Generate invoice URL
+            $invoiceUrl = $this->invoiceGenerator->getInvoiceDownloadUrl($vendorPackage);
 
             Log::info("╔════════════════════════════════════════════════════════════════════╗");
             Log::info("║ [PackageController] ✅ PACKAGE SUBSCRIPTION SUCCESSFUL            ║");
             Log::info("╚════════════════════════════════════════════════════════════════════╝");
+            Log::info("[PackageController] 📄 Invoice URL: {$invoiceUrl}");
+
+            // Send FCM push notification
+            try {
+                $packageName = $vendorPackage->custom_name ?? $package->name ?? 'Package';
+                $this->fcmService->sendPackagePurchaseNotification($user, [
+                    'name' => $packageName,
+                    'storage_total' => $vendorPackage->storage_total_mb . ' MB',
+                    'expires_at' => $vendorPackage->expires_at->format('d/m/Y'),
+                ]);
+                Log::info("[PackageController] 📱 Push notification sent");
+            } catch (\Exception $e) {
+                Log::error("[PackageController] ❌ Failed to send push notification", [
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the request if notification fails
+            }
+
+            // Prepare package data based on whether it's cumulative or not
+            $packageData = $vendorPackage->package_id && $vendorPackage->package
+                ? [
+                    'id' => $vendorPackage->package->id,
+                    'name' => $vendorPackage->package->name,
+                    'price' => (float) $vendorPackage->package->price,
+                    'formatted_price' => $vendorPackage->package->formatted_price,
+                ]
+                : [
+                    'id' => null,
+                    'name' => $vendorPackage->custom_name ?? 'Espace Cumulé',
+                    'price' => (float) $package->price, // Price of the package just purchased
+                    'formatted_price' => $package->formatted_price,
+                ];
 
             return response()->json([
                 'success' => true,
-                'message' => 'Package souscrit avec succès',
+                'message' => $existingPackage ? 'Espace ajouté avec succès à votre package' : 'Package souscrit avec succès',
+                'invoice_url' => $invoiceUrl,
                 'vendor_package' => [
                     'id' => $vendorPackage->id,
                     'storage_total_mb' => (float) $vendorPackage->storage_total_mb,
@@ -206,12 +279,8 @@ class PackageController extends Controller
                     'status' => $vendorPackage->status,
                     'payment_reference' => $vendorPackage->payment_reference,
                     'wallet_type' => $walletType,
-                    'package' => [
-                        'id' => $vendorPackage->package->id,
-                        'name' => $vendorPackage->package->name,
-                        'price' => (float) $vendorPackage->package->price,
-                        'formatted_price' => $vendorPackage->package->formatted_price,
-                    ],
+                    'is_cumulative' => $vendorPackage->package_id === null,
+                    'package' => $packageData,
                 ],
                 'wallet_transaction' => [
                     'id' => $walletTransaction->id,
@@ -253,7 +322,35 @@ class PackageController extends Controller
             ], 404);
         }
 
-        $vendorPackage->load('package');
+        // Load package relationship only if package_id is not null
+        if ($vendorPackage->package_id) {
+            $vendorPackage->load('package');
+        }
+
+        // Prepare package data based on whether it's cumulative or not
+        $packageData = $vendorPackage->package_id && $vendorPackage->package
+            ? [
+                'id' => $vendorPackage->package->id,
+                'name' => $vendorPackage->package->name,
+                'description' => $vendorPackage->package->description,
+                'price' => (float) $vendorPackage->package->price,
+                'formatted_price' => $vendorPackage->package->formatted_price,
+                'duration_days' => $vendorPackage->package->duration_days,
+                'formatted_duration' => $vendorPackage->package->formatted_duration,
+                'storage_size_mb' => $vendorPackage->package->storage_size_mb,
+                'formatted_storage_size' => $vendorPackage->package->formatted_storage_size,
+            ]
+            : [
+                'id' => null,
+                'name' => $vendorPackage->custom_name ?? 'Espace Cumulé',
+                'description' => 'Package personnalisé avec espace cumulé',
+                'price' => null,
+                'formatted_price' => 'Variable',
+                'duration_days' => null,
+                'formatted_duration' => 'Personnalisé',
+                'storage_size_mb' => (float) $vendorPackage->storage_total_mb,
+                'formatted_storage_size' => number_format($vendorPackage->storage_total_mb, 0) . ' MB',
+            ];
 
         return response()->json([
             'success' => true,
@@ -271,17 +368,8 @@ class PackageController extends Controller
                 'days_remaining' => now()->diffInDays($vendorPackage->expires_at, false),
                 'status' => $vendorPackage->status,
                 'payment_reference' => $vendorPackage->payment_reference,
-                'package' => [
-                    'id' => $vendorPackage->package->id,
-                    'name' => $vendorPackage->package->name,
-                    'description' => $vendorPackage->package->description,
-                    'price' => (float) $vendorPackage->package->price,
-                    'formatted_price' => $vendorPackage->package->formatted_price,
-                    'duration_days' => $vendorPackage->package->duration_days,
-                    'formatted_duration' => $vendorPackage->package->formatted_duration,
-                    'storage_size_mb' => $vendorPackage->package->storage_size_mb,
-                    'formatted_storage_size' => $vendorPackage->package->formatted_storage_size,
-                ],
+                'is_cumulative' => $vendorPackage->package_id === null,
+                'package' => $packageData,
             ],
         ]);
     }

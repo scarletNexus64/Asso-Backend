@@ -17,6 +17,8 @@ class Shop extends Model
         'logo',
         'shop_link',
         'address',
+        'phone',
+        'email',
         'latitude',
         'longitude',
         'status',
@@ -25,12 +27,19 @@ class Shop extends Model
         'rejection_reason',
         'rejected_at',
         'rejected_by',
+        'is_certified',
+        'certified_at',
+        'certification_expires_at',
+        'certified_by',
     ];
 
     protected $casts = [
         'categories' => 'array',
         'verified_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'is_certified' => 'boolean',
+        'certified_at' => 'datetime',
+        'certification_expires_at' => 'datetime',
     ];
 
     /**
@@ -150,5 +159,66 @@ class Shop extends Model
     public function rejector(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    /**
+     * Check if shop is certified
+     */
+    public function isCertified(): bool
+    {
+        if (!$this->is_certified) {
+            return false;
+        }
+
+        // Check if certification has expired
+        if ($this->certification_expires_at && $this->certification_expires_at->isPast()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if certification is expiring soon (within 30 days)
+     */
+    public function isCertificationExpiringSoon(): bool
+    {
+        if (!$this->is_certified || !$this->certification_expires_at) {
+            return false;
+        }
+
+        return $this->certification_expires_at->diffInDays(now()) <= 30;
+    }
+
+    /**
+     * Get days until certification expires
+     */
+    public function daysUntilCertificationExpiry(): ?int
+    {
+        if (!$this->is_certified || !$this->certification_expires_at) {
+            return null;
+        }
+
+        return (int) $this->certification_expires_at->diffInDays(now());
+    }
+
+    /**
+     * Get the admin who certified the shop
+     */
+    public function certifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'certified_by');
+    }
+
+    /**
+     * Scope a query to only include certified shops
+     */
+    public function scopeCertified($query)
+    {
+        return $query->where('is_certified', true)
+            ->where(function ($q) {
+                $q->whereNull('certification_expires_at')
+                  ->orWhere('certification_expires_at', '>', now());
+            });
     }
 }

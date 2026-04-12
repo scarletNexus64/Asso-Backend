@@ -37,7 +37,7 @@
     </div>
 
     <!-- Verification Status Alert -->
-    @if($shop->status === 'pending')
+    @if($shop->isPending())
         <div class="mb-6 p-6 bg-orange-900/20 border-l-4 border-orange-500 rounded-lg">
             <div class="flex items-start justify-between">
                 <div class="flex-1">
@@ -67,7 +67,7 @@
         </div>
     @endif
 
-    @if($shop->status === 'rejected')
+    @if($shop->isRejected())
         <div class="mb-6 p-6 bg-red-900/20 border-l-4 border-red-500 rounded-lg">
             <h3 class="text-lg font-semibold text-red-300 mb-2">
                 <i class="fas fa-ban mr-2"></i>
@@ -84,14 +84,14 @@
                     @csrf
                     <button type="submit" class="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all flex items-center gap-2">
                         <i class="fas fa-check-circle"></i>
-                        Vérifier quand même
+                        Vérifier et Activer
                     </button>
                 </form>
             </div>
         </div>
     @endif
 
-    @if($shop->status === 'active' && $shop->verified_at)
+    @if($shop->isVerified() && $shop->status === 'active')
         <div class="mb-6 p-6 bg-green-900/20 border-l-4 border-green-500 rounded-lg">
             <div class="flex items-start justify-between">
                 <div>
@@ -108,6 +108,29 @@
                     <button type="submit" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all text-sm">
                         <i class="fas fa-pause mr-2"></i>
                         Désactiver
+                    </button>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    @if($shop->isVerified() && $shop->status === 'inactive')
+        <div class="mb-6 p-6 bg-blue-900/20 border-l-4 border-blue-500 rounded-lg">
+            <div class="flex items-start justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-blue-300 mb-2">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        Boutique vérifiée mais inactive
+                    </h3>
+                    <p class="text-blue-200 text-sm">
+                        Vérifiée le {{ $shop->verified_at->format('d/m/Y à H:i') }} - Actuellement désactivée
+                    </p>
+                </div>
+                <form action="{{ route('admin.shops.toggleStatus', $shop) }}" method="POST">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all text-sm">
+                        <i class="fas fa-play mr-2"></i>
+                        Activer
                     </button>
                 </form>
             </div>

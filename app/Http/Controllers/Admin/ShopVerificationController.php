@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Shop;
+use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
 
 class ShopVerificationController extends Controller
@@ -26,27 +27,37 @@ class ShopVerificationController extends Controller
             'rejection_reason' => null,
             'rejected_at' => null,
             'rejected_by' => null,
+            'status' => 'active',
         ]);
 
-        // TODO: Send FCM notification to vendor
-        // $fcmService->sendToUser($shop->user, [
-        //     'title' => '🎉 Boutique vérifiée !',
-        //     'body' => "Félicitations ! Votre boutique \"{$shop->name}\" a été vérifiée.",
-        //     'data' => [
-        //         'type' => 'shop_verified',
-        //         'shop_id' => (string) $shop->id,
-        //         'action' => 'open_vendor_dashboard',
-        //     ],
-        // ]);
+        // Send FCM notification to vendor
+        try {
+            $fcmService = app(FirebaseMessagingService::class);
+            $fcmService->sendToUser(
+                $shop->user,
+                'Boutique vérifiée !',
+                "Félicitations ! Votre boutique \"{$shop->name}\" a été vérifiée et activée.",
+                [
+                    'type' => 'shop_verified',
+                    'shop_id' => (string) $shop->id,
+                    'action' => 'open_vendor_dashboard',
+                ]
+            );
 
-        \Log::info("[SHOP_VERIFICATION] Shop verified", [
+            \Log::info("[SHOP_VERIFICATION] FCM notification sent to user {$shop->user_id}");
+        } catch (\Exception $e) {
+            \Log::error("[SHOP_VERIFICATION] Failed to send FCM notification: {$e->getMessage()}");
+        }
+
+        \Log::info("[SHOP_VERIFICATION] Shop verified and activated", [
             'shop_id' => $shop->id,
             'shop_name' => $shop->name,
             'verified_by' => auth()->id(),
+            'status' => 'active',
         ]);
 
         return redirect()->back()
-            ->with('success', "Boutique {$shop->name} vérifiée avec succès !");
+            ->with('success', "Boutique {$shop->name} vérifiée et activée avec succès !");
     }
 
     /**
@@ -66,19 +77,28 @@ class ShopVerificationController extends Controller
             'rejected_by' => auth()->id(),
             'verified_at' => null,
             'verified_by' => null,
+            'status' => 'inactive',
         ]);
 
-        // TODO: Send FCM notification to vendor
-        // $fcmService->sendToUser($shop->user, [
-        //     'title' => '❌ Boutique non vérifiée',
-        //     'body' => "Votre boutique \"{$shop->name}\" n'a pas été approuvée.",
-        //     'data' => [
-        //         'type' => 'shop_rejected',
-        //         'shop_id' => (string) $shop->id,
-        //         'reason' => $request->reason,
-        //         'action' => 'open_vendor_dashboard',
-        //     ],
-        // ]);
+        // Send FCM notification to vendor
+        try {
+            $fcmService = app(FirebaseMessagingService::class);
+            $fcmService->sendToUser(
+                $shop->user,
+                'Boutique non approuvée',
+                "Votre boutique \"{$shop->name}\" n'a pas été approuvée. Raison: {$request->reason}",
+                [
+                    'type' => 'shop_rejected',
+                    'shop_id' => (string) $shop->id,
+                    'reason' => $request->reason,
+                    'action' => 'open_vendor_dashboard',
+                ]
+            );
+
+            \Log::info("[SHOP_VERIFICATION] FCM notification sent to user {$shop->user_id}");
+        } catch (\Exception $e) {
+            \Log::error("[SHOP_VERIFICATION] Failed to send FCM notification: {$e->getMessage()}");
+        }
 
         \Log::info("[SHOP_VERIFICATION] Shop rejected", [
             'shop_id' => $shop->id,
@@ -103,6 +123,39 @@ class ShopVerificationController extends Controller
         $shop->update([
             'status' => $newStatus,
         ]);
+
+        // Send FCM notification to vendor
+        try {
+            $fcmService = app(FirebaseMessagingService::class);
+
+            if ($newStatus === 'active') {
+                $fcmService->sendToUser(
+                    $shop->user,
+                    'Boutique activée',
+                    "Votre boutique \"{$shop->name}\" a été activée par l'administrateur.",
+                    [
+                        'type' => 'shop_activated',
+                        'shop_id' => (string) $shop->id,
+                        'action' => 'open_vendor_dashboard',
+                    ]
+                );
+            } else {
+                $fcmService->sendToUser(
+                    $shop->user,
+                    'Boutique désactivée',
+                    "Votre boutique \"{$shop->name}\" a été désactivée par l'administrateur.",
+                    [
+                        'type' => 'shop_deactivated',
+                        'shop_id' => (string) $shop->id,
+                        'action' => 'open_vendor_dashboard',
+                    ]
+                );
+            }
+
+            \Log::info("[SHOP_STATUS] FCM notification sent to user {$shop->user_id}");
+        } catch (\Exception $e) {
+            \Log::error("[SHOP_STATUS] Failed to send FCM notification: {$e->getMessage()}");
+        }
 
         $message = $newStatus === 'active'
             ? "Boutique {$shop->name} activée"

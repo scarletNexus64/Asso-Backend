@@ -338,19 +338,54 @@ class ProfileController extends Controller
             $activePackage = $user->activeVendorPackage;
             $packageInfo = null;
             if ($activePackage) {
-                $activePackage->load('package');
+                // Load package relationship only if package_id is not null
+                if ($activePackage->package_id) {
+                    $activePackage->load('package');
+                }
+
+                // Prepare package data based on whether it's cumulative or not
+                $packageData = $activePackage->package_id && $activePackage->package
+                    ? [
+                        'id' => $activePackage->package->id,
+                        'name' => $activePackage->package->name,
+                        'description' => $activePackage->package->description,
+                        'price' => (float) $activePackage->package->price,
+                        'formatted_price' => $activePackage->package->formatted_price,
+                        'duration_days' => $activePackage->package->duration_days,
+                        'formatted_duration' => $activePackage->package->formatted_duration,
+                        'storage_size_mb' => $activePackage->package->storage_size_mb,
+                        'formatted_storage_size' => $activePackage->package->formatted_storage_size,
+                    ]
+                    : [
+                        'id' => null,
+                        'name' => $activePackage->custom_name ?? 'Espace Cumulé',
+                        'description' => 'Package personnalisé avec espace cumulé',
+                        'price' => null,
+                        'formatted_price' => 'Variable',
+                        'duration_days' => null,
+                        'formatted_duration' => 'Personnalisé',
+                        'storage_size_mb' => (float) $activePackage->storage_total_mb,
+                        'formatted_storage_size' => number_format($activePackage->storage_total_mb, 0) . ' MB',
+                    ];
+
                 $packageInfo = [
                     'has_package' => true,
-                    'storage_total_mb' => (float) $activePackage->storage_total_mb,
-                    'storage_used_mb' => (float) $activePackage->storage_used_mb,
-                    'storage_remaining_mb' => (float) $activePackage->storage_remaining_mb,
-                    'storage_percentage_used' => $activePackage->storage_total_mb > 0
-                        ? round(($activePackage->storage_used_mb / $activePackage->storage_total_mb) * 100, 2)
-                        : 0,
-                    'expires_at' => $activePackage->expires_at->toIso8601String(),
-                    'days_remaining' => now()->diffInDays($activePackage->expires_at, false),
-                    'package_name' => $activePackage->package->name,
-                    'package_id' => $activePackage->package->id,
+                    'vendor_package' => [
+                        'id' => $activePackage->id,
+                        'storage_total_mb' => (float) $activePackage->storage_total_mb,
+                        'storage_used_mb' => (float) $activePackage->storage_used_mb,
+                        'storage_remaining_mb' => (float) $activePackage->storage_remaining_mb,
+                        'storage_percentage_used' => $activePackage->storage_total_mb > 0
+                            ? round(($activePackage->storage_used_mb / $activePackage->storage_total_mb) * 100, 2)
+                            : 0,
+                        'purchased_at' => $activePackage->purchased_at->toIso8601String(),
+                        'expires_at' => $activePackage->expires_at->toIso8601String(),
+                        'days_remaining' => max(0, now()->diffInDays($activePackage->expires_at, false)),
+                        'status' => $activePackage->status,
+                        'payment_reference' => $activePackage->payment_reference,
+                        'is_cumulative' => $activePackage->package_id === null,
+                        'package' => $packageData,
+                    ],
                 ];
             } else {
                 $packageInfo = ['has_package' => false];
