@@ -37,6 +37,23 @@ class ProfileController extends Controller
                 'account_type' => 'nullable|string|max:50',
             ]);
             \Log::info('[VENDOR_APPLY] Validation passed');
+
+            // Validation supplémentaire pour l'adresse
+            if ($request->filled('shop_address')) {
+                $address = $request->shop_address;
+                // Rejeter les adresses placeholder
+                if (str_contains($address, 'Chargement') ||
+                    str_contains($address, 'Loading') ||
+                    empty(trim($address))) {
+                    \Log::error('[VENDOR_APPLY] Invalid address detected:', [
+                        'address' => $address,
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'L\'adresse fournie est invalide. Veuillez réessayer.',
+                    ], 422);
+                }
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('[VENDOR_APPLY] Validation failed:', [
                 'errors' => $e->errors(),

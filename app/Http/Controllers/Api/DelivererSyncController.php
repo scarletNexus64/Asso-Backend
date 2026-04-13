@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\DelivererSyncCode;
+use App\Models\DelivererCodeSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 class DelivererSyncController extends Controller
 {
@@ -55,22 +57,41 @@ class DelivererSyncController extends Controller
             ], 404);
         }
 
-        // Check if code is already used
-        if ($syncCode->is_used) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Ce code de synchronisation a déjà été utilisé',
-                'used_at' => $syncCode->used_at,
-                'used_by' => $syncCode->user_id
-            ], 400);
-        }
-
         // Check if code is expired
         if ($syncCode->isExpired()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ce code de synchronisation a expiré',
                 'expired_at' => $syncCode->expires_at
+            ], 400);
+        }
+
+        // Check if this user is banned from this code
+        $bannedSync = DelivererCodeSync::where('sync_code_id', $syncCode->id)
+            ->where('user_id', $user->id)
+            ->where('is_banned', true)
+            ->first();
+
+        if ($bannedSync) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous avez été banni de ce code de synchronisation',
+                'banned_at' => $bannedSync->banned_at,
+                'ban_reason' => $bannedSync->ban_reason
+            ], 403);
+        }
+
+        // Check if this user already has an active sync with this code
+        $existingActiveSync = DelivererCodeSync::where('sync_code_id', $syncCode->id)
+            ->where('user_id', $user->id)
+            ->where('is_active', true)
+            ->first();
+
+        if ($existingActiveSync) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous êtes déjà synchronisé avec ce code',
+                'synced_at' => $existingActiveSync->synced_at
             ], 400);
         }
 
@@ -84,40 +105,72 @@ class DelivererSyncController extends Controller
             ], 404);
         }
 
-        // Link the user to the company and activate it
-        $wasInactive = !$company->is_active;
-        $company->update([
-            'user_id' => $user->id,
-            'is_active' => true, // Activer automatiquement lors de la première sync
-        ]);
-
-        if ($wasInactive) {
-            \Log::info("✅ Deliverer company '{$company->name}' (ID: {$company->id}) has been automatically ACTIVATED during sync");
-        }
-
-        // Update user role to add 'livreur' if not already present
-        $roles = $user->roles ?? [];
-        if (!in_array('livreur', $roles)) {
-            $roles[] = 'livreur';
-            $user->update([
-                'role' => 'livreur', // Primary role
-                'roles' => $roles
+        DB::beginTransaction();
+        try {
+            // Create sync record in deliverer_code_syncs table
+            $codeSync = DelivererCodeSync::create([
+                'sync_code_id' => $syncCode->id,
+                'user_id' => $user->id,
+                'company_id' => $company->id,
+                'is_active' => true,
+                'is_banned' => false,
+                'synced_at' => now(),
             ]);
-        }
 
-        // Mark sync code as used and link to user
-        $syncCode->update([
-            'user_id' => $user->id,
-            'is_used' => true,
-            'used_at' => now(),
-        ]);
+            // If this is the first sync for this company, link it to the user
+            if (!$company->user_id) {
+                $company->update([
+                    'user_id' => $user->id,
+                    'is_active' => true,
+                ]);
+                \Log::info("✅ Deliverer company '{$company->name}' (ID: {$company->id}) linked to user {$user->id}");
+            }
 
-        // Add device token if provided
-        if ($request->device_token) {
-            $user->deviceTokens()->updateOrCreate(
-                ['token' => $request->device_token],
-                ['device_type' => $request->device_type ?? 'mobile']
-            );
+            // Activate company if inactive
+            if (!$company->is_active) {
+                $company->update(['is_active' => true]);
+                \Log::info("✅ Deliverer company '{$company->name}' (ID: {$company->id}) has been ACTIVATED");
+            }
+
+            // Update user role to add 'livreur' if not already present
+            $roles = $user->roles ?? [];
+            if (!in_array('livreur', $roles)) {
+                $roles[] = 'livreur';
+                $user->update([
+                    'role' => 'livreur', // Primary role
+                    'roles' => $roles
+                ]);
+            }
+
+            // Mark sync code as used (but don't prevent reuse)
+            // We keep this for backward compatibility
+            if (!$syncCode->is_used) {
+                $syncCode->update([
+                    'user_id' => $user->id,
+                    'is_used' => true,
+                    'used_at' => now(),
+                ]);
+            }
+
+            // Add device token if provided
+            if ($request->device_token) {
+                $user->deviceTokens()->updateOrCreate(
+                    ['token' => $request->device_token],
+                    ['device_type' => $request->device_type ?? 'mobile']
+                );
+            }
+
+            DB::commit();
+
+            \Log::info("✅ User {$user->id} successfully synced with code {$syncCode->sync_code} (Sync ID: {$codeSync->id})");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error("❌ Error syncing user {$user->id} with code {$syncCode->sync_code}: " . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la synchronisation: ' . $e->getMessage()
+            ], 500);
         }
 
         // Reload user with company data

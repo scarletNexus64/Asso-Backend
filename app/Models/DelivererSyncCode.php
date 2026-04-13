@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class DelivererSyncCode extends Model
@@ -43,6 +44,24 @@ class DelivererSyncCode extends Model
     }
 
     /**
+     * Get all syncs for this code
+     */
+    public function codeSyncs(): HasMany
+    {
+        return $this->hasMany(DelivererCodeSync::class, 'sync_code_id');
+    }
+
+    /**
+     * Get active syncs for this code
+     */
+    public function activeSyncs(): HasMany
+    {
+        return $this->hasMany(DelivererCodeSync::class, 'sync_code_id')
+            ->where('is_active', true)
+            ->where('is_banned', false);
+    }
+
+    /**
      * Generate a unique sync code in format: XXXX-XXXX-XXXX (14 chars)
      * Format optimized for WhatsApp template (max 15 chars)
      */
@@ -69,11 +88,12 @@ class DelivererSyncCode extends Model
     }
 
     /**
-     * Check if the code is valid (not used and not expired)
+     * Check if the code is valid (only check expiration, not usage)
+     * With the new multi-sync system, codes can be reused by multiple users
      */
     public function isValid(): bool
     {
-        return !$this->is_used && !$this->isExpired();
+        return !$this->isExpired();
     }
 
     /**

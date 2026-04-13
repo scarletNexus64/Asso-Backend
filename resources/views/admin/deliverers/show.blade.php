@@ -15,6 +15,15 @@
                 </div>
             </div>
             <div class="flex gap-3">
+                <a href="{{ route('admin.deliverers.syncs.company', $deliverer) }}"
+                   class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all">
+                    <i class="fas fa-users mr-2"></i> Synchronisations
+                    @if($deliverer->codeSyncs->count() > 0)
+                        <span class="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                            {{ $deliverer->codeSyncs->count() }}
+                        </span>
+                    @endif
+                </a>
                 <a href="{{ route('admin.deliverers.edit', $deliverer) }}"
                    class="px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all">
                     <i class="fas fa-edit mr-2"></i> Modifier

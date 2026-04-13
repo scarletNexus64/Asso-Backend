@@ -157,6 +157,20 @@ class ShopController extends Controller
             'shop_longitude' => 'sometimes|nullable|numeric|between:-180,180',
         ]);
 
+        // Validation supplémentaire pour l'adresse
+        if (isset($validated['shop_address'])) {
+            $address = $validated['shop_address'];
+            // Rejeter les adresses placeholder
+            if (str_contains($address, 'Chargement') ||
+                str_contains($address, 'Loading') ||
+                empty(trim($address))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'L\'adresse fournie est invalide. Veuillez réessayer.',
+                ], 422);
+            }
+        }
+
         try {
             $updateData = [];
 

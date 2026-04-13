@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\PackageController;
 use App\Http\Controllers\Admin\SupportController;
 use App\Http\Controllers\Admin\AffiliateController;
 use App\Http\Controllers\Admin\DelivererController;
+use App\Http\Controllers\Admin\DelivererSyncManagementController;
 use App\Http\Controllers\Admin\DocumentController;
 use App\Http\Controllers\Admin\DatabaseController;
 use App\Http\Controllers\Admin\VaultController;
@@ -54,6 +55,17 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Deliverers (Livreurs partenaires)
         Route::resource('deliverers', DelivererController::class);
+
+        // Deliverer Sync Management
+        Route::prefix('deliverers/syncs')->name('deliverers.syncs.')->group(function () {
+            Route::get('/code/{syncCode}', [DelivererSyncManagementController::class, 'showCodeSyncs'])->name('code');
+            Route::get('/company/{company}', [DelivererSyncManagementController::class, 'showCompanySyncs'])->name('company');
+            Route::post('/{codeSync}/unsync', [DelivererSyncManagementController::class, 'unsyncUser'])->name('unsync');
+            Route::post('/{codeSync}/reactivate', [DelivererSyncManagementController::class, 'reactivateSync'])->name('reactivate');
+            Route::post('/{codeSync}/ban', [DelivererSyncManagementController::class, 'banUser'])->name('ban');
+            Route::post('/{codeSync}/unban', [DelivererSyncManagementController::class, 'unbanUser'])->name('unban');
+            Route::delete('/{codeSync}', [DelivererSyncManagementController::class, 'deleteSync'])->name('delete');
+        });
 
         // Shops management
         Route::resource('shops', ShopController::class);

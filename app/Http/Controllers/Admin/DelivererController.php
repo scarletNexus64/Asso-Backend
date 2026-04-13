@@ -244,9 +244,16 @@ class DelivererController extends Controller
 
     public function show(DelivererCompany $deliverer)
     {
-        $deliverer->load(['user', 'deliveryZones.pricelist', 'syncCodes' => function($q) {
-            $q->latest();
-        }]);
+        $deliverer->load([
+            'user',
+            'deliveryZones.pricelist',
+            'syncCodes' => function($q) {
+                $q->latest();
+            },
+            'codeSyncs' => function($q) {
+                $q->with(['user', 'syncCode'])->latest();
+            }
+        ]);
 
         return view('admin.deliverers.show', compact('deliverer'));
     }

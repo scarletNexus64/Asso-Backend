@@ -53,4 +53,22 @@ class DelivererCompany extends Model
     {
         return $this->hasMany(DelivererSyncCode::class, 'company_id');
     }
+
+    /**
+     * Get all code syncs (users who synced) for this company
+     */
+    public function codeSyncs(): HasMany
+    {
+        return $this->hasMany(DelivererCodeSync::class, 'company_id');
+    }
+
+    /**
+     * Get active code syncs for this company
+     */
+    public function activeCodeSyncs(): HasMany
+    {
+        return $this->hasMany(DelivererCodeSync::class, 'company_id')
+            ->where('is_active', true)
+            ->where('is_banned', false);
+    }
 }

@@ -27,8 +27,16 @@ class InvoiceGenerator
         $invoiceDate = $vendorPackage->purchased_at->format('d/m/Y');
         $invoiceNumber = 'INV-' . $vendorPackage->payment_reference;
 
-        // Logo path
-        $logoUrl = asset('images/logo.png');
+        // Convert logo to base64 for embedding
+        $logoPath = public_path('images/logo.png');
+        $logoBase64 = '';
+        $logoHtml = '<div class="logo-fallback">A</div>';
+
+        if (file_exists($logoPath)) {
+            $logoData = base64_encode(file_get_contents($logoPath));
+            $logoBase64 = 'data:image/png;base64,' . $logoData;
+            $logoHtml = '<img src="' . $logoBase64 . '" alt="ASSO Logo" class="logo">';
+        }
 
         return <<<HTML
 <!DOCTYPE html>
@@ -47,18 +55,18 @@ class InvoiceGenerator
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             color: #1a1a1a;
-            line-height: 1.5;
+            line-height: 1.6;
             padding: 20px;
-            background: #f8f9fa;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
 
         .invoice-container {
-            max-width: 700px;
+            max-width: 800px;
             margin: 0 auto;
             background: white;
-            padding: 40px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-            border-radius: 8px;
+            padding: 50px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            border-radius: 12px;
         }
 
         @media (max-width: 768px) {
@@ -76,8 +84,12 @@ class InvoiceGenerator
             justify-content: space-between;
             align-items: center;
             margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #F58A3A;
+            padding-bottom: 25px;
+            border-bottom: 3px solid #F58A3A;
+            background: linear-gradient(to right, rgba(245, 138, 58, 0.05), transparent);
+            padding: 20px;
+            border-radius: 8px;
+            margin: -20px -20px 40px -20px;
         }
 
         .logo-section {
@@ -87,6 +99,12 @@ class InvoiceGenerator
         }
 
         .logo {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .logo-fallback {
             width: 50px;
             height: 50px;
             background: #F58A3A;
@@ -100,15 +118,17 @@ class InvoiceGenerator
         }
 
         .company-info h1 {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1a1a1a;
-            margin-bottom: 2px;
+            font-size: 28px;
+            font-weight: 800;
+            color: #F58A3A;
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
         }
 
         .company-info p {
-            font-size: 12px;
+            font-size: 13px;
             color: #6c757d;
+            font-weight: 500;
         }
 
         .invoice-info {
@@ -151,10 +171,11 @@ class InvoiceGenerator
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 30px;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 6px;
+            margin-bottom: 35px;
+            padding: 25px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
         }
 
         .detail-block h3 {
@@ -184,29 +205,38 @@ class InvoiceGenerator
             }
         }
 
+        /* Table Container */
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            margin-bottom: 30px;
+            -webkit-overflow-scrolling: touch;
+        }
+
         /* Table */
         .items-table {
             width: 100%;
+            min-width: 500px;
             border-collapse: separate;
             border-spacing: 0;
-            margin-bottom: 25px;
-            border: 1px solid #e9ecef;
-            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
             overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
 
         .items-table thead {
-            background: #F58A3A;
+            background: linear-gradient(135deg, #F58A3A 0%, #e67a2a 100%);
             color: white;
         }
 
         .items-table th {
-            padding: 12px 15px;
+            padding: 15px 18px;
             text-align: left;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 12px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
         }
 
         .items-table tbody tr {
@@ -231,37 +261,47 @@ class InvoiceGenerator
 
         @media (max-width: 600px) {
             .items-table {
-                font-size: 12px;
+                font-size: 11px;
+                min-width: 450px;
             }
             .items-table th,
             .items-table td {
-                padding: 10px;
+                padding: 8px;
+            }
+            .items-table th {
+                font-size: 10px;
+            }
+            .items-table .description {
+                font-size: 10px;
             }
         }
 
         /* Totals */
         .totals {
             margin-left: auto;
-            width: 280px;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 6px;
+            width: 320px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 25px;
+            border-radius: 10px;
+            border: 2px solid #dee2e6;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         }
 
         .total-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
-            font-size: 13px;
+            padding: 10px 0;
+            font-size: 14px;
             color: #495057;
+            font-weight: 500;
         }
 
         .total-row.grand-total {
-            border-top: 2px solid #F58A3A;
-            margin-top: 12px;
-            padding-top: 12px;
-            font-size: 18px;
-            font-weight: 700;
+            border-top: 3px solid #F58A3A;
+            margin-top: 15px;
+            padding-top: 15px;
+            font-size: 20px;
+            font-weight: 800;
             color: #F58A3A;
         }
 
@@ -284,12 +324,14 @@ class InvoiceGenerator
             display: inline-block;
             background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
             color: white;
-            padding: 10px 24px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .footer-note {
@@ -373,7 +415,7 @@ class InvoiceGenerator
         <!-- Header -->
         <div class="header">
             <div class="logo-section">
-                <div class="logo">A</div>
+                {$logoHtml}
                 <div class="company-info">
                     <h1>ASSO</h1>
                     <p>Plateforme de Commerce Digital</p>
@@ -403,28 +445,30 @@ class InvoiceGenerator
         </div>
 
         <!-- Items Table -->
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th>Description</th>
-                    <th>Quantité</th>
-                    <th style="text-align: right;">Prix unitaire</th>
-                    <th style="text-align: right;">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>
-                        <strong>{$packageName}</strong>
-                        <div class="description">Package de stockage - {$packageStorage}</div>
-                        <div class="description">Valide jusqu'au {$vendorPackage->expires_at->format('d/m/Y')}</div>
-                    </td>
-                    <td>1</td>
-                    <td style="text-align: right;">{$packagePrice}</td>
-                    <td style="text-align: right;"><strong>{$packagePrice}</strong></td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="table-wrapper">
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th>Quantité</th>
+                        <th style="text-align: right;">Prix unitaire</th>
+                        <th style="text-align: right;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <strong>{$packageName}</strong>
+                            <div class="description">Package de stockage - {$packageStorage}</div>
+                            <div class="description">Valide jusqu'au {$vendorPackage->expires_at->format('d/m/Y')}</div>
+                        </td>
+                        <td>1</td>
+                        <td style="text-align: right;">{$packagePrice}</td>
+                        <td style="text-align: right;"><strong>{$packagePrice}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
         <!-- Totals -->
         <div class="totals">
@@ -474,10 +518,47 @@ class InvoiceGenerator
     </div>
 
     <script>
-        function downloadPDF() {
-            // Use browser's print-to-PDF functionality
+        async function downloadPDF() {
+            // Check if FlutterChannel is available (WebView from Flutter app)
+            if (typeof FlutterChannel !== 'undefined') {
+                try {
+                    FlutterChannel.postMessage(JSON.stringify({
+                        action: 'downloadInvoice',
+                        url: window.location.href
+                    }));
+                    return;
+                } catch (err) {
+                    console.log('Flutter channel not available:', err);
+                }
+            }
+
+            // Check if we're in a mobile environment
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            if (isMobile && navigator.share) {
+                try {
+                    await navigator.share({
+                        title: document.title,
+                        text: 'Voici votre facture ASSO',
+                        url: window.location.href
+                    });
+                    return;
+                } catch (err) {
+                    console.log('Share cancelled or failed:', err);
+                }
+            }
+
+            // Fallback: use print dialog
             window.print();
         }
+
+        // Add keyboard shortcut for print
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+            }
+        });
     </script>
 </body>
 </html>
