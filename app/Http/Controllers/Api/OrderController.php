@@ -24,7 +24,7 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::with(['items.product.primaryImage', 'items.product.images', 'deliveryPerson', 'deliveryCompany'])
+        $query = Order::with(['items.product.primaryImage', 'items.product.images', 'deliveryPerson', 'deliveryCompany', 'rating'])
             ->where('user_id', $request->user()->id);
 
         // Filter by status
@@ -162,6 +162,68 @@ class OrderController extends Controller
     }
 
     /**
+     * Rate a delivered order
+     *
+     * POST /api/v1/orders/{id}/rate
+     */
+    public function rate(Request $request, $id)
+    {
+        $request->validate([
+            'rating' => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:1000',
+        ]);
+
+        $order = Order::where('user_id', $request->user()->id)
+            ->where('status', 'delivered')
+            ->whereNull('rated_at')
+            ->findOrFail($id);
+
+        try {
+            DB::transaction(function () use ($request, $order) {
+                \App\Models\OrderRating::create([
+                    'order_id' => $order->id,
+                    'user_id' => $request->user()->id,
+                    'rating' => $request->rating,
+                    'comment' => $request->comment,
+                ]);
+
+                $order->update(['rated_at' => now()]);
+
+                // FCM au vendeur
+                $sellerIds = $order->items()->pluck('seller_id')->unique();
+                $fcm = app(\App\Services\FirebaseMessagingService::class);
+
+                foreach ($sellerIds as $sellerId) {
+                    $seller = \App\Models\User::find($sellerId);
+                    if ($seller) {
+                        $stars = str_repeat('★', $request->rating) . str_repeat('☆', 5 - $request->rating);
+                        $fcm->sendToUser(
+                            $seller,
+                            'Nouvelle note reçue',
+                            "Commande #{$order->order_number} notée {$stars}",
+                            [
+                                'type' => 'order_rated',
+                                'order_id' => (string) $order->id,
+                                'rating' => (string) $request->rating,
+                            ]
+                        );
+                    }
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Merci pour votre note !',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
      * Format order for API response
      */
     private function formatOrder($order, $detailed = false): array
@@ -190,6 +252,11 @@ class OrderController extends Controller
                 'total_price' => (float) $item->total_price,
             ]),
             'items_count' => $order->items->count(),
+            'rated_at' => $order->rated_at?->toIso8601String(),
+            'can_rate' => $order->status === 'delivered' && $order->rated_at === null,
+            'rating' => $order->relationLoaded('rating') && $order->rating
+                ? ['rating' => $order->rating->rating, 'comment' => $order->rating->comment]
+                : null,
             'created_at' => $order->created_at->toIso8601String(),
         ];
 
