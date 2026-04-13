@@ -5,11 +5,24 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Models\DelivererCodeSync;
+use App\Services\WalletService;
+use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VendorOrderController extends Controller
 {
+    protected WalletService $walletService;
+    protected FirebaseMessagingService $fcmService;
+
+    public function __construct(WalletService $walletService, FirebaseMessagingService $fcmService)
+    {
+        $this->walletService = $walletService;
+        $this->fcmService = $fcmService;
+    }
+
     /**
      * List orders for vendor (orders containing their products)
      */
@@ -47,56 +60,186 @@ class VendorOrderController extends Controller
 
     /**
      * Validate (confirm) an order
+     *
+     * Flow :
+     * 1. Passe la commande en "confirmed"
+     * 2. Crédite le wallet vendeur avec fonds BLOQUÉS (escrow) — il ne peut pas retirer
+     * 3. Envoie FCM au client ("Commande validée, en cours de livraison")
+     * 4. Envoie FCM au livreur ("Nouvelle livraison à effectuer")
      */
     public function validate(Request $request, $id)
     {
-        $user = $request->user();
-        $order = $this->getVendorOrder($user, $id);
+        $vendor = $request->user();
+        $order = $this->getVendorOrder($vendor, $id);
 
         if ($order->status !== 'pending') {
             return response()->json(['success' => false, 'message' => 'Cette commande ne peut plus être validée'], 422);
         }
 
-        $order->update([
-            'status' => 'confirmed',
-            'confirmed_at' => now(),
-        ]);
+        try {
+            DB::transaction(function () use ($vendor, $order) {
+                // 1. Confirmer la commande
+                $order->update([
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Commande validée',
-            'order' => $this->formatVendorOrder($order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson']), $user->id),
-        ]);
+                // 2. Déterminer le wallet provider depuis le payment_method
+                $walletProvider = str_replace('wallet_', '', $order->payment_method);
+                if (!in_array($walletProvider, ['freemopay', 'paypal'])) {
+                    $walletProvider = 'freemopay';
+                }
+
+                // 3. Créditer le vendeur avec fonds BLOQUÉS (escrow)
+                // Le vendeur reçoit le subtotal (hors frais de livraison), mais bloqué
+                $vendorAmount = (float) $order->subtotal;
+
+                // Créditer puis bloquer immédiatement
+                $this->walletService->credit(
+                    $vendor,
+                    $vendorAmount,
+                    null,
+                    "Vente commande #{$order->order_number} (en attente livraison)",
+                    ['order_id' => $order->id, 'escrow' => true],
+                    $walletProvider
+                );
+
+                $this->walletService->lockFunds(
+                    $vendor,
+                    $vendorAmount,
+                    "Escrow vente #{$order->order_number} — fonds bloqués jusqu'à livraison",
+                    'order',
+                    $order->id,
+                    [],
+                    $walletProvider
+                );
+
+                // 4. Notifications FCM
+
+                // Au client
+                $client = $order->user;
+                if ($client) {
+                    $this->fcmService->sendToUser(
+                        $client,
+                        'Commande validée !',
+                        "Votre commande #{$order->order_number} a été acceptée par le vendeur. En attente du livreur.",
+                        [
+                            'type' => 'order_confirmed',
+                            'order_id' => (string) $order->id,
+                            'order_number' => $order->order_number,
+                        ]
+                    );
+                }
+
+                // Au livreur (via la delivery company assignée)
+                $this->notifyDeliveryCompany($order);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Commande validée. Fonds crédités et bloqués en attente de livraison.',
+                'order' => $this->formatVendorOrder(
+                    $order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany']),
+                    $vendor->id
+                ),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("[VendorOrderController] Erreur validation commande: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
      * Reject an order
+     *
+     * Flow :
+     * 1. Annule la commande
+     * 2. Débloque les fonds du client (escrow)
+     * 3. Envoie FCM au client ("Commande refusée, fonds restitués")
      */
     public function reject(Request $request, $id)
     {
         $request->validate(['reason' => 'nullable|string|max:500']);
 
-        $user = $request->user();
-        $order = $this->getVendorOrder($user, $id);
+        $vendor = $request->user();
+        $order = $this->getVendorOrder($vendor, $id);
 
-        if (!in_array($order->status, ['pending', 'confirmed'])) {
+        if (!in_array($order->status, ['pending'])) {
             return response()->json(['success' => false, 'message' => 'Cette commande ne peut plus être refusée'], 422);
         }
 
-        $order->update([
-            'status' => 'cancelled',
-            'cancel_reason' => $request->reason ?? 'Refusée par le vendeur',
-            'cancelled_at' => now(),
-        ]);
+        try {
+            DB::transaction(function () use ($request, $order) {
+                $cancelReason = $request->reason ?? 'Refusée par le vendeur';
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Commande refusée',
-        ]);
+                // 1. Annuler la commande
+                $order->update([
+                    'status' => 'cancelled',
+                    'cancel_reason' => $cancelReason,
+                    'cancelled_at' => now(),
+                ]);
+
+                // 2. Débloquer les fonds du client
+                $walletProvider = str_replace('wallet_', '', $order->payment_method);
+                if (in_array($walletProvider, ['freemopay', 'paypal'])) {
+                    $client = $order->user;
+                    if ($client) {
+                        $this->walletService->unlockFunds(
+                            $client,
+                            (float) $order->total,
+                            "Remboursement commande #{$order->order_number} — refusée par vendeur",
+                            'order',
+                            $order->id,
+                            ['cancel_reason' => $cancelReason],
+                            $walletProvider
+                        );
+                    }
+                }
+
+                // 3. Restaurer le stock
+                foreach ($order->items as $item) {
+                    if ($item->product && $item->product->stock !== null) {
+                        $item->product->increment('stock', $item->quantity);
+                    }
+                }
+
+                // 4. Notification au client
+                $client = $order->user;
+                if ($client) {
+                    $this->fcmService->sendToUser(
+                        $client,
+                        'Commande refusée',
+                        "Votre commande #{$order->order_number} a été refusée. Vos fonds ont été débloqués.",
+                        [
+                            'type' => 'order_rejected',
+                            'order_id' => (string) $order->id,
+                            'order_number' => $order->order_number,
+                            'reason' => $cancelReason,
+                        ]
+                    );
+                }
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Commande refusée. Fonds du client débloqués.',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("[VendorOrderController] Erreur rejet commande: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
-     * Assign a delivery person to an order
+     * Assign a delivery person to an order and notify them
      */
     public function assignDelivery(Request $request, $id)
     {
@@ -125,9 +268,23 @@ class VendorOrderController extends Controller
             'status' => 'preparing',
         ]);
 
+        // Notification au livreur
+        $this->fcmService->sendToUser(
+            $deliveryPerson,
+            'Nouvelle livraison assignée',
+            "Commande #{$order->order_number} — Livraison vers {$order->delivery_address}. Frais: " . number_format($order->delivery_fee, 0, ',', ' ') . " FCFA",
+            [
+                'type' => 'delivery_assigned',
+                'order_id' => (string) $order->id,
+                'order_number' => $order->order_number,
+                'delivery_fee' => (string) $order->delivery_fee,
+                'delivery_address' => $order->delivery_address,
+            ]
+        );
+
         return response()->json([
             'success' => true,
-            'message' => 'Livreur assigné',
+            'message' => 'Livreur assigné et notifié',
             'delivery_person' => [
                 'id' => $deliveryPerson->id,
                 'name' => $deliveryPerson->name,
@@ -157,6 +314,42 @@ class VendorOrderController extends Controller
                 'longitude' => $dp->longitude,
             ]),
         ]);
+    }
+
+    /**
+     * Notifie les livreurs de la delivery company assignée à la commande.
+     * Envoie une notification à tous les livreurs synchronisés et actifs de cette company.
+     */
+    private function notifyDeliveryCompany(Order $order): void
+    {
+        if (!$order->delivery_company_id) return;
+
+        // Récupérer tous les livreurs actifs synchronisés à cette company
+        $activeSyncs = DelivererCodeSync::where('company_id', $order->delivery_company_id)
+            ->active()
+            ->with('user')
+            ->get();
+
+        foreach ($activeSyncs as $sync) {
+            if ($sync->user) {
+                $this->fcmService->sendToUser(
+                    $sync->user,
+                    'Nouvelle livraison disponible',
+                    "Commande #{$order->order_number} — Livraison vers {$order->delivery_address}. Commission: " . number_format($order->delivery_fee, 0, ',', ' ') . " FCFA",
+                    [
+                        'type' => 'new_delivery_request',
+                        'order_id' => (string) $order->id,
+                        'order_number' => $order->order_number,
+                        'delivery_fee' => (string) $order->delivery_fee,
+                        'delivery_address' => $order->delivery_address,
+                        'delivery_latitude' => (string) ($order->delivery_latitude ?? ''),
+                        'delivery_longitude' => (string) ($order->delivery_longitude ?? ''),
+                    ]
+                );
+            }
+        }
+
+        Log::info("[VendorOrderController] Notified {$activeSyncs->count()} deliverers for order #{$order->order_number}");
     }
 
     /**
