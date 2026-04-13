@@ -3,10 +3,18 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Services\OrderService;
 use Illuminate\Http\Request;
 
 class DeliveryController extends Controller
 {
+    protected OrderService $orderService;
+
+    public function __construct(OrderService $orderService)
+    {
+        $this->orderService = $orderService;
+    }
+
     /**
      * Get pending delivery requests for this delivery person
      */
@@ -240,19 +248,36 @@ class DeliveryController extends Controller
     }
 
     /**
-     * Get all delivery partners (deliverers) with their positions
-     * This is used to display deliverers on the map for vendors
+     * Get all delivery partners with calculated delivery prices.
+     * If product_id is provided, calculates price based on the company's pricing type
+     * (fixed, weight_category, or volumetric_weight).
+     *
+     * GET /v1/delivery/partners?product_id=X&latitude=Y&longitude=Z
      */
     public function getDeliveryPartners(Request $request)
     {
-        \Log::info('========================================');
-        \Log::info('📍 GET DELIVERY PARTNERS REQUEST');
-        \Log::info('========================================');
-
         try {
-            // Get all active delivery companies with their zones
+            $productId = $request->input('product_id');
+            $latitude = $request->input('latitude');
+            $longitude = $request->input('longitude');
+
+            // Si product_id fourni, retourner les partenaires avec prix calculé
+            if ($productId) {
+                $partners = $this->orderService->getDeliveryPartnersWithPricing(
+                    (int) $productId,
+                    $latitude ? (float) $latitude : null,
+                    $longitude ? (float) $longitude : null
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'partners' => $partners,
+                    'total' => count($partners),
+                ]);
+            }
+
+            // Sans product_id : retourner la liste simple (legacy)
             $deliveryCompanies = \App\Models\DelivererCompany::where('is_active', true)
-                ->whereNotNull('user_id') // Only synced deliverers
                 ->with(['deliveryZones' => function($query) {
                     $query->where('is_active', true)
                           ->whereNotNull('center_latitude')
@@ -260,9 +285,6 @@ class DeliveryController extends Controller
                 }, 'user'])
                 ->get();
 
-            \Log::info("✅ Found {$deliveryCompanies->count()} active delivery companies");
-
-            // Format the response
             $deliverers = [];
             foreach ($deliveryCompanies as $company) {
                 foreach ($company->deliveryZones as $zone) {
@@ -288,23 +310,17 @@ class DeliveryController extends Controller
                 }
             }
 
-            \Log::info("✅ Returning " . count($deliverers) . " delivery partners with positions");
-            \Log::info('========================================');
-
             return response()->json([
                 'success' => true,
                 'deliverers' => $deliverers,
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('❌ Error fetching delivery partners: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            \Log::info('========================================');
+            \Log::error('[DeliveryController] Error fetching delivery partners: ' . $e->getMessage());
 
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la récupération des partenaires de livraison',
-                'deliverers' => [],
             ], 500);
         }
     }
