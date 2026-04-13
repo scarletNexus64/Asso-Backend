@@ -8,6 +8,7 @@ use App\Services\InvoiceService;
 use App\Services\InvoiceGenerator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoiceController extends Controller
 {
@@ -66,7 +67,7 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Download invoice HTML for a vendor package (authenticated)
+     * View invoice HTML for a vendor package (authenticated)
      */
     public function download(Request $request, $vendorPackageId)
     {
@@ -84,16 +85,16 @@ class InvoiceController extends Controller
                 ], 403);
             }
 
-            Log::info('[INVOICE] Generating invoice', [
+            Log::info('[INVOICE] Generating invoice HTML', [
                 'vendor_package_id' => $vendorPackage->id,
                 'user_id' => $user->id,
             ]);
 
             $html = $this->invoiceGenerator->generateInvoiceHtml($vendorPackage);
 
+            // Return HTML for WebView display
             return response($html)
-                ->header('Content-Type', 'text/html; charset=UTF-8')
-                ->header('Content-Disposition', 'inline; filename="facture-' . $vendorPackage->payment_reference . '.html"');
+                ->header('Content-Type', 'text/html; charset=UTF-8');
 
         } catch (\Exception $e) {
             Log::error('[INVOICE] Error generating invoice', [
@@ -104,6 +105,73 @@ class InvoiceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la génération de la facture',
+            ], 500);
+        }
+    }
+
+    /**
+     * Download invoice PDF for a vendor package (authenticated)
+     */
+    public function downloadPdf(Request $request, $vendorPackageId)
+    {
+        $user = $request->user();
+
+        Log::info('[INVOICE] 📥 PDF Download request received', [
+            'vendor_package_id' => $vendorPackageId,
+            'user_id' => $user->id,
+        ]);
+
+        try {
+            // Find vendor package
+            $vendorPackage = VendorPackage::findOrFail($vendorPackageId);
+
+            // Ensure user owns this package
+            if ($vendorPackage->user_id !== $user->id) {
+                Log::warning('[INVOICE] ⚠️ Unauthorized access attempt', [
+                    'vendor_package_id' => $vendorPackageId,
+                    'user_id' => $user->id,
+                    'package_owner_id' => $vendorPackage->user_id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Accès non autorisé à cette facture',
+                ], 403);
+            }
+
+            Log::info('[INVOICE] 📄 Generating invoice PDF', [
+                'vendor_package_id' => $vendorPackage->id,
+                'user_id' => $user->id,
+            ]);
+
+            $html = $this->invoiceGenerator->generateInvoiceHtml($vendorPackage);
+
+            Log::info('[INVOICE] 🔧 HTML generated, creating PDF...');
+
+            // Generate PDF from HTML
+            $pdf = Pdf::loadHTML($html)
+                ->setPaper('a4', 'portrait')
+                ->setOption('isHtml5ParserEnabled', true)
+                ->setOption('isRemoteEnabled', true);
+
+            $filename = 'facture-' . $vendorPackage->payment_reference . '.pdf';
+
+            Log::info('[INVOICE] ✅ PDF generated successfully', [
+                'filename' => $filename,
+            ]);
+
+            return $pdf->download($filename);
+
+        } catch (\Exception $e) {
+            Log::error('[INVOICE] ❌ Error generating invoice PDF', [
+                'vendor_package_id' => $vendorPackageId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la génération de la facture: ' . $e->getMessage(),
             ], 500);
         }
     }

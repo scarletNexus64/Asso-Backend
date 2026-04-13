@@ -135,6 +135,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Packages
         Route::prefix('packages')->group(function () {
             Route::get('/', [PackageController::class, 'index']);
+            Route::get('/certification', [PackageController::class, 'certificationPackages']);
             Route::post('/subscribe', [PackageController::class, 'subscribe']);
         });
 
@@ -142,6 +143,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('invoices')->group(function () {
             Route::get('/package/{token}', [InvoiceController::class, 'showPackageInvoice']);
             Route::get('/download/{vendorPackageId}', [InvoiceController::class, 'download'])->name('api.invoices.download');
+            Route::get('/pdf/{vendorPackageId}', [InvoiceController::class, 'downloadPdf'])->name('api.invoices.pdf');
         });
 
         // Vendor process
