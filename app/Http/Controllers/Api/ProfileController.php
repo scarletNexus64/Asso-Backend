@@ -440,6 +440,13 @@ class ProfileController extends Controller
                         'rating' => $averageRating,
                     ],
                     'package' => $packageInfo,
+                    'certification' => [
+                        'is_certified' => $shop->isCertified(),
+                        'certified_at' => $shop->certified_at?->toIso8601String(),
+                        'certification_expires_at' => $shop->certification_expires_at?->toIso8601String(),
+                        'is_expiring_soon' => $shop->isCertificationExpiringSoon(),
+                        'days_until_expiry' => $shop->daysUntilCertificationExpiry(),
+                    ],
                     'verification' => [
                         'status' => $shop->status,
                         'message' => $this->getVerificationMessage($shop->status, $shop->rejection_reason),

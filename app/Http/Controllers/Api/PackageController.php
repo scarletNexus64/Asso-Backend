@@ -248,7 +248,7 @@ class PackageController extends Controller
 
             // If this is a certification package, activate shop certification
             if ($package->type === 'certification') {
-                $shop = $user->shop;
+                $shop = $user->shops()->first();
 
                 if ($shop) {
                     $expiresAt = now()->addDays($package->duration_days);
