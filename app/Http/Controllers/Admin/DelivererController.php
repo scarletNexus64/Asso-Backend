@@ -61,35 +61,59 @@ class DelivererController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            // Company info (used for user creation)
-            'company_name' => 'required|string|max:255',
-            'company_phone' => 'required|string|max:20',
-            'company_email' => 'required|email|unique:deliverer_companies,email',
-            'company_description' => 'nullable|string',
-            'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
-
-            // Delivery zones (JSON array)
-            'delivery_zones' => 'required|array|min:1',
-            'delivery_zones.*.name' => 'required|string|max:255',
-            'delivery_zones.*.center_latitude' => 'required|numeric|between:-90,90',
-            'delivery_zones.*.center_longitude' => 'required|numeric|between:-180,180',
-
-            // Pricelists for each zone
-            'delivery_zones.*.pricing_type' => 'required|in:fixed,weight_category,volumetric_weight',
-            'delivery_zones.*.pricing_data' => 'required|array',
-
-            // Notification preferences (only email is supported)
-            'send_code_via' => 'required|in:email',
+        Log::info('[DELIVERER_STORE] ========== DEBUT CREATION ENTREPRISE ==========');
+        Log::info('[DELIVERER_STORE] Données reçues', [
+            'company_name' => $request->input('company_name'),
+            'company_email' => $request->input('company_email'),
+            'company_phone' => $request->input('company_phone'),
+            'has_logo' => $request->hasFile('company_logo'),
+            'send_code_via' => $request->input('send_code_via'),
+            'delivery_zones_count' => is_array($request->input('delivery_zones')) ? count($request->input('delivery_zones')) : 'NOT_ARRAY',
+            'delivery_zones_raw' => $request->input('delivery_zones'),
         ]);
 
         try {
+            $validated = $request->validate([
+                // Company info (used for user creation)
+                'company_name' => 'required|string|max:255',
+                'company_phone' => 'required|string|max:20',
+                'company_email' => 'required|email|unique:deliverer_companies,email',
+                'company_description' => 'nullable|string',
+                'company_logo' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp,ico,bmp,tiff,tif,avif|max:5120',
+
+                // Delivery zones (JSON array)
+                'delivery_zones' => 'required|array|min:1',
+                'delivery_zones.*.name' => 'required|string|max:255',
+                'delivery_zones.*.center_latitude' => 'required|numeric|between:-90,90',
+                'delivery_zones.*.center_longitude' => 'required|numeric|between:-180,180',
+
+                // Pricelists for each zone
+                'delivery_zones.*.pricing_type' => 'required|in:fixed,weight_category,volumetric_weight',
+                'delivery_zones.*.pricing_data' => 'required|array',
+
+                // Notification preferences (only email is supported)
+                'send_code_via' => 'required|in:email',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $ve) {
+            Log::error('[DELIVERER_STORE] VALIDATION ECHOUEE', [
+                'errors' => $ve->errors(),
+                'input_keys' => array_keys($request->all()),
+                'delivery_zones_raw' => $request->input('delivery_zones'),
+            ]);
+            throw $ve;
+        }
+
+        Log::info('[DELIVERER_STORE] Validation OK', ['validated_keys' => array_keys($validated)]);
+
+        try {
             DB::beginTransaction();
+            Log::info('[DELIVERER_STORE] Transaction démarrée');
 
             // 1. Handle company logo upload
             $logoPath = null;
             if ($request->hasFile('company_logo')) {
                 $logoPath = $request->file('company_logo')->store('deliverer_companies', 'public');
+                Log::info('[DELIVERER_STORE] Logo uploadé', ['path' => $logoPath]);
             }
 
             // 2. Create deliverer company (WITHOUT user - will be linked during sync)
@@ -101,9 +125,18 @@ class DelivererController extends Controller
                 'description' => $validated['company_description'] ?? null,
                 'logo' => $logoPath,
             ]);
+            Log::info('[DELIVERER_STORE] Entreprise créée', ['company_id' => $company->id, 'name' => $company->name]);
 
             // 4. Create delivery zones and pricelists
-            foreach ($validated['delivery_zones'] as $zoneData) {
+            foreach ($validated['delivery_zones'] as $index => $zoneData) {
+                Log::info("[DELIVERER_STORE] Création zone #{$index}", [
+                    'name' => $zoneData['name'],
+                    'lat' => $zoneData['center_latitude'],
+                    'lng' => $zoneData['center_longitude'],
+                    'pricing_type' => $zoneData['pricing_type'],
+                    'pricing_data' => $zoneData['pricing_data'],
+                ]);
+
                 $zone = DeliveryZone::create([
                     'deliverer_company_id' => $company->id,
                     'name' => $zoneData['name'],
@@ -111,12 +144,14 @@ class DelivererController extends Controller
                     'center_latitude' => $zoneData['center_latitude'],
                     'center_longitude' => $zoneData['center_longitude'],
                 ]);
+                Log::info("[DELIVERER_STORE] Zone créée", ['zone_id' => $zone->id]);
 
-                DeliveryPricelist::create([
+                $pricelist = DeliveryPricelist::create([
                     'delivery_zone_id' => $zone->id,
                     'pricing_type' => $zoneData['pricing_type'],
                     'pricing_data' => $zoneData['pricing_data'],
                 ]);
+                Log::info("[DELIVERER_STORE] Pricelist créée", ['pricelist_id' => $pricelist->id]);
             }
 
             // 3. Generate sync code (without user - will be linked during sync)
@@ -131,8 +166,10 @@ class DelivererController extends Controller
                 'sent_at' => now(),
                 'expires_at' => $expiresAt,
             ]);
+            Log::info('[DELIVERER_STORE] Sync code créé', ['sync_code' => $syncCode, 'sync_id' => $delivererSyncCode->id]);
 
             DB::commit();
+            Log::info('[DELIVERER_STORE] Transaction COMMIT OK — Entreprise ID=' . $company->id);
 
             // 4. Send sync code to company via email AFTER commit
             // This way, even if email fails, the data is already saved
@@ -191,8 +228,12 @@ class DelivererController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error creating deliverer: ' . $e->getMessage());
-            Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('[DELIVERER_STORE] EXCEPTION — ROLLBACK', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            Log::error('[DELIVERER_STORE] Stack trace: ' . $e->getTraceAsString());
 
             return redirect()->back()
                 ->withInput()
@@ -286,7 +327,7 @@ class DelivererController extends Controller
             'company_phone' => 'required|string|max:20',
             'company_email' => ['required', 'email', Rule::unique('deliverer_companies', 'email')->ignore($deliverer->id)],
             'company_description' => 'nullable|string',
-            'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
+            'company_logo' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,webp,ico,bmp,tiff,tif,avif|max:5120',
             'is_active' => 'boolean',
 
             // Delivery zones
