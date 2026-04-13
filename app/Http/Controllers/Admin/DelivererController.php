@@ -65,7 +65,7 @@ class DelivererController extends Controller
             // Company info (used for user creation)
             'company_name' => 'required|string|max:255',
             'company_phone' => 'required|string|max:20',
-            'company_email' => 'required|email|unique:users,email',
+            'company_email' => 'required|email|unique:deliverer_companies,email',
             'company_description' => 'nullable|string',
             'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg,webp|max:2048',
 
@@ -132,10 +132,23 @@ class DelivererController extends Controller
                 'expires_at' => $expiresAt,
             ]);
 
-            // 4. Send sync code to company via email/SMS/WhatsApp
-            $this->sendSyncCode($company, $syncCode, $validated['send_code_via']);
-
             DB::commit();
+
+            // 4. Send sync code to company via email AFTER commit
+            // This way, even if email fails, the data is already saved
+            $emailSent = false;
+            $emailError = null;
+            try {
+                $this->sendSyncCode($company, $syncCode, $validated['send_code_via']);
+                $emailSent = true;
+            } catch (\Exception $emailException) {
+                $emailError = $emailException->getMessage();
+                Log::error('Email sending failed (data saved): ' . $emailError);
+            }
+
+            $emailStatus = $emailSent
+                ? "<div class='text-sm'>📧 Un email professionnel a été envoyé à <strong>{$validated['company_email']}</strong></div>"
+                : "<div class='text-sm text-yellow-400'>⚠️ L'email n'a pas pu être envoyé ({$emailError}). Le code reste valide, vous pouvez le communiquer manuellement.</div>";
 
             $successMessage = "
                 <div class='space-y-3'>
@@ -158,8 +171,8 @@ class DelivererController extends Controller
                         </div>
 
                         <div class='border-t border-gray-700 pt-2 mt-2'>
-                            <p class='text-sm font-medium text-gray-300 mb-1'>📨 Code de synchronisation envoyé :</p>
-                            <div class='text-sm'>📧 Un email professionnel a été envoyé à <strong>{$validated['company_email']}</strong></div>
+                            <p class='text-sm font-medium text-gray-300 mb-1'>📨 Code de synchronisation :</p>
+                            {$emailStatus}
                         </div>
 
                         <div class='bg-blue-900/30 border border-blue-500/50 rounded p-3 mt-3'>
