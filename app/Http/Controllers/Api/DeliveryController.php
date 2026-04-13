@@ -3,73 +3,271 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\User;
 use App\Services\OrderService;
+use App\Services\WalletService;
+use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class DeliveryController extends Controller
 {
     protected OrderService $orderService;
+    protected WalletService $walletService;
+    protected FirebaseMessagingService $fcmService;
 
-    public function __construct(OrderService $orderService)
-    {
+    public function __construct(
+        OrderService $orderService,
+        WalletService $walletService,
+        FirebaseMessagingService $fcmService
+    ) {
         $this->orderService = $orderService;
+        $this->walletService = $walletService;
+        $this->fcmService = $fcmService;
     }
 
     /**
-     * Get pending delivery requests for this delivery person
+     * Get pending delivery requests for this delivery person.
+     * Inclut : commandes assignées directement OU commandes de sa company (confirmed, pas encore assignées).
      */
     public function pendingRequests(Request $request)
     {
         $user = $request->user();
 
-        $orders = Order::with(['items.product.primaryImage', 'user'])
+        // Commandes assignées directement à ce livreur
+        $directOrders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
             ->where('delivery_person_id', $user->id)
             ->whereIn('status', ['preparing', 'confirmed'])
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // Commandes de sa delivery company (confirmed, pas encore de delivery_person)
+        $companyIds = \App\Models\DelivererCodeSync::where('user_id', $user->id)
+            ->active()
+            ->pluck('company_id');
+
+        $companyOrders = collect();
+        if ($companyIds->isNotEmpty()) {
+            $companyOrders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
+                ->whereIn('delivery_company_id', $companyIds)
+                ->whereNull('delivery_person_id')
+                ->where('status', 'confirmed')
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
+
+        $allOrders = $directOrders->merge($companyOrders)->unique('id');
+
         return response()->json([
             'success' => true,
-            'requests' => $orders->map(fn($order) => $this->formatDeliveryRequest($order)),
+            'requests' => $allOrders->map(fn($order) => $this->formatDeliveryRequest($order)),
         ]);
     }
 
     /**
-     * Accept a delivery request
+     * Accept a delivery request.
+     * Le livreur s'auto-assigne et passe la commande en "shipped".
+     * FCM envoyé au client.
      */
     public function accept(Request $request, $id)
     {
         $user = $request->user();
 
-        $order = Order::where('delivery_person_id', $user->id)
-            ->whereIn('status', ['preparing', 'confirmed'])
+        // Le livreur peut accepter : soit une commande qui lui est assignée,
+        // soit une commande de sa company sans livreur assigné
+        $companyIds = \App\Models\DelivererCodeSync::where('user_id', $user->id)
+            ->active()
+            ->pluck('company_id');
+
+        $order = Order::where(function ($q) use ($user, $companyIds) {
+                $q->where('delivery_person_id', $user->id)
+                  ->orWhere(function ($q2) use ($companyIds) {
+                      $q2->whereIn('delivery_company_id', $companyIds)
+                         ->whereNull('delivery_person_id');
+                  });
+            })
+            ->whereIn('status', ['confirmed', 'preparing'])
             ->findOrFail($id);
 
-        $order->update(['status' => 'shipped', 'shipped_at' => now()]);
+        $order->update([
+            'delivery_person_id' => $user->id,
+            'status' => 'shipped',
+            'shipped_at' => now(),
+        ]);
+
+        // FCM au client : livraison en cours
+        $client = $order->user;
+        if ($client) {
+            $this->fcmService->sendToUser(
+                $client,
+                'Livraison en cours !',
+                "Votre commande #{$order->order_number} est en cours de livraison par {$user->first_name}.",
+                [
+                    'type' => 'order_shipped',
+                    'order_id' => (string) $order->id,
+                    'order_number' => $order->order_number,
+                    'deliverer_name' => $user->first_name . ' ' . $user->last_name,
+                    'deliverer_phone' => $user->phone ?? '',
+                ]
+            );
+        }
+
+        Log::info("[DeliveryController] Delivery accepted", [
+            'order_id' => $order->id,
+            'deliverer_id' => $user->id,
+        ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Livraison acceptée - course démarrée',
+            'message' => 'Livraison acceptée — course démarrée',
+            'order' => $this->formatDeliveryRequest($order->fresh(['items.product.primaryImage', 'user', 'deliveryCompany'])),
         ]);
     }
 
     /**
-     * Complete a delivery
+     * Complete a delivery — le LIVREUR entre le code secret donné par le client.
+     *
+     * Flow :
+     * 1. Vérifie le confirmation_code
+     * 2. Passe la commande en "delivered"
+     * 3. Libère l'escrow du client (releaseEscrow — les fonds sont définitivement débités)
+     * 4. Débloque les fonds du vendeur (unlockFunds — le vendeur peut retirer)
+     * 5. Crédite le livreur (commission = delivery_fee)
+     * 6. FCM au client ("Livraison confirmée, notez votre expérience")
      */
     public function complete(Request $request, $id)
     {
+        $request->validate([
+            'confirmation_code' => 'required|string|size:6',
+        ]);
+
         $user = $request->user();
 
-        $order = Order::where('delivery_person_id', $user->id)
+        $order = Order::with(['items.seller', 'user'])
+            ->where('delivery_person_id', $user->id)
             ->where('status', 'shipped')
             ->findOrFail($id);
 
-        $order->update(['status' => 'delivered', 'delivered_at' => now()]);
+        // Vérifier le code secret
+        if ($order->confirmation_code !== $request->confirmation_code) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Code de confirmation incorrect.',
+            ], 422);
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Livraison terminée - en attente de confirmation client',
-        ]);
+        try {
+            DB::transaction(function () use ($user, $order) {
+                $walletProvider = str_replace('wallet_', '', $order->payment_method);
+                if (!in_array($walletProvider, ['freemopay', 'paypal'])) {
+                    $walletProvider = 'freemopay';
+                }
+
+                // 1. Marquer la commande comme livrée
+                $order->update([
+                    'status' => 'delivered',
+                    'delivered_at' => now(),
+                    'confirmed_by_deliverer_at' => now(),
+                    'confirmed_by_client_at' => now(), // Le client a donné son code = confirmation
+                ]);
+
+                // 2. Libérer l'escrow du client (les fonds bloqués sont maintenant définitivement débités)
+                $this->walletService->releaseEscrow(
+                    $order->user,
+                    (float) $order->total,
+                    "Paiement commande #{$order->order_number} — livraison confirmée",
+                    'order',
+                    $order->id,
+                    [],
+                    $walletProvider
+                );
+
+                // 3. Débloquer les fonds du vendeur (il peut maintenant retirer)
+                $sellers = $order->items->pluck('seller_id')->unique();
+                foreach ($sellers as $sellerId) {
+                    $seller = User::find($sellerId);
+                    if ($seller) {
+                        $sellerAmount = (float) $order->items
+                            ->where('seller_id', $sellerId)
+                            ->sum('total_price');
+
+                        $this->walletService->unlockFunds(
+                            $seller,
+                            $sellerAmount,
+                            "Vente confirmée #{$order->order_number} — fonds disponibles",
+                            'order',
+                            $order->id,
+                            [],
+                            $walletProvider
+                        );
+                    }
+                }
+
+                // 4. Créditer le livreur (commission = frais de livraison)
+                $deliveryFee = (float) $order->delivery_fee;
+                if ($deliveryFee > 0) {
+                    $this->walletService->credit(
+                        $user,
+                        $deliveryFee,
+                        null,
+                        "Commission livraison #{$order->order_number}",
+                        ['order_id' => $order->id],
+                        $walletProvider
+                    );
+                }
+
+                // 5. FCM au client
+                $client = $order->user;
+                if ($client) {
+                    $this->fcmService->sendToUser(
+                        $client,
+                        'Livraison confirmée !',
+                        "Votre commande #{$order->order_number} a été livrée avec succès. Notez votre expérience !",
+                        [
+                            'type' => 'order_delivered',
+                            'order_id' => (string) $order->id,
+                            'order_number' => $order->order_number,
+                        ]
+                    );
+                }
+
+                // FCM au vendeur
+                foreach ($sellers as $sellerId) {
+                    $seller = User::find($sellerId);
+                    if ($seller) {
+                        $this->fcmService->sendToUser(
+                            $seller,
+                            'Livraison confirmée — fonds disponibles',
+                            "La commande #{$order->order_number} a été livrée. Vos fonds sont maintenant retirables.",
+                            [
+                                'type' => 'order_delivered_vendor',
+                                'order_id' => (string) $order->id,
+                                'order_number' => $order->order_number,
+                            ]
+                        );
+                    }
+                }
+
+                Log::info("[DeliveryController] Delivery completed — escrow released", [
+                    'order_id' => $order->id,
+                    'deliverer_id' => $user->id,
+                    'delivery_fee' => $deliveryFee,
+                ]);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Livraison confirmée ! Fonds libérés.',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("[DeliveryController] Error completing delivery: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
@@ -79,7 +277,7 @@ class DeliveryController extends Controller
     {
         $user = $request->user();
 
-        $orders = Order::with(['items.product.primaryImage', 'user'])
+        $orders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
             ->where('delivery_person_id', $user->id)
             ->where('status', 'shipped')
             ->orderBy('shipped_at', 'desc')
