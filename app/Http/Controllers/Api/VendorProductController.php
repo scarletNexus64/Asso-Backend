@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductImage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Models\DeliveryPricelist;
 
 class VendorProductController extends Controller
 {
@@ -71,6 +72,7 @@ class VendorProductController extends Controller
             'subcategory_id' => 'sometimes|nullable|exists:subcategories,id',
             'type' => 'sometimes|in:article,service',
             'condition' => 'sometimes|in:new,used,refurbished',
+            'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'stock' => 'sometimes|integer|min:0',
             'images' => 'sometimes|array',
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
@@ -233,6 +235,7 @@ class VendorProductController extends Controller
             'price_type' => $product->price_type ?? 'fixed',
             'formatted_price' => $product->formatted_price,
             'type' => $product->type ?? 'article',
+            'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
             'status' => $product->status,
             'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,

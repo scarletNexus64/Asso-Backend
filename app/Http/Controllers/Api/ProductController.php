@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Category;
+use App\Models\DeliveryPricelist;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -253,6 +254,7 @@ class ProductController extends Controller
             'category_id' => 'required|exists:categories,id',
             'type' => 'required|in:article,service',
             'condition' => 'required|in:new,used,refurbished',
+            'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'images' => 'required|array|min:1',
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
@@ -295,6 +297,7 @@ class ProductController extends Controller
             'category_id' => $validated['category_id'],
             'type' => $validated['type'],
             'condition' => $validated['condition'],
+            'weight_category' => $validated['weight_category'] ?? 'X-small',
             'slug' => \Str::slug($validated['name']) . '-' . \Str::random(5),
             'status' => 'pending', // Products need approval
         ]);
@@ -347,6 +350,7 @@ class ProductController extends Controller
             'price_type' => $product->price_type ?? 'fixed',
             'formatted_price' => $product->formatted_price,
             'type' => $product->type ?? 'article',
+            'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
             'status' => $product->status,
             'is_favorite' => in_array($product->id, $favoriteIds),
