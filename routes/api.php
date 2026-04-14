@@ -136,6 +136,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Packages
         Route::prefix('packages')->group(function () {
             Route::get('/', [PackageController::class, 'index']);
+            Route::get('/certification', [PackageController::class, 'certificationPackages']);
             Route::post('/subscribe', [PackageController::class, 'subscribe']);
         });
 
@@ -143,6 +144,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('invoices')->group(function () {
             Route::get('/package/{token}', [InvoiceController::class, 'showPackageInvoice']);
             Route::get('/download/{vendorPackageId}', [InvoiceController::class, 'download'])->name('api.invoices.download');
+            Route::get('/pdf/{vendorPackageId}', [InvoiceController::class, 'downloadPdf'])->name('api.invoices.pdf');
         });
 
         // Vendor process
@@ -154,6 +156,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/vendor/shop', [ShopController::class, 'show']);
         Route::put('/vendor/shop', [ShopController::class, 'update']);
         Route::get('/vendor/shops', [ShopController::class, 'index']);
+        Route::get('/vendor/shop/location-requests', [ShopController::class, 'getLocationRequests']);
 
         // Delivery process
         Route::post('/delivery/apply', [ProfileController::class, 'applyDelivery']);
@@ -162,6 +165,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Vendor order management
         Route::prefix('vendor/orders')->group(function () {
             Route::get('/', [VendorOrderController::class, 'index']);
+            Route::get('/check-active', [VendorOrderController::class, 'checkActiveOrders']);
             Route::post('/{id}/validate', [VendorOrderController::class, 'validate']);
             Route::post('/{id}/reject', [VendorOrderController::class, 'reject']);
             Route::post('/{id}/assign-delivery', [VendorOrderController::class, 'assignDelivery']);
@@ -289,6 +293,16 @@ Route::middleware('auth:sanctum')->prefix('v1/confessions')->group(function () {
 // ============================================
 // ADMIN ROUTES (auth:sanctum + admin role)
 // ============================================
+
+Route::middleware('auth:sanctum')->prefix('v1/admin')->group(function () {
+    // Shop location change requests
+    Route::prefix('shop-location-requests')->group(function () {
+        Route::get('/', [App\Http\Controllers\Admin\ShopLocationRequestController::class, 'index']);
+        Route::get('/{locationRequest}', [App\Http\Controllers\Admin\ShopLocationRequestController::class, 'show']);
+        Route::post('/{locationRequest}/approve', [App\Http\Controllers\Admin\ShopLocationRequestController::class, 'approve']);
+        Route::post('/{locationRequest}/reject', [App\Http\Controllers\Admin\ShopLocationRequestController::class, 'reject']);
+    });
+});
 
 // Service Configuration Routes - DÉSACTIVÉ (utiliser /admin/settings/services à la place)
 /*

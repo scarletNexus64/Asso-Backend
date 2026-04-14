@@ -62,6 +62,32 @@ class PackageController extends Controller
     }
 
     /**
+     * List all active certification packages
+     */
+    public function certificationPackages()
+    {
+        $packages = Package::ofType('certification')
+            ->active()
+            ->ordered()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'packages' => $packages->map(fn($package) => [
+                'id' => $package->id,
+                'name' => $package->name,
+                'description' => $package->description,
+                'price' => (float) $package->price,
+                'formatted_price' => $package->formatted_price,
+                'duration_days' => $package->duration_days,
+                'formatted_duration' => $package->formatted_duration,
+                'benefits' => $package->benefits,
+                'is_popular' => (bool) $package->is_popular,
+            ]),
+        ]);
+    }
+
+    /**
      * Subscribe to a package
      */
     public function subscribe(Request $request)
@@ -87,11 +113,11 @@ class PackageController extends Controller
             'wallet_type' => $walletType,
         ]);
 
-        // Verify package is storage type
-        if ($package->type !== 'storage') {
+        // Verify package type is storage or certification
+        if (!in_array($package->type, ['storage', 'certification'])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Ce package n\'est pas un package de stockage',
+                'message' => 'Type de package non supporté',
             ], 422);
         }
 
@@ -157,6 +183,7 @@ class PackageController extends Controller
                 metadata: [
                     'package_id' => $package->id,
                     'package_name' => $package->name,
+                    'package_price' => (float) $package->price,
                     'storage_size_mb' => $package->storage_size_mb,
                     'duration_days' => $package->duration_days,
                 ],
@@ -218,6 +245,32 @@ class PackageController extends Controller
             $walletTransaction->update([
                 'reference_id' => $vendorPackage->id,
             ]);
+
+            // If this is a certification package, activate shop certification
+            if ($package->type === 'certification') {
+                $shop = $user->shops()->first();
+
+                if ($shop) {
+                    $expiresAt = now()->addDays($package->duration_days);
+
+                    $shop->update([
+                        'is_certified' => true,
+                        'certified_at' => now(),
+                        'certification_expires_at' => $expiresAt,
+                        'certified_by' => $user->id,
+                    ]);
+
+                    Log::info("[PackageController] ✅ Shop certification activated", [
+                        'shop_id' => $shop->id,
+                        'certified_at' => now(),
+                        'expires_at' => $expiresAt,
+                    ]);
+                } else {
+                    Log::warning("[PackageController] ⚠️ User has no shop to certify", [
+                        'user_id' => $user->id,
+                    ]);
+                }
+            }
 
             DB::commit();
 

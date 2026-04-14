@@ -137,6 +137,81 @@
         </div>
     @endif
 
+    <!-- Location Change Requests -->
+    @if($shop->locationRequests->where('status', 'pending')->count() > 0)
+    <div class="mb-6 bg-dark-100 rounded-xl shadow-lg p-6">
+        <h3 class="text-lg font-bold text-white mb-4">
+            <i class="fas fa-map-marker-alt text-orange-500 mr-2 animate-pulse"></i>
+            Demandes de changement de localisation ({{ $shop->locationRequests->where('status', 'pending')->count() }})
+        </h3>
+
+        @foreach($shop->locationRequests->where('status', 'pending') as $request)
+        <div class="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Current Location -->
+                <div>
+                    <h4 class="text-sm font-semibold text-white mb-2">
+                        <i class="fas fa-map-marker text-gray-400 mr-1"></i>
+                        Position actuelle
+                    </h4>
+                    <p class="text-gray-300 text-sm">
+                        Latitude: <span class="font-mono text-blue-300">{{ $shop->latitude }}</span><br>
+                        Longitude: <span class="font-mono text-blue-300">{{ $shop->longitude }}</span>
+                    </p>
+                </div>
+
+                <!-- Requested Location -->
+                <div>
+                    <h4 class="text-sm font-semibold text-white mb-2">
+                        <i class="fas fa-map-marker-alt text-orange-400 mr-1"></i>
+                        Position demandée
+                    </h4>
+                    <p class="text-gray-300 text-sm">
+                        Latitude: <span class="font-mono text-orange-300">{{ $request->latitude }}</span><br>
+                        Longitude: <span class="font-mono text-orange-300">{{ $request->longitude }}</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Request Info -->
+            <div class="mt-3 pt-3 border-t border-orange-500/20">
+                <p class="text-gray-400 text-xs">
+                    <i class="fas fa-clock mr-1"></i>
+                    Demandé le {{ $request->created_at->format('d/m/Y à H:i') }}
+                </p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 mt-4">
+                <form action="{{ route('admin.shops.location-requests.approve', ['shop' => $shop, 'request' => $request]) }}"
+                      method="POST"
+                      class="flex-1"
+                      onsubmit="return confirm('Voulez-vous approuver ce changement de localisation? Le vendeur sera notifié.');">
+                    @csrf
+                    <button type="submit"
+                            class="w-full px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:shadow-lg text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold">
+                        <i class="fas fa-check-circle"></i>
+                        Approuver
+                    </button>
+                </form>
+
+                <form action="{{ route('admin.shops.location-requests.reject', ['shop' => $shop, 'request' => $request]) }}"
+                      method="POST"
+                      class="flex-1"
+                      onsubmit="return confirm('Voulez-vous rejeter ce changement de localisation? Le vendeur sera notifié.');">
+                    @csrf
+                    <button type="submit"
+                            class="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:shadow-lg text-white rounded-lg transition-all flex items-center justify-center gap-2 font-semibold">
+                        <i class="fas fa-times-circle"></i>
+                        Rejeter
+                    </button>
+                </form>
+            </div>
+        </div>
+        @endforeach
+    </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Shop Info Card -->
         <div class="lg:col-span-1">

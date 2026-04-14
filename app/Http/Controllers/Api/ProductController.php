@@ -246,18 +246,34 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
+        \Log::info('========== PRODUCT STORE START ==========');
+        \Log::info('[PRODUCT_STORE] Request data:', $request->except('images'));
+        \Log::info('[PRODUCT_STORE] User:', [
+            'user_id' => $request->user()->id,
+            'name' => $request->user()->name,
+            'role' => $request->user()->role,
+        ]);
+        \Log::info('[PRODUCT_STORE] Images count:', [
+            'count' => $request->hasFile('images') ? count($request->file('images')) : 0,
+        ]);
+
         // Validate input
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'required|string',
             'price' => 'required|numeric|min:0',
             'category_id' => 'required|exists:categories,id',
+            'subcategory_id' => 'nullable|exists:subcategories,id',
             'type' => 'required|in:article,service',
             'condition' => 'required|in:new,used,refurbished',
+            'stock' => 'nullable|integer|min:0',
+            'weight' => 'nullable|string|max:255',
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'images' => 'required|array|min:1',
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
+
+        \Log::info('[PRODUCT_STORE] Validation passed');
 
         // 1. Verify that the user has an active package
         $vendorPackage = $request->user()->activeVendorPackage;
@@ -288,8 +304,27 @@ class ProductController extends Controller
             ], 403);
         }
 
+        \Log::info('[PRODUCT_STORE] Creating product...');
+
+        // Get the user's shop (vendors should have a shop)
+        $shop = $request->user()->shops()->first();
+        if (!$shop) {
+            \Log::warning('[PRODUCT_STORE] User has no shop');
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous devez créer une boutique avant d\'ajouter des produits',
+                'error_code' => 'NO_SHOP',
+            ], 403);
+        }
+
+        \Log::info('[PRODUCT_STORE] Shop found:', [
+            'shop_id' => $shop->id,
+            'shop_name' => $shop->name,
+        ]);
+
         // Create the product with authenticated user
-        $product = Product::create([
+        $productData = [
+            'shop_id' => $shop->id,
             'user_id' => $request->user()->id,
             'name' => $validated['name'],
             'description' => $validated['description'],
@@ -299,7 +334,27 @@ class ProductController extends Controller
             'condition' => $validated['condition'],
             'weight_category' => $validated['weight_category'] ?? 'X-small',
             'slug' => \Str::slug($validated['name']) . '-' . \Str::random(5),
-            'status' => 'pending', // Products need approval
+            'status' => 'active', // Set product as active (database constraint: active or inactive only)
+        ];
+
+        // Add optional fields
+        if (!empty($validated['subcategory_id'])) {
+            $productData['subcategory_id'] = $validated['subcategory_id'];
+        }
+        if (isset($validated['stock'])) {
+            $productData['stock'] = $validated['stock'];
+        }
+        if (!empty($validated['weight'])) {
+            $productData['weight'] = $validated['weight'];
+        }
+
+        $product = Product::create($productData);
+
+        \Log::info('[PRODUCT_STORE] Product created:', [
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'user_id' => $product->user_id,
+            'status' => $product->status,
         ]);
 
         // Store images
@@ -321,8 +376,16 @@ class ProductController extends Controller
         // 4. Deduct storage space from package
         $vendorPackage->deductStorage($totalImageSizeMb);
 
+        \Log::info('[PRODUCT_STORE] Storage deducted:', [
+            'deducted_mb' => round($totalImageSizeMb, 2),
+            'remaining_mb' => round($vendorPackage->storage_remaining_mb, 2),
+        ]);
+
         // Load relations for response
-        $product->load(['images', 'primaryImage', 'category', 'user']);
+        $product->load(['images', 'primaryImage', 'category', 'subcategory', 'user']);
+
+        \Log::info('[PRODUCT_STORE] Product loaded with relations');
+        \Log::info('========== PRODUCT STORE SUCCESS ==========');
 
         return response()->json([
             'success' => true,
@@ -352,6 +415,7 @@ class ProductController extends Controller
             'type' => $product->type ?? 'article',
             'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
+            'weight' => $product->weight,
             'status' => $product->status,
             'is_favorite' => in_array($product->id, $favoriteIds),
             'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,

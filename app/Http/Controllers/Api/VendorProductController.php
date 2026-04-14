@@ -34,10 +34,16 @@ class VendorProductController extends Controller
             return $this->formatProduct($product);
         });
 
+        \Log::info('[VENDOR_PRODUCTS] Products fetched:', [
+            'user_id' => $user->id,
+            'total' => $products->total(),
+            'current_page' => $products->currentPage(),
+        ]);
+
         return response()->json([
             'success' => true,
-            'products' => $productsData,
-            'pagination' => [
+            'data' => $productsData,
+            'meta' => [
                 'current_page' => $products->currentPage(),
                 'last_page' => $products->lastPage(),
                 'per_page' => $products->perPage(),
@@ -74,6 +80,7 @@ class VendorProductController extends Controller
             'condition' => 'sometimes|in:new,used,refurbished',
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'stock' => 'sometimes|integer|min:0',
+            'weight' => 'sometimes|nullable|string|max:255',
             'images' => 'sometimes|array',
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
@@ -237,6 +244,7 @@ class VendorProductController extends Controller
             'type' => $product->type ?? 'article',
             'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
+            'weight' => $product->weight,
             'status' => $product->status,
             'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,
             'images' => $product->images->map(fn($img) => [
