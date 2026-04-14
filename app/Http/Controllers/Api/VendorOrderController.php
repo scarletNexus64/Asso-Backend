@@ -114,6 +114,35 @@ class VendorOrderController extends Controller
                     $walletProvider
                 );
 
+                // 3b. Créditer l'entreprise de livraison avec fonds BLOQUÉS (delivery_fee)
+                $deliveryFee = (float) $order->delivery_fee;
+                if ($deliveryFee > 0 && $order->delivery_company_id) {
+                    $deliveryCompany = \App\Models\DelivererCompany::find($order->delivery_company_id);
+                    if ($deliveryCompany && $deliveryCompany->user_id) {
+                        $companyUser = \App\Models\User::find($deliveryCompany->user_id);
+                        if ($companyUser) {
+                            $this->walletService->credit(
+                                $companyUser,
+                                $deliveryFee,
+                                null,
+                                "Commission livraison #{$order->order_number} (en attente livraison)",
+                                ['order_id' => $order->id, 'escrow' => true],
+                                $walletProvider
+                            );
+
+                            $this->walletService->lockFunds(
+                                $companyUser,
+                                $deliveryFee,
+                                "Escrow livraison #{$order->order_number} — bloqué jusqu'à livraison",
+                                'order',
+                                $order->id,
+                                [],
+                                $walletProvider
+                            );
+                        }
+                    }
+                }
+
                 // 4. Notifications FCM
 
                 // Au client

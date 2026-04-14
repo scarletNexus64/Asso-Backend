@@ -74,55 +74,73 @@ class DeliveryController extends Controller
     {
         $user = $request->user();
 
-        // Le livreur peut accepter : soit une commande qui lui est assignée,
-        // soit une commande de sa company sans livreur assigné
         $companyIds = \App\Models\DelivererCodeSync::where('user_id', $user->id)
             ->active()
             ->pluck('company_id');
 
-        $order = Order::where(function ($q) use ($user, $companyIds) {
-                $q->where('delivery_person_id', $user->id)
-                  ->orWhere(function ($q2) use ($companyIds) {
-                      $q2->whereIn('delivery_company_id', $companyIds)
-                         ->whereNull('delivery_person_id');
-                  });
-            })
-            ->whereIn('status', ['confirmed', 'preparing'])
-            ->findOrFail($id);
+        try {
+            $order = DB::transaction(function () use ($user, $id, $companyIds) {
+                // lockForUpdate empêche 2 livreurs d'accepter en même temps
+                $order = Order::lockForUpdate()
+                    ->where(function ($q) use ($user, $companyIds) {
+                        $q->where('delivery_person_id', $user->id)
+                          ->orWhere(function ($q2) use ($companyIds) {
+                              $q2->whereIn('delivery_company_id', $companyIds)
+                                 ->whereNull('delivery_person_id');
+                          });
+                    })
+                    ->whereIn('status', ['confirmed', 'preparing'])
+                    ->findOrFail($id);
 
-        $order->update([
-            'delivery_person_id' => $user->id,
-            'status' => 'shipped',
-            'shipped_at' => now(),
-        ]);
+                // Double-check : si un autre livreur a pris entre-temps
+                if ($order->delivery_person_id !== null && $order->delivery_person_id !== $user->id) {
+                    throw new \Exception("Cette livraison a déjà été prise par un autre livreur.");
+                }
 
-        // FCM au client : livraison en cours
-        $client = $order->user;
-        if ($client) {
-            $this->fcmService->sendToUser(
-                $client,
-                'Livraison en cours !',
-                "Votre commande #{$order->order_number} est en cours de livraison par {$user->first_name}.",
-                [
-                    'type' => 'order_shipped',
-                    'order_id' => (string) $order->id,
-                    'order_number' => $order->order_number,
-                    'deliverer_name' => $user->first_name . ' ' . $user->last_name,
-                    'deliverer_phone' => $user->phone ?? '',
-                ]
-            );
+                $order->update([
+                    'delivery_person_id' => $user->id,
+                    'status' => 'shipped',
+                    'shipped_at' => now(),
+                ]);
+
+                return $order;
+            });
+
+            // FCM au client : livraison en cours + code de confirmation
+            $client = $order->user;
+            if ($client) {
+                $this->fcmService->sendToUser(
+                    $client,
+                    'Livraison en cours !',
+                    "Votre commande #{$order->order_number} est en cours de livraison par {$user->first_name}. Votre code de confirmation : {$order->confirmation_code}",
+                    [
+                        'type' => 'order_shipped',
+                        'order_id' => (string) $order->id,
+                        'order_number' => $order->order_number,
+                        'confirmation_code' => $order->confirmation_code,
+                        'deliverer_name' => $user->first_name . ' ' . $user->last_name,
+                        'deliverer_phone' => $user->phone ?? '',
+                    ]
+                );
+            }
+
+            Log::info("[DeliveryController] Delivery accepted", [
+                'order_id' => $order->id,
+                'deliverer_id' => $user->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Livraison acceptée — course démarrée',
+                'order' => $this->formatDeliveryRequest($order->fresh(['items.product.primaryImage', 'user', 'deliveryCompany'])),
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
         }
-
-        Log::info("[DeliveryController] Delivery accepted", [
-            'order_id' => $order->id,
-            'deliverer_id' => $user->id,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Livraison acceptée — course démarrée',
-            'order' => $this->formatDeliveryRequest($order->fresh(['items.product.primaryImage', 'user', 'deliveryCompany'])),
-        ]);
     }
 
     /**
@@ -164,12 +182,13 @@ class DeliveryController extends Controller
                     $walletProvider = 'freemopay';
                 }
 
-                // 1. Marquer la commande comme livrée
+                // 1. Marquer la commande comme livrée + supprimer le code
                 $order->update([
                     'status' => 'delivered',
                     'delivered_at' => now(),
                     'confirmed_by_deliverer_at' => now(),
-                    'confirmed_by_client_at' => now(), // Le client a donné son code = confirmation
+                    'confirmed_by_client_at' => now(),
+                    'confirmation_code' => null, // Supprimer le code après validation
                 ]);
 
                 // 2. Libérer l'escrow du client (les fonds bloqués sont maintenant définitivement débités)
@@ -204,17 +223,36 @@ class DeliveryController extends Controller
                     }
                 }
 
-                // 4. Créditer le livreur (commission = frais de livraison)
+                // 4. Débloquer les fonds de l'entreprise de livraison
                 $deliveryFee = (float) $order->delivery_fee;
-                if ($deliveryFee > 0) {
-                    $this->walletService->credit(
-                        $user,
-                        $deliveryFee,
-                        null,
-                        "Commission livraison #{$order->order_number}",
-                        ['order_id' => $order->id],
-                        $walletProvider
-                    );
+                if ($deliveryFee > 0 && $order->delivery_company_id) {
+                    $deliveryCompany = \App\Models\DelivererCompany::find($order->delivery_company_id);
+                    if ($deliveryCompany && $deliveryCompany->user_id) {
+                        $companyUser = User::find($deliveryCompany->user_id);
+                        if ($companyUser) {
+                            $this->walletService->unlockFunds(
+                                $companyUser,
+                                $deliveryFee,
+                                "Livraison confirmée #{$order->order_number} — commission disponible",
+                                'order',
+                                $order->id,
+                                [],
+                                $walletProvider
+                            );
+
+                            // FCM à l'entreprise de livraison
+                            $this->fcmService->sendToUser(
+                                $companyUser,
+                                'Commission débloquée !',
+                                "Livraison #{$order->order_number} confirmée. " . number_format($deliveryFee, 0, ',', ' ') . " FCFA disponibles.",
+                                [
+                                    'type' => 'delivery_commission_released',
+                                    'order_id' => (string) $order->id,
+                                    'amount' => (string) $deliveryFee,
+                                ]
+                            );
+                        }
+                    }
                 }
 
                 // 5. FCM au client

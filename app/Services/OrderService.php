@@ -168,7 +168,7 @@ class OrderService
             foreach ($items as $item) {
                 $product = Product::lockForUpdate()->findOrFail($item['product_id']);
 
-                if ($product->status !== 'published') {
+                if (!in_array($product->status, ['published', 'active'])) {
                     throw new \Exception("Le produit '{$product->name}' n'est plus disponible.");
                 }
 
