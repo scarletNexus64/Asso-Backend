@@ -160,6 +160,43 @@ class VendorOrderController extends Controller
     }
 
     /**
+     * Check if vendor has active orders in progress
+     */
+    public function checkActiveOrders(Request $request)
+    {
+        $user = $request->user();
+
+        \Log::info('========================================');
+        \Log::info('📦 CHECK VENDOR ACTIVE ORDERS');
+        \Log::info('========================================');
+        \Log::info('  └─ Vendor ID: ' . $user->id);
+
+        // Get order IDs where this vendor has items
+        $orderIds = OrderItem::where('seller_id', $user->id)->pluck('order_id')->unique();
+
+        // Count orders in active states (pending, confirmed, preparing, shipped)
+        $activeOrdersCount = Order::whereIn('id', $orderIds)
+            ->whereIn('status', ['pending', 'confirmed', 'preparing', 'shipped'])
+            ->count();
+
+        \Log::info('  └─ Active Orders Count: ' . $activeOrdersCount);
+
+        $hasActiveOrders = $activeOrdersCount > 0;
+
+        \Log::info('  └─ Has Active Orders: ' . ($hasActiveOrders ? 'YES ⚠️' : 'NO ✅'));
+        \Log::info('========================================');
+
+        return response()->json([
+            'success' => true,
+            'has_active_orders' => $hasActiveOrders,
+            'active_orders_count' => $activeOrdersCount,
+            'message' => $hasActiveOrders
+                ? "Vous avez {$activeOrdersCount} commande(s) en cours. Veuillez les terminer avant de modifier votre emplacement."
+                : 'Aucune commande en cours',
+        ]);
+    }
+
+    /**
      * Helper to get order that belongs to this vendor
      */
     private function getVendorOrder($user, $orderId)

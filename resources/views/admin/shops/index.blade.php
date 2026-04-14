@@ -184,6 +184,21 @@
                         </div>
                     </div>
 
+                    <!-- Location Request Alert -->
+                    @if($shop->locationRequests->count() > 0)
+                    <div class="mb-3 p-3 bg-orange-500/20 border border-orange-500/50 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-map-marker-alt text-orange-400 text-lg animate-pulse"></i>
+                            <div class="flex-1">
+                                <p class="text-orange-300 font-semibold text-sm">
+                                    {{ $shop->locationRequests->count() }} demande(s) de changement de localisation
+                                </p>
+                                <p class="text-orange-400 text-xs">Cliquez sur "Voir" pour traiter</p>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
+
                     <!-- Verification Status & Action -->
                     <div class="mb-3">
                         @if($shop->isVerified())
@@ -321,7 +336,7 @@
                                 <p class="text-gray-400 text-sm italic mb-4">Aucune description</p>
                             @endif
 
-                            <div class="flex gap-4">
+                            <div class="flex gap-4 mb-3">
                                 <div class="flex items-center gap-2">
                                     <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
                                         <i class="fas fa-box text-blue-400"></i>
@@ -341,6 +356,21 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Location Request Alert -->
+                            @if($shop->locationRequests->count() > 0)
+                            <div class="p-3 bg-orange-500/20 border border-orange-500/50 rounded-lg">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-map-marker-alt text-orange-400 animate-pulse"></i>
+                                    <div>
+                                        <p class="text-orange-300 font-semibold text-xs">
+                                            {{ $shop->locationRequests->count() }} demande(s) de localisation
+                                        </p>
+                                        <p class="text-orange-400 text-xs">Cliquez sur "Voir" pour traiter</p>
+                                    </div>
+                                </div>
+                            </div>
+                            @endif
                         </div>
 
                         <!-- Right: Actions -->

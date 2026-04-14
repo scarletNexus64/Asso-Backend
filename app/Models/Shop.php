@@ -98,6 +98,14 @@ class Shop extends Model
     }
 
     /**
+     * Get all location change requests for this shop
+     */
+    public function locationRequests(): HasMany
+    {
+        return $this->hasMany(ShopLocationRequest::class);
+    }
+
+    /**
      * Scope a query to only include pending shops (not verified, not rejected)
      */
     public function scopePending($query)

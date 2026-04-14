@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Shop;
+use App\Models\ShopLocationRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -144,7 +145,14 @@ class ShopController extends Controller
             ], 404);
         }
 
-        // Validate input
+        Log::info('[VENDOR-SHOP-UPDATE] Starting vendor shop update', [
+            'shop_id' => $shop->id,
+            'vendor_id' => $user->id,
+            'request_data' => $request->except(['shop_logo']),
+            'all_request_data' => $request->all(),
+        ]);
+
+        // Validate input - Note: latitude/longitude can only be updated by admin
         $validated = $request->validate([
             'shop_name' => 'sometimes|string|max:255',
             'shop_description' => 'sometimes|nullable|string',
@@ -153,9 +161,78 @@ class ShopController extends Controller
             'shop_logo' => 'sometimes|nullable|image|max:2048',
             'categories' => 'sometimes|nullable|array',
             'categories.*' => 'string',
-            'shop_latitude' => 'sometimes|nullable|numeric|between:-90,90',
-            'shop_longitude' => 'sometimes|nullable|numeric|between:-180,180',
         ]);
+
+        Log::info('[VENDOR-SHOP-UPDATE] Validation completed', [
+            'validated_data' => $validated,
+            'categories_in_validated' => $validated['categories'] ?? 'NOT SET',
+        ]);
+
+        // Variable to track if a location request was created
+        $locationRequest = null;
+        $hasLocationRequest = $request->has('shop_latitude') || $request->has('shop_longitude');
+
+        // Handle latitude/longitude as a location change request (process later after updating other fields)
+        if ($hasLocationRequest) {
+            Log::info('[VENDOR-SHOP-UPDATE] Vendor requested location change', [
+                'vendor_id' => $user->id,
+                'shop_id' => $shop->id,
+                'latitude' => $request->shop_latitude,
+                'longitude' => $request->shop_longitude
+            ]);
+
+            // Validate location data
+            $locationValidated = $request->validate([
+                'shop_latitude' => 'required|numeric|between:-90,90',
+                'shop_longitude' => 'required|numeric|between:-180,180',
+                'location_change_reason' => 'nullable|string|max:500',
+            ]);
+
+            // Check if there's already a pending request
+            $existingRequest = ShopLocationRequest::where('shop_id', $shop->id)
+                ->where('status', 'pending')
+                ->first();
+
+            if ($existingRequest) {
+                // If there are no other fields to update, return error immediately
+                if (empty($validated)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Vous avez déjà une demande de changement d\'emplacement en attente',
+                        'pending_request' => [
+                            'id' => $existingRequest->id,
+                            'latitude' => $existingRequest->latitude,
+                            'longitude' => $existingRequest->longitude,
+                            'status' => $existingRequest->status,
+                            'created_at' => $existingRequest->created_at->toIso8601String(),
+                        ]
+                    ], 422);
+                }
+
+                // Otherwise, just log a warning and continue with other updates
+                Log::warning('[VENDOR-SHOP-UPDATE] Skipping location request creation - pending request exists', [
+                    'existing_request_id' => $existingRequest->id,
+                    'shop_id' => $shop->id
+                ]);
+            } else {
+                // Create a new location change request
+                $locationRequest = ShopLocationRequest::create([
+                    'shop_id' => $shop->id,
+                    'vendor_id' => $user->id,
+                    'latitude' => $locationValidated['shop_latitude'],
+                    'longitude' => $locationValidated['shop_longitude'],
+                    'address' => $request->shop_address ?? $shop->address,
+                    'reason' => $locationValidated['location_change_reason'] ?? 'Demande de changement d\'emplacement',
+                    'status' => 'pending',
+                ]);
+
+                Log::info('[VENDOR-SHOP-UPDATE] Location change request created', [
+                    'request_id' => $locationRequest->id,
+                    'shop_id' => $shop->id,
+                    'vendor_id' => $user->id
+                ]);
+            }
+        }
 
         // Validation supplémentaire pour l'adresse
         if (isset($validated['shop_address'])) {
@@ -176,6 +253,10 @@ class ShopController extends Controller
 
             if (isset($validated['shop_name'])) {
                 $updateData['name'] = $validated['shop_name'];
+                Log::info('[VENDOR-SHOP-UPDATE] Updating shop name', [
+                    'old_name' => $shop->name,
+                    'new_name' => $validated['shop_name']
+                ]);
             }
             if (isset($validated['shop_description'])) {
                 $updateData['description'] = $validated['shop_description'];
@@ -188,34 +269,77 @@ class ShopController extends Controller
             }
             if (isset($validated['categories'])) {
                 $updateData['categories'] = $validated['categories'];
+                Log::info('[VENDOR-SHOP-UPDATE] Categories to update', [
+                    'old_categories' => $shop->categories,
+                    'new_categories' => $validated['categories'],
+                ]);
             }
-            if (isset($validated['shop_latitude'])) {
-                $updateData['latitude'] = $validated['shop_latitude'];
-            }
-            if (isset($validated['shop_longitude'])) {
-                $updateData['longitude'] = $validated['shop_longitude'];
-            }
+
+            // Note: Latitude and longitude are not allowed for vendors
+            // They can only be updated by admin through Admin\ShopController
 
             // Handle logo upload
             if ($request->hasFile('shop_logo')) {
                 $logoPath = $request->file('shop_logo')->store('shops', 'public');
                 $updateData['logo'] = $logoPath;
+                Log::info('[VENDOR-SHOP-UPDATE] Logo uploaded', [
+                    'logo_path' => $logoPath
+                ]);
             }
+
+            Log::info('[VENDOR-SHOP-UPDATE] Updating shop with data', [
+                'shop_id' => $shop->id,
+                'update_fields' => array_keys($updateData),
+                'update_data' => $updateData,
+            ]);
 
             $shop->update($updateData);
             $shop->refresh();
+
+            Log::info('[VENDOR-SHOP-UPDATE] Shop updated, refreshed from DB', [
+                'categories_after_update' => $shop->categories,
+                'name_after_update' => $shop->name,
+                'description_after_update' => $shop->description,
+            ]);
             $shop->load(['user', 'products', 'verifier', 'rejector']);
 
             $stats = $this->calculateShopStats($shop, $user);
 
-            return response()->json([
+            Log::info('[VENDOR-SHOP-UPDATE] Shop updated successfully', [
+                'shop_id' => $shop->id,
+                'vendor_id' => $user->id,
+                'location_request_created' => $locationRequest !== null
+            ]);
+
+            // Build response message
+            $message = 'Boutique mise à jour avec succès';
+            if ($locationRequest) {
+                $message .= '. Votre demande de changement d\'emplacement a été soumise et sera validée par un administrateur.';
+            }
+
+            $response = [
                 'success' => true,
-                'message' => 'Boutique mise à jour avec succès',
+                'message' => $message,
                 'shop' => $this->formatShop($shop),
                 'stats' => $stats,
-            ]);
+            ];
+
+            // Add location request info if created
+            if ($locationRequest) {
+                $response['location_request'] = [
+                    'id' => $locationRequest->id,
+                    'latitude' => $locationRequest->latitude,
+                    'longitude' => $locationRequest->longitude,
+                    'status' => $locationRequest->status,
+                    'created_at' => $locationRequest->created_at->toIso8601String(),
+                ];
+            }
+
+            return response()->json($response);
         } catch (\Exception $e) {
-            Log::error('[SHOP_UPDATE] Error:', [
+            Log::error('[VENDOR-SHOP-UPDATE] Error updating shop', [
+                'shop_id' => $shop->id,
+                'vendor_id' => $user->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -331,6 +455,59 @@ class ShopController extends Controller
             'average_rating' => $averageRating,
             'total_reviews' => $totalReviews,
         ];
+    }
+
+    /**
+     * Get vendor's location change requests
+     */
+    public function getLocationRequests(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user->hasAnyRole(['vendeur', 'vendor'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous n\'êtes pas vendeur',
+            ], 403);
+        }
+
+        $shop = $user->shops()->first();
+
+        if (!$shop) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune boutique trouvée',
+            ], 404);
+        }
+
+        // Get all location requests for this shop
+        $requests = ShopLocationRequest::where('shop_id', $shop->id)
+            ->with('reviewer')
+            ->latest()
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'address' => $request->address,
+                    'reason' => $request->reason,
+                    'status' => $request->status,
+                    'rejection_reason' => $request->rejection_reason,
+                    'reviewed_by' => $request->reviewer ? [
+                        'id' => $request->reviewer->id,
+                        'name' => $request->reviewer->first_name . ' ' . $request->reviewer->last_name,
+                    ] : null,
+                    'reviewed_at' => $request->reviewed_at?->toIso8601String(),
+                    'created_at' => $request->created_at->toIso8601String(),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'requests' => $requests,
+            'pending_count' => ShopLocationRequest::where('shop_id', $shop->id)->pending()->count(),
+        ]);
     }
 
     /**
