@@ -164,6 +164,10 @@ class VendorOrderController extends Controller
                 $this->notifyDeliveryCompany($order);
             });
 
+            // 5. Dispatcher le job de vérification après 5 minutes
+            \App\Jobs\CheckDeliveryAcceptanceJob::dispatch($order->id)
+                ->delay(now()->addMinutes(5));
+
             return response()->json([
                 'success' => true,
                 'message' => 'Commande validée. Fonds crédités et bloqués en attente de livraison.',
