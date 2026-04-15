@@ -214,7 +214,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('vendor/products')->group(function () {
             Route::get('/', [VendorProductController::class, 'index']);
             Route::put('/{id}', [VendorProductController::class, 'update']);
+            Route::post('/{id}', [VendorProductController::class, 'update']); // Support POST avec _method=PUT pour multipart
             Route::delete('/{id}', [VendorProductController::class, 'destroy']);
+
+            // Stock management
+            Route::post('/{id}/stock', [VendorProductController::class, 'updateStock']);
+        });
+
+        // Inventory management
+        Route::prefix('vendor/inventory')->group(function () {
+            Route::get('/', [VendorProductController::class, 'getInventory']);
+            Route::post('/entry', [VendorProductController::class, 'addInventoryEntry']);
         });
 
         // Conversations & Messages

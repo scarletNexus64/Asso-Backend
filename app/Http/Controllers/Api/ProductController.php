@@ -378,6 +378,23 @@ class ProductController extends Controller
             'remaining_mb' => round($vendorPackage->storage_remaining_mb, 2),
         ]);
 
+        // 5. Create inventory entry if stock is provided
+        if (isset($validated['stock']) && $validated['stock'] > 0) {
+            Inventory::create([
+                'product_id' => $product->id,
+                'user_id' => $request->user()->id,
+                'type' => 'entry',
+                'quantity' => $validated['stock'],
+                'stock_after' => $validated['stock'],
+                'notes' => 'Stock initial lors de la création du produit',
+            ]);
+
+            \Log::info('[PRODUCT_STORE] Inventory entry created:', [
+                'product_id' => $product->id,
+                'stock' => $validated['stock'],
+            ]);
+        }
+
         // Load relations for response
         $product->load(['images', 'primaryImage', 'category', 'subcategory', 'user']);
 
