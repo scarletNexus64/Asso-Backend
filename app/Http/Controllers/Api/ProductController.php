@@ -472,7 +472,9 @@ class ProductController extends Controller
                 'longitude' => $product->shop->longitude ? (float) $product->shop->longitude : null,
                 'address' => $product->shop->address,
             ] : null,
-            'location' => $product->shop ? $product->shop->address : ($product->user ? $product->user->address : null),
+            'location' => $product->shop && $product->shop->address
+                ? $product->shop->address
+                : ($product->user && $product->user->address ? $product->user->address : $this->getLocationFromCoordinates($product->latitude, $product->longitude)),
             'created_at' => $product->created_at->toIso8601String(),
         ];
 
@@ -513,6 +515,42 @@ class ProductController extends Controller
             : $imagePath;
 
         return asset('storage/' . $cleanPath);
+    }
+
+    /**
+     * Get approximate location name from GPS coordinates (Cameroon cities)
+     */
+    private function getLocationFromCoordinates($latitude, $longitude): ?string
+    {
+        if (!$latitude || !$longitude) {
+            return null;
+        }
+
+        $cities = [
+            ['name' => 'Yaoundé', 'lat' => 3.8480, 'lng' => 11.5021],
+            ['name' => 'Douala', 'lat' => 4.0483, 'lng' => 9.7043],
+            ['name' => 'Bamenda', 'lat' => 5.9631, 'lng' => 10.1591],
+            ['name' => 'Buea', 'lat' => 4.1597, 'lng' => 9.2340],
+            ['name' => 'Ebolowa', 'lat' => 3.5066, 'lng' => 11.5005],
+            ['name' => 'Garoua', 'lat' => 9.3000, 'lng' => 13.3920],
+            ['name' => 'Maroua', 'lat' => 10.5953, 'lng' => 14.3157],
+            ['name' => 'Bafoussam', 'lat' => 5.4737, 'lng' => 10.4176],
+            ['name' => 'Kribi', 'lat' => 2.9500, 'lng' => 9.9167],
+            ['name' => 'Limbe', 'lat' => 4.0186, 'lng' => 9.2043],
+        ];
+
+        $closest = null;
+        $minDist = PHP_FLOAT_MAX;
+
+        foreach ($cities as $city) {
+            $dist = pow($latitude - $city['lat'], 2) + pow($longitude - $city['lng'], 2);
+            if ($dist < $minDist) {
+                $minDist = $dist;
+                $closest = $city['name'];
+            }
+        }
+
+        return $closest ? "$closest, Cameroun" : 'Cameroun';
     }
 
     /**

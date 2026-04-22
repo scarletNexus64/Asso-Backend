@@ -16,9 +16,14 @@ class ExtendedProductsSeeder extends Seeder
      */
     public function run(): void
     {
-        // User and Shop IDs from existing data
-        $userId = 21;
-        $shopId = 10;
+        // Use first available shop
+        $shop = \App\Models\Shop::first();
+        if (!$shop) {
+            $this->command->error('No shop found. Please seed shops first.');
+            return;
+        }
+        $userId = $shop->user_id;
+        $shopId = $shop->id;
 
         $products = [
             // More Electronics - Category 1

@@ -67,12 +67,28 @@ class ProductSeeder extends Seeder
 
         $shopIds = $shops->pluck('id')->toArray();
 
+        // Villes camerounaises avec coordonnées de base
+        $cameroonCities = [
+            ['lat' => 3.8480, 'lng' => 11.5021],  // Yaoundé
+            ['lat' => 4.0483, 'lng' => 9.7043],   // Douala
+            ['lat' => 5.9631, 'lng' => 10.1591],   // Bamenda
+            ['lat' => 4.1597, 'lng' => 9.2340],    // Buea
+            ['lat' => 3.5066, 'lng' => 11.5005],   // Ebolowa
+        ];
+
         foreach ($products as $productData) {
             $shop = Shop::find($shopIds[array_rand($shopIds)]);
+
+            // Coordonnées aléatoires autour d'une ville camerounaise (~2km radius)
+            $city = $cameroonCities[array_rand($cameroonCities)];
+            $latitude = $city['lat'] + (mt_rand(-200, 200) / 10000);
+            $longitude = $city['lng'] + (mt_rand(-200, 200) / 10000);
 
             Product::create(array_merge($productData, [
                 'shop_id' => $shop->id,
                 'user_id' => $shop->user_id,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
                 'status' => 'active',
             ]));
         }
@@ -92,7 +108,7 @@ class ProductSeeder extends Seeder
         $shopData = [
             ['name' => 'TechStore Douala', 'description' => 'Boutique high-tech, smartphones, laptops et accessoires.', 'address' => 'Rue des Palmiers, Akwa, Douala', 'latitude' => 4.0483, 'longitude' => 9.7043],
             ['name' => 'Mode Africaine by Amina', 'description' => 'Vêtements et accessoires en tissu africain authentique.', 'address' => 'Marché Mokolo, Yaoundé', 'latitude' => 3.8667, 'longitude' => 11.5167],
-            ['name' => 'Épicerie du Sahel', 'description' => 'Produits alimentaires locaux et épices d\'Afrique de l\'Ouest.', 'address' => 'Avenue Charles de Gaulle, Cotonou', 'latitude' => 6.3703, 'longitude' => 2.3912],
+            ['name' => 'Épicerie du Sahel', 'description' => 'Produits alimentaires locaux et épices d\'Afrique de l\'Ouest.', 'address' => 'Marché Central, Garoua', 'latitude' => 9.3000, 'longitude' => 13.3920],
         ];
 
         foreach ($sellers as $i => $seller) {

@@ -412,7 +412,11 @@
                                             </span>
                                         </td>
                                         <td class="px-4 py-3 text-sm text-white">
-                                            {{ number_format($product->price, 0, ',', ' ') }} FCFA
+                                            @if($product->price_type === 'variable')
+                                                {{ number_format($product->min_price ?? 0, 0, ',', ' ') }} - {{ number_format($product->max_price ?? 0, 0, ',', ' ') }} FCFA
+                                            @else
+                                                {{ number_format($product->price ?? 0, 0, ',', ' ') }} FCFA
+                                            @endif
                                         </td>
                                         <td class="px-4 py-3 text-sm text-white">
                                             {{ $product->stock }}

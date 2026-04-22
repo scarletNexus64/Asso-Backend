@@ -465,7 +465,7 @@ class ShopController extends Controller
                 'condition' => $product->condition,
                 'latitude' => $product->latitude,
                 'longitude' => $product->longitude,
-                'location' => $product->address,
+                'location' => $shop->address ?? null,
                 'created_at' => $product->created_at->toIso8601String(),
             ];
         });
