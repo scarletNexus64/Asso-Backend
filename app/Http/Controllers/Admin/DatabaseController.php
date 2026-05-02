@@ -17,7 +17,7 @@ class DatabaseController extends Controller
         $tables = $this->getAllTables();
         $stats = [
             'total_tables' => count($tables),
-            'database_name' => env('DB_DATABASE'),
+            'database_name' => config('database.connections.' . config('database.default') . '.database'),
             'database_size' => $this->getDatabaseSize(),
         ];
 
@@ -145,7 +145,6 @@ class DatabaseController extends Controller
         $driver = DB::getDriverName();
 
         if ($driver === 'sqlite') {
-            // SQLite
             $results = DB::select("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
 
             foreach ($results as $result) {
@@ -155,12 +154,25 @@ class DatabaseController extends Controller
                 $tables[] = [
                     'name' => $tableName,
                     'rows' => $rowCount,
-                    'size' => 0, // SQLite ne supporte pas facilement la taille par table
+                    'size' => 0,
+                ];
+            }
+        } elseif ($driver === 'pgsql') {
+            $results = DB::select("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename");
+
+            foreach ($results as $result) {
+                $tableName = $result->tablename;
+                $rowCount = DB::table($tableName)->count();
+                $tableSize = $this->getTableSize($tableName);
+
+                $tables[] = [
+                    'name' => $tableName,
+                    'rows' => $rowCount,
+                    'size' => $tableSize,
                 ];
             }
         } else {
-            // MySQL/MariaDB
-            $databaseName = env('DB_DATABASE');
+            $databaseName = config('database.connections.' . config('database.default') . '.database');
             $results = DB::select('SHOW TABLES');
 
             foreach ($results as $result) {
@@ -199,6 +211,24 @@ class DatabaseController extends Controller
                     'extra' => '',
                 ];
             }, $columns);
+        } elseif ($driver === 'pgsql') {
+            $columns = DB::select("
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = ?
+                ORDER BY ordinal_position
+            ", [$tableName]);
+
+            return array_map(function ($column) {
+                return [
+                    'name' => $column->column_name,
+                    'type' => $column->data_type,
+                    'null' => $column->is_nullable,
+                    'key' => '',
+                    'default' => $column->column_default,
+                    'extra' => '',
+                ];
+            }, $columns);
         } else {
             $columns = DB::select('SHOW COLUMNS FROM ' . $tableName);
 
@@ -220,7 +250,17 @@ class DatabaseController extends Controller
      */
     private function getTableSize($tableName)
     {
-        $databaseName = env('DB_DATABASE');
+        $driver = DB::getDriverName();
+
+        if ($driver === 'pgsql') {
+            $result = DB::select("
+                SELECT ROUND(pg_total_relation_size(quote_ident(?)) / 1024.0 / 1024.0, 2) AS size_mb
+            ", [$tableName]);
+
+            return $result[0]->size_mb ?? 0;
+        }
+
+        $databaseName = config('database.connections.' . config('database.default') . '.database');
 
         $result = DB::select("
             SELECT
@@ -245,8 +285,13 @@ class DatabaseController extends Controller
                 return round(filesize($dbPath) / 1024 / 1024, 2);
             }
             return 0;
+        } elseif ($driver === 'pgsql') {
+            $databaseName = config('database.connections.' . config('database.default') . '.database');
+            $result = DB::select("SELECT ROUND(pg_database_size(?) / 1024.0 / 1024.0, 2) AS size_mb", [$databaseName]);
+
+            return $result[0]->size_mb ?? 0;
         } else {
-            $databaseName = env('DB_DATABASE');
+            $databaseName = config('database.connections.' . config('database.default') . '.database');
 
             $result = DB::select("
                 SELECT
