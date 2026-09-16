@@ -60,6 +60,8 @@ Route::prefix('v1/auth')->group(function () {
     Route::post('/register-email', [AuthController::class, 'registerEmail']);
     Route::post('/login-email', [AuthController::class, 'loginEmail']);
     Route::post('/verify-email-otp', [AuthController::class, 'verifyEmailOtp']);
+    Route::post('/password/forgot', [AuthController::class, 'requestPasswordReset']);
+    Route::post('/password/reset', [AuthController::class, 'resetPassword']);
 });
 
 // Deliverer Sync - verify-sync-code is public, sync-profile requires auth
@@ -111,6 +113,7 @@ Route::prefix('v1')->group(function () {
 
     // Module GROS (ASSO CHINA / DUBAÏ / TURQUIE) — catalogue par pays (public)
     Route::get('/import/products/{id}/image', [\App\Http\Controllers\Api\ImportController::class, 'image']);
+    Route::get('/import/product-images/{image}', [\App\Http\Controllers\Api\ImportController::class, 'productImage']);
     Route::get('/import/products/{id}', [\App\Http\Controllers\Api\ImportController::class, 'show']);
     Route::get('/import/{code}/products', [\App\Http\Controllers\Api\ImportController::class, 'products']);
     Route::get('/import/{code}/shipping', [\App\Http\Controllers\Api\ImportController::class, 'shipping']);

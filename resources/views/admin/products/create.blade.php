@@ -68,6 +68,10 @@
                                       placeholder="Décrivez le produit...">{{ old('description') }}</textarea>
                             @error('description')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="block text-sm font-medium text-white mb-2">Caractéristiques</label><textarea name="characteristics" rows="4" class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg" placeholder="Matière, puissance, dimensions…">{{ old('characteristics') }}</textarea></div>
+                            <div><label class="block text-sm font-medium text-white mb-2">Informations commerciales</label><textarea name="commercial_information" rows="4" class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg" placeholder="Garantie, délai, conditionnement…">{{ old('commercial_information') }}</textarea></div>
+                        </div>
                     </div>
                 </div>
 
@@ -162,6 +166,13 @@
                         Tarification
                     </h3>
 
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-white mb-2">Devise du prix <span class="text-red-500">*</span></label>
+                        <select name="currency" required class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg">
+                            @foreach($currencies as $currency)<option value="{{ $currency->code }}" {{ old('currency', 'XAF') === $currency->code ? 'selected' : '' }}>{{ $currency->code }} — {{ $currency->name }}</option>@endforeach
+                        </select>
+                    </div>
+
                     <!-- Price Type -->
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-white mb-2">
@@ -210,15 +221,17 @@
                     </div>
                 </div>
 
+                @include('admin.products._variants')
+
                 <!-- Images Card -->
                 <div class="bg-dark-100 rounded-xl shadow-lg p-6">
                     <h3 class="text-lg font-bold text-white mb-4 flex items-center">
                         <i class="fas fa-images text-primary-500 mr-2"></i>
-                        Images du Produit
+                        Photos du produit
                     </h3>
                     <input type="file" name="images[]" multiple accept="image/*" onchange="previewImages(event)"
                            class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-                    <p class="mt-2 text-xs text-gray-400">Max 2MB par image. Formats: JPG, PNG, GIF, WebP. La première image sera l'image principale.</p>
+                    <p class="mt-2 text-xs text-gray-400">Vous pouvez choisir plusieurs photos. La première sera utilisée comme photo principale.</p>
                     <div id="image_preview" class="mt-4 grid grid-cols-4 gap-4"></div>
                 </div>
             </div>

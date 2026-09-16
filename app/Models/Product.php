@@ -86,6 +86,8 @@ class Product extends Model
         'name',
         'slug',
         'description',
+        'characteristics',
+        'commercial_information',
         'price',
         'currency',
         'price_xaf',
@@ -207,6 +209,11 @@ class Product extends Model
     public function images(): HasMany
     {
         return $this->hasMany(ProductImage::class)->orderBy('order');
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class)->orderBy('sort_order');
     }
 
     /**

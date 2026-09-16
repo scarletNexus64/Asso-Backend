@@ -80,7 +80,24 @@
                 <div class="text-white whitespace-pre-wrap">
                     {{ $product->description ?? 'Aucune description disponible.' }}
                 </div>
+                @if($product->characteristics || $product->commercial_information)
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-dark-300">
+                    <div><h3 class="font-semibold text-white mb-2">Caractéristiques</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->characteristics ?: '—' }}</p></div>
+                    <div><h3 class="font-semibold text-white mb-2">Informations commerciales</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->commercial_information ?: '—' }}</p></div>
+                </div>
+                @endif
             </div>
+
+            @if($product->variants->isNotEmpty())
+            <div class="bg-dark-100 rounded-xl shadow-lg p-6">
+                <h2 class="text-lg font-semibold text-white mb-4"><i class="fas fa-layer-group text-primary-500 mr-2"></i>Variantes et stocks</h2>
+                <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-gray-400 border-b border-dark-300"><th class="pb-2">Attributs</th><th>SKU</th><th>Écart de prix</th><th>Stock</th><th>Statut</th></tr></thead><tbody>
+                    @foreach($product->variants as $variant)
+                    <tr class="border-b border-dark-200/50"><td class="py-3 text-white">{{ collect($variant->attributes)->map(fn($value, $name) => "$name: $value")->implode(' · ') }}</td><td class="text-gray-300">{{ $variant->sku ?: '—' }}</td><td class="text-gray-300">{{ number_format($variant->price_adjustment, 2, ',', ' ') }} {{ $product->currency }}</td><td class="font-semibold text-white">{{ $variant->stock }}</td><td>{{ $variant->is_active ? 'Actif' : 'Inactif' }}</td></tr>
+                    @endforeach
+                </tbody></table></div>
+            </div>
+            @endif
 
             <!-- Paliers de prix (Vente en gros) -->
 @if($product->is_wholesale && $product->priceTiers->count() > 0)

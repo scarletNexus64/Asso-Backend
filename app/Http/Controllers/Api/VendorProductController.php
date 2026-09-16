@@ -19,7 +19,7 @@ class VendorProductController extends Controller
     {
         $user = $request->user();
 
-        $query = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop'])
+        $query = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'variants'])
             ->where('user_id', $user->id)
             ->orderBy('created_at', 'desc');
 
@@ -90,6 +90,13 @@ class VendorProductController extends Controller
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
             'deleted_image_ids' => 'sometimes|array',
             'deleted_image_ids.*' => 'integer|exists:product_images,id',
+            'variants' => 'sometimes|nullable|array',
+            'variants.*.attributes' => 'required_with:variants|array|min:1',
+            'variants.*.attributes.*' => 'required|string|max:100',
+            'variants.*.sku' => 'nullable|string|max:100',
+            'variants.*.price_adjustment' => 'nullable|numeric',
+            'variants.*.stock' => 'required_with:variants|integer|min:0',
+            'variants.*.is_active' => 'nullable|boolean',
         ]);
 
         \Log::info('[VENDOR_PRODUCT_UPDATE] Received data:', [
@@ -139,7 +146,8 @@ class VendorProductController extends Controller
 
             // Update product fields (exclude images from update)
             $updateData = $validated;
-            unset($updateData['images']);
+            $variants = $updateData['variants'] ?? null;
+            unset($updateData['images'], $updateData['variants']);
 
             // Convert empty strings to null for weight fields
             if (isset($updateData['weight']) && $updateData['weight'] === '') {
@@ -165,6 +173,9 @@ class VendorProductController extends Controller
             ]);
 
             $product->update($updateData);
+            if ($variants !== null) {
+                $this->syncVariants($product, $variants);
+            }
 
             \Log::info('[VENDOR_PRODUCT_UPDATE] Product updated:', [
                 'product_id' => $product->id,
@@ -257,7 +268,7 @@ class VendorProductController extends Controller
             }
 
             // Load relations for response
-            $product->load(['images', 'primaryImage', 'category', 'subcategory', 'shop']);
+            $product->load(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'variants']);
 
             $responseData = [
                 'success' => true,
@@ -368,6 +379,8 @@ class VendorProductController extends Controller
             'name' => $product->name,
             'slug' => $product->slug,
             'description' => $product->description,
+            'characteristics' => $product->characteristics,
+            'commercial_information' => $product->commercial_information,
             'price' => (float) $product->price,
             'currency' => $product->currency ?? 'XAF',
             'price_xaf' => $product->price_xaf !== null ? (float) $product->price_xaf : (float) $product->price,
@@ -380,6 +393,14 @@ class VendorProductController extends Controller
             'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
             'weight' => $product->weight,
+            'variants' => $product->variants->map(fn ($variant) => [
+                'id' => $variant->id,
+                'sku' => $variant->sku,
+                'attributes' => $variant->attributes,
+                'price_adjustment' => (float) $variant->price_adjustment,
+                'stock' => $variant->stock,
+                'is_active' => $variant->is_active,
+            ])->values(),
             'status' => $product->status,
             'latitude' => $product->latitude ? (float) $product->latitude : null,
             'longitude' => $product->longitude ? (float) $product->longitude : null,
@@ -581,6 +602,25 @@ class VendorProductController extends Controller
             Product::AVAILABLE_SIZES,
             fn(string $size): bool => in_array($size, $selected, true),
         ));
+    }
+
+    private function syncVariants(Product $product, array $variants): void
+    {
+        $product->variants()->delete();
+        $totalStock = 0;
+        foreach (array_values($variants) as $index => $variant) {
+            $stock = (int) $variant['stock'];
+            $product->variants()->create([
+                'sku' => $variant['sku'] ?? null,
+                'attributes' => $variant['attributes'],
+                'price_adjustment' => $variant['price_adjustment'] ?? 0,
+                'stock' => $stock,
+                'is_active' => $variant['is_active'] ?? true,
+                'sort_order' => $index,
+            ]);
+            $totalStock += $stock;
+        }
+        $product->updateQuietly(['stock' => $totalStock]);
     }
 
     public function updateStock(Request $request, $id)

@@ -57,6 +57,7 @@ class AdminProductOriginTest extends TestCase
             'price_type' => 'fixed',
             'price' => 15000,
             'type' => 'article',
+            'weight' => 0.5,
             'origin_country' => 'CN',
             'stock' => 5,
             'status' => 'active',
@@ -77,6 +78,7 @@ class AdminProductOriginTest extends TestCase
             'price_type' => 'fixed',
             'price' => 8000,
             'type' => 'article',
+            'weight' => 0.5,
             'origin_country' => '',
             'stock' => 3,
             'status' => 'active',
@@ -98,6 +100,7 @@ class AdminProductOriginTest extends TestCase
             'price_type' => 'fixed',
             'price' => 8000,
             'type' => 'article',
+            'weight' => 0.5,
             'origin_country' => 'ZZ', // pays inexistant
             'stock' => 3,
             'status' => 'active',

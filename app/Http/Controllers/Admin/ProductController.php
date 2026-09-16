@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Subcategory;
 use App\Models\Shop;
 use App\Models\ImportCountry;
+use App\Models\Currency;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\File;
@@ -75,8 +76,9 @@ class ProductController extends Controller
         $categories = Category::orderBy('name')->get();
         $subcategories = Subcategory::with('category')->orderBy('name')->get();
         $importCountries = ImportCountry::activeOrdered()->get();
+        $currencies = Currency::active()->orderBy('code')->get();
 
-        return view('admin.products.create', compact('shops', 'categories', 'subcategories', 'importCountries'));
+        return view('admin.products.create', compact('shops', 'categories', 'subcategories', 'importCountries', 'currencies'));
     }
 
     /**
@@ -90,6 +92,9 @@ class ProductController extends Controller
             'subcategory_id' => 'nullable|exists:subcategories,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'characteristics' => 'nullable|string|max:10000',
+            'commercial_information' => 'nullable|string|max:10000',
+            'currency' => 'nullable|string|size:3|exists:currencies,code',
             'price_type' => 'required|in:fixed,variable',
             'price' => 'required_if:price_type,fixed|nullable|numeric|min:0',
             'min_price' => 'required_if:price_type,variable|nullable|numeric|min:0',
@@ -110,12 +115,20 @@ class ProductController extends Controller
             'tiers.*.unit_price'   => 'required_with:tiers|numeric|min:0',
             'tiers.*.min_quantity' => 'required_with:tiers|integer|min:1',
             'tiers.*.pack_size'    => 'nullable|integer|min:1',
+            'variants' => 'nullable|array',
+            'variants.*.attributes' => 'required_with:variants|string|max:1000',
+            'variants.*.sku' => 'nullable|string|max:100',
+            'variants.*.price_adjustment' => 'nullable|numeric',
+            'variants.*.stock' => 'required_with:variants|integer|min:0',
+            'variants.*.is_active' => 'nullable|boolean',
         ]);
 
         // Isole les données "gros" AVANT toute insertion — elles ne vont pas dans `products`
         $tiers = $validated['tiers'] ?? [];
+        $variants = $validated['variants'] ?? [];
         $isWholesale = $request->boolean('is_wholesale');
-        unset($validated['tiers'], $validated['is_wholesale']);
+        unset($validated['tiers'], $validated['variants'], $validated['is_wholesale']);
+        $validated['currency'] = strtoupper($validated['currency'] ?? 'XAF');
 
         // Get shop owner
         $shop = Shop::findOrFail($validated['shop_id']);
@@ -139,6 +152,7 @@ class ProductController extends Controller
 
         // Paliers de prix (module GROS)
         $this->syncPriceTiers($product, $tiers);
+        $this->syncVariants($product, $variants);
 
         // Handle images upload
         if ($request->hasFile('images')) {
@@ -153,7 +167,7 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        $product->load(['shop', 'category', 'subcategory', 'images', 'user', 'priceTiers']);
+        $product->load(['shop', 'category', 'subcategory', 'images', 'user', 'priceTiers', 'variants']);
 
         return view('admin.products.show', compact('product'));
     }
@@ -163,13 +177,14 @@ class ProductController extends Controller
      */
     public function edit(Product $product)
     {
-        $product->load(['images', 'priceTiers']);
+        $product->load(['images', 'priceTiers', 'variants']);
         $shops = Shop::where('status', 'active')->orderBy('name')->get();
         $categories = Category::orderBy('name')->get();
         $subcategories = Subcategory::with('category')->orderBy('name')->get();
         $importCountries = ImportCountry::activeOrdered()->get();
+        $currencies = Currency::active()->orderBy('code')->get();
 
-        return view('admin.products.edit', compact('product', 'shops', 'categories', 'subcategories', 'importCountries'));
+        return view('admin.products.edit', compact('product', 'shops', 'categories', 'subcategories', 'importCountries', 'currencies'));
     }
 
     /**
@@ -183,6 +198,9 @@ class ProductController extends Controller
             'subcategory_id' => 'nullable|exists:subcategories,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'characteristics' => 'nullable|string|max:10000',
+            'commercial_information' => 'nullable|string|max:10000',
+            'currency' => 'nullable|string|size:3|exists:currencies,code',
             'price_type' => 'required|in:fixed,variable',
             'price' => 'required_if:price_type,fixed|nullable|numeric|min:0',
             'min_price' => 'required_if:price_type,variable|nullable|numeric|min:0',
@@ -203,12 +221,20 @@ class ProductController extends Controller
             'tiers.*.unit_price'   => 'required_with:tiers|numeric|min:0',
             'tiers.*.min_quantity' => 'required_with:tiers|integer|min:1',
             'tiers.*.pack_size'    => 'nullable|integer|min:1',
+            'variants' => 'nullable|array',
+            'variants.*.attributes' => 'required_with:variants|string|max:1000',
+            'variants.*.sku' => 'nullable|string|max:100',
+            'variants.*.price_adjustment' => 'nullable|numeric',
+            'variants.*.stock' => 'required_with:variants|integer|min:0',
+            'variants.*.is_active' => 'nullable|boolean',
         ]);
 
         // Isole les données "gros" AVANT l'update — elles ne vont pas dans `products`
         $tiers = $validated['tiers'] ?? [];
+        $variants = $validated['variants'] ?? [];
         $isWholesale = $request->boolean('is_wholesale');
-        unset($validated['tiers'], $validated['is_wholesale']);
+        unset($validated['tiers'], $validated['variants'], $validated['is_wholesale']);
+        $validated['currency'] = strtoupper($validated['currency'] ?? $product->currency ?? 'XAF');
 
         // Get shop owner
         $shop = Shop::findOrFail($validated['shop_id']);
@@ -233,6 +259,7 @@ class ProductController extends Controller
 
         // Paliers de prix (module GROS) — remplace intégralement l'ancienne liste
         $this->syncPriceTiers($product, $tiers);
+        $this->syncVariants($product, $variants);
 
         // Handle new images upload
         if ($request->hasFile('images')) {
@@ -276,10 +303,49 @@ class ProductController extends Controller
                 'unit_price'   => $tier['unit_price'],
                 'min_quantity' => $tier['min_quantity'] ?? 1,
                 'pack_size'    => $tier['pack_size'] ?? 1,
-                'currency'     => 'XAF',
+                'currency'     => $product->currency ?? 'XAF',
                 'is_active'    => true,
                 'sort_order'   => $i + 1,
             ]);
+        }
+    }
+
+    private function syncVariants(Product $product, array $variants): void
+    {
+        $product->variants()->delete();
+        $totalStock = 0;
+
+        foreach (array_values($variants) as $index => $variant) {
+            if (blank($variant['attributes'] ?? null)) {
+                continue;
+            }
+
+            $attributes = collect(preg_split('/[;\n]+/', $variant['attributes']))
+                ->mapWithKeys(function (string $item): array {
+                    [$name, $value] = array_pad(explode(':', $item, 2), 2, null);
+                    $name = trim($name);
+                    $value = trim((string) $value);
+                    return $name !== '' && $value !== '' ? [$name => $value] : [];
+                })->all();
+
+            if ($attributes === []) {
+                continue;
+            }
+
+            $stock = (int) ($variant['stock'] ?? 0);
+            $product->variants()->create([
+                'sku' => filled($variant['sku'] ?? null) ? trim($variant['sku']) : null,
+                'attributes' => $attributes,
+                'price_adjustment' => $variant['price_adjustment'] ?? 0,
+                'stock' => $stock,
+                'is_active' => (bool) ($variant['is_active'] ?? false),
+                'sort_order' => $index,
+            ]);
+            $totalStock += $stock;
+        }
+
+        if ($product->variants()->exists()) {
+            $product->updateQuietly(['stock' => $totalStock]);
         }
     }
 

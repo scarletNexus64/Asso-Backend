@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Models\PhoneOtp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\OtpCodeMail;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -414,6 +416,14 @@ class AuthController extends Controller
 
         Log::info('[AUTH] Email user created, OTP generated', ['user_id' => $user->id]);
 
+        try {
+            Mail::to($user->email)->send(new OtpCodeMail($otpCode));
+        } catch (\Throwable $exception) {
+            Log::error('[AUTH] Unable to send registration OTP email', ['user_id' => $user->id, 'error' => $exception->getMessage()]);
+            $user->delete();
+            return response()->json(['success' => false, 'message' => "Le code de vérification n'a pas pu être envoyé. Vérifiez l'adresse ou réessayez plus tard."], 503);
+        }
+
         $response = [
             'success' => true,
             'message' => 'Compte créé. Un code de vérification a été envoyé à votre email.',
@@ -513,6 +523,40 @@ class AuthController extends Controller
             'user' => $this->userPayload($user),
             'is_new_user' => $isNewUser,
         ]);
+    }
+
+    public function requestPasswordReset(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+        $user = User::where('email', $request->email)->first();
+        if (!$user) {
+            return response()->json(['success' => true, 'message' => 'Si ce compte existe, un code a été envoyé.']);
+        }
+
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $user->update(['otp_code' => $code, 'otp_expires_at' => Carbon::now()->addMinutes(10)]);
+        try {
+            Mail::to($user->email)->send(new OtpCodeMail($code));
+        } catch (\Throwable $exception) {
+            Log::error('[AUTH] Unable to send password reset OTP', ['user_id' => $user->id, 'error' => $exception->getMessage()]);
+            return response()->json(['success' => false, 'message' => "Le code n'a pas pu être envoyé. Réessayez plus tard."], 503);
+        }
+        return response()->json(['success' => true, 'message' => 'Un code de réinitialisation a été envoyé.']);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email', 'otp_code' => 'required|string|size:6',
+            'password' => 'required|string|min:6|confirmed',
+        ]);
+        $user = User::where('email', $validated['email'])->first();
+        if (!$user || !hash_equals((string) $user->otp_code, $validated['otp_code']) || !$user->otp_expires_at || Carbon::parse($user->otp_expires_at)->isPast()) {
+            return response()->json(['success' => false, 'message' => 'Code invalide ou expiré.'], 422);
+        }
+        $user->update(['password' => Hash::make($validated['password']), 'otp_code' => null, 'otp_expires_at' => null]);
+        $user->tokens()->delete();
+        return response()->json(['success' => true, 'message' => 'Mot de passe modifié avec succès.']);
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ImportCountry;
 use App\Models\ImportShippingOption;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Services\OrderService;
 use App\Services\PaymentMethodService;
 use App\Services\ExchangeRateService;
@@ -34,7 +35,8 @@ class ImportController extends Controller
             ->where('is_wholesale', true)
             ->where('origin_country', $code)
             ->where('status', 'active')
-            ->with(['priceTiers', 'primaryImage'])
+            ->whereHas('shop', fn ($query) => $query->where('status', 'active'))
+            ->with(['priceTiers', 'primaryImage', 'images', 'variants'])
             ->latest()
             ->get()
             ->map(fn (Product $p) => $this->serializeProduct($p, false, $targetCurrency));
@@ -59,7 +61,9 @@ class ImportController extends Controller
     public function show(Request $request, int $id)
     {
         $product = Product::where('is_wholesale', true)
-            ->with(['priceTiers', 'images'])
+            ->where('status', 'active')
+            ->whereHas('shop', fn ($query) => $query->where('status', 'active'))
+            ->with(['priceTiers', 'images', 'variants'])
             ->findOrFail($id);
 
         return response()->json([
@@ -90,6 +94,24 @@ class ImportController extends Controller
         if (!Storage::disk('public')->exists($relativePath)) {
             abort(404);
         }
+
+        return response()->file(Storage::disk('public')->path($relativePath), [
+            'Access-Control-Allow-Origin' => '*',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
+    /** Sert chaque photo d'un produit importé via l'API (compatible mobile/web et CORS). */
+    public function productImage(ProductImage $image)
+    {
+        $image->loadMissing('product');
+        abort_unless($image->product?->is_wholesale, 404);
+
+        $relativePath = ltrim($image->image_path, '/');
+        if (str_starts_with($relativePath, 'storage/')) {
+            $relativePath = substr($relativePath, strlen('storage/'));
+        }
+        abort_unless(Storage::disk('public')->exists($relativePath), 404);
 
         return response()->file(Storage::disk('public')->path($relativePath), [
             'Access-Control-Allow-Origin' => '*',
@@ -181,20 +203,32 @@ class ImportController extends Controller
             'id' => $p->id,
             'name' => $p->name,
             'description' => $p->description,
+            'characteristics' => $p->characteristics,
+            'commercial_information' => $p->commercial_information,
             'origin_country' => $p->origin_country,
             'currency' => $p->currency,
             'min_order_quantity' => $minFromTiers ?? $p->min_order_quantity,
             // Le poids est renseigné par l'équipe/le vendeur, jamais par le client.
             'unit_weight_kg' => is_numeric($p->weight) ? (float) $p->weight : null,
+            'stock' => $p->stock,
+            'variants' => ($p->relationLoaded('variants') ? $p->variants : collect())
+                ->where('is_active', true)->map(fn ($variant) => [
+                    'id' => $variant->id,
+                    'sku' => $variant->sku,
+                    'attributes' => $variant->attributes,
+                    'price_adjustment' => (float) $variant->price_adjustment,
+                    'stock' => $variant->stock,
+                ])->values(),
             'price_tiers' => $tiers->map(fn ($tier) => $this->serializeTier($tier, $targetCurrency))->values(),
             'image' => $p->id
                 ? url('/api/v1/import/products/' . $p->id . '/image')
                 : null,
+            'images' => ($p->relationLoaded('images') ? $p->images : collect())
+                ->map(fn ($i) => url('/api/v1/import/product-images/' . $i->id))->values(),
         ];
 
         if ($full) {
-            $data['images'] = ($p->relationLoaded('images') ? $p->images : collect())
-                ->map(fn ($i) => $this->imageUrl($i->image_path))->values();
+            // Les images sont déjà exposées dans la liste pour permettre la galerie mobile.
         }
 
         return $data;

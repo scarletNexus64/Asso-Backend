@@ -73,6 +73,10 @@
                                   class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                   placeholder="Description détaillée du produit...">{{ old('description', $product->description) }}</textarea>
                     </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><label class="block text-sm font-medium text-white mb-2">Caractéristiques</label><textarea name="characteristics" rows="4" class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg">{{ old('characteristics', $product->characteristics) }}</textarea></div>
+                        <div><label class="block text-sm font-medium text-white mb-2">Informations commerciales</label><textarea name="commercial_information" rows="4" class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg">{{ old('commercial_information', $product->commercial_information) }}</textarea></div>
+                    </div>
                 </div>
 
                 <!-- Categories -->
@@ -173,6 +177,13 @@
                         Tarification
                     </h2>
 
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-white mb-2">Devise du prix <span class="text-red-500">*</span></label>
+                        <select name="currency" required class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg">
+                            @foreach($currencies as $currency)<option value="{{ $currency->code }}" {{ old('currency', $product->currency ?? 'XAF') === $currency->code ? 'selected' : '' }}>{{ $currency->code }} — {{ $currency->name }}</option>@endforeach
+                        </select>
+                    </div>
+
                     <!-- Price Type -->
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-white mb-3">
@@ -225,12 +236,14 @@
                     </div>
                 </div>
 
+                @include('admin.products._variants')
+
                 <!-- Existing Images -->
                 @if($product->images->count() > 0)
                 <div class="bg-dark-100 rounded-xl shadow-lg p-6">
                     <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
                         <i class="fas fa-images text-primary-500 mr-2"></i>
-                        Images existantes
+                        Photos déjà ajoutées
                     </h2>
 
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -266,12 +279,12 @@
                 <div class="bg-dark-100 rounded-xl shadow-lg p-6">
                     <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
                         <i class="fas fa-camera text-primary-500 mr-2"></i>
-                        Ajouter de nouvelles images
+                        Ajouter d'autres photos
                     </h2>
 
                     <div class="mb-4">
                         <label for="images" class="block text-sm font-medium text-white mb-2">
-                            Images (JPEG, PNG, JPG, GIF, WEBP - Max 2MB chacune)
+                            Choisir une ou plusieurs photos
                         </label>
                         <input type="file" name="images[]" id="images" multiple accept="image/*" onchange="previewImages(event)"
                                class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent">
