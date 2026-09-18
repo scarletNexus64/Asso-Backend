@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\PackageController;
 use App\Http\Controllers\Admin\SupportController;
 use App\Http\Controllers\Admin\MessageController;
 use App\Http\Controllers\Admin\AffiliateController;
+use App\Http\Controllers\Admin\SalesAgentController;
+use App\Http\Controllers\Admin\SalesCommissionController;
 use App\Http\Controllers\Admin\DelivererController;
 use App\Http\Controllers\Admin\DelivererSyncManagementController;
 use App\Http\Controllers\Admin\DocumentController;
@@ -91,8 +93,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/shops/{shop}/reject', [\App\Http\Controllers\Admin\ShopVerificationController::class, 'reject'])->name('shops.reject');
         Route::post('/shops/{shop}/toggle-status', [\App\Http\Controllers\Admin\ShopVerificationController::class, 'toggleStatus'])->name('shops.toggleStatus');
 
-        // Shop Location Requests
-        Route::post('/shops/{shop}/location-requests/{request}/approve', [ShopController::class, 'approveLocationRequest'])->name('shops.location-requests.approve');
         // Statistiques boutiques (P8)
         Route::prefix('statistics')->name('statistics.')->group(function () {
             Route::get('/', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'index'])->name('index');
@@ -101,6 +101,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('/shops/{shop}/reset-audience', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'resetAudience'])->name('shops.reset');
         });
 
+        // Shop Location Requests
+        Route::post('/shops/{shop}/location-requests/{request}/approve', [ShopController::class, 'approveLocationRequest'])->name('shops.location-requests.approve');
         Route::post('/shops/{shop}/location-requests/{request}/reject', [ShopController::class, 'rejectLocationRequest'])->name('shops.location-requests.reject');
 
         // Products management
@@ -226,6 +228,19 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/affiliate/commissions/{commission}/approve', [AffiliateController::class, 'approveCommission'])->name('affiliate.approve-commission');
         Route::post('/affiliate/commissions/{commission}/pay', [AffiliateController::class, 'payCommission'])->name('affiliate.pay-commission');
         Route::post('/affiliate/commissions/{commission}/reject', [AffiliateController::class, 'rejectCommission'])->name('affiliate.reject-commission');
+
+        // P6 — Commerciaux : codes, suivi et commissions sur les forfaits
+        Route::post('/sales/agents/default-rate', [SalesAgentController::class, 'updateDefaultRate'])->name('sales.agents.default-rate');
+        Route::post('/sales/agents/{agent}/toggle-active', [SalesAgentController::class, 'toggleActive'])->name('sales.agents.toggle-active');
+        Route::post('/sales/agents/{agent}/regenerate-code', [SalesAgentController::class, 'regenerateCode'])->name('sales.agents.regenerate-code');
+        Route::resource('sales/agents', SalesAgentController::class)
+            ->parameters(['agents' => 'agent'])
+            ->names('sales.agents')
+            ->except(['destroy']);
+        Route::get('/sales/commissions', [SalesCommissionController::class, 'index'])->name('sales.commissions.index');
+        Route::get('/sales/commissions/export', [SalesCommissionController::class, 'export'])->name('sales.commissions.export');
+        Route::post('/sales/commissions/mark-paid', [SalesCommissionController::class, 'markPaid'])->name('sales.commissions.mark-paid');
+        Route::post('/sales/commissions/{commission}/cancel', [SalesCommissionController::class, 'cancel'])->name('sales.commissions.cancel');
 
         // Documents - Gestion documentaire
         Route::resource('documents', DocumentController::class);

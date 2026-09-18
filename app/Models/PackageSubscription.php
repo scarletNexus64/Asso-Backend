@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Tentative de paiement d'un abonnement à un package par rail DIRECT.
@@ -14,6 +15,8 @@ class PackageSubscription extends Model
     protected $fillable = [
         'user_id',
         'package_id',
+        'sales_agent_id',
+        'sales_code',
         'payment_method',
         'status',
         'payment_reference',
@@ -41,6 +44,16 @@ class PackageSubscription extends Model
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);
+    }
+
+    public function salesAgent(): BelongsTo
+    {
+        return $this->belongsTo(SalesAgent::class)->withTrashed();
+    }
+
+    public function salesCommission(): HasOne
+    {
+        return $this->hasOne(SalesCommission::class);
     }
 
     public function vendorPackage(): BelongsTo

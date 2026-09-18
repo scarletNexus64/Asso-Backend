@@ -103,7 +103,15 @@ class UserController extends Controller
     public function show(User $user)
     {
         $user->load('shops.products');
-        return view('admin.users.show', compact('user'));
+
+        // P6 : forfaits souscrits par le vendeur, avec le code commercial éventuel.
+        $packageSubscriptions = \App\Models\PackageSubscription::with(['package', 'salesAgent', 'salesCommission'])
+            ->where('user_id', $user->id)
+            ->latest()
+            ->limit(50)
+            ->get();
+
+        return view('admin.users.show', compact('user', 'packageSubscriptions'));
     }
 
     /**

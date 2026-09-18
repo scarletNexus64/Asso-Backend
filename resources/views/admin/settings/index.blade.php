@@ -404,6 +404,32 @@
                         @endif
                     </section>
 
+                    <!-- 4. Commerciaux (P6) -->
+                    <section class="space-y-4 border-t border-dark-200 pt-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white"><i class="fas fa-user-tie mr-2 text-primary-500"></i>Commerciaux (forfaits vendeurs)</h3>
+                            <p class="text-sm text-gray-400 mt-1">
+                                Pourcentage du prix d'un forfait versé au commercial dont le code a été saisi par le vendeur.
+                                Contrairement aux commissions ci-dessus, il est <strong>payé par ASSO</strong> et n'augmente pas le prix du forfait.
+                                Un taux particulier peut être fixé sur la fiche d'un commercial.
+                            </p>
+                        </div>
+                        <div class="flex flex-col md:flex-row md:items-center gap-4">
+                            <div class="max-w-xs w-full">
+                                <div class="relative">
+                                    <input type="number" name="sales_commission_rate"
+                                           value="{{ old('sales_commission_rate', $commissionSettings['sales_commission_rate']) }}"
+                                           min="0" max="100" step="0.01" required
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 pr-8">
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                </div>
+                            </div>
+                            <a href="{{ route('admin.sales.agents.index') }}" class="text-sm text-primary-400 hover:text-primary-300">
+                                <i class="fas fa-arrow-right mr-1"></i>Gérer les commerciaux et leurs commissions
+                            </a>
+                        </div>
+                    </section>
+
                     <div class="flex justify-end pt-4 border-t border-dark-200">
                         <button type="submit"
                                 class="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-md">

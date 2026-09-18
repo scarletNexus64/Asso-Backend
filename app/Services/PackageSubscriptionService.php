@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Package;
 use App\Models\PackageSubscription;
+use App\Models\SalesAgent;
 use App\Models\User;
 use App\Models\VendorPackage;
 use App\Models\WalletTransaction;
@@ -43,7 +44,8 @@ class PackageSubscriptionService
         Package $package,
         string $paymentMode,
         ?string $kpayProvider = null,
-        ?string $kpayPhone = null
+        ?string $kpayPhone = null,
+        ?SalesAgent $salesAgent = null
     ): PackageSubscription {
         $this->assertSubscribable($user, $package);
         $amountXaf = (float) $package->price;
@@ -51,6 +53,8 @@ class PackageSubscriptionService
         $subscription = PackageSubscription::create([
             'user_id' => $user->id,
             'package_id' => $package->id,
+            'sales_agent_id' => $salesAgent?->id,
+            'sales_code' => $salesAgent?->code,
             'payment_method' => $paymentMode,
             'status' => 'pending',
             'amount_xaf' => $amountXaf,
@@ -243,6 +247,9 @@ class PackageSubscriptionService
                 ]),
             ]);
 
+            // P6 : commission du commercial dont le code a été saisi (dans la même transaction).
+            app(SalesCommissionService::class)->recordForSubscription($sub);
+
             // Trace dans l'historique du client (solde NON modifié : encaissé chez le PSP).
             $balance = $user->kpayBalanceFor('XAF');
             WalletTransaction::create([
@@ -320,12 +327,12 @@ class PackageSubscriptionService
      * Souscription payée depuis le SOLDE du Wallet ASSO : débit + activation dans une
      * seule transaction (tout ou rien). Renvoie la PackageSubscription 'paid'.
      */
-    public function payWithWallet(User $user, Package $package): PackageSubscription
+    public function payWithWallet(User $user, Package $package, ?SalesAgent $salesAgent = null): PackageSubscription
     {
         $this->assertSubscribable($user, $package);
         $price = (float) $package->price;
 
-        $subscription = DB::transaction(function () use ($user, $package, $price) {
+        $subscription = DB::transaction(function () use ($user, $package, $price, $salesAgent) {
             $walletService = app(WalletService::class);
 
             // Débit sous verrou de ligne (lance une exception si solde insuffisant).
@@ -349,6 +356,8 @@ class PackageSubscriptionService
             $sub = PackageSubscription::create([
                 'user_id' => $user->id,
                 'package_id' => $package->id,
+                'sales_agent_id' => $salesAgent?->id,
+                'sales_code' => $salesAgent?->code,
                 'payment_method' => 'wallet',
                 'status' => 'paid',
                 'payment_reference' => $reference,
@@ -366,6 +375,9 @@ class PackageSubscriptionService
             ]);
 
             $walletTx->update(['reference_id' => $sub->id]);
+
+            // P6 : commission du commercial dont le code a été saisi.
+            app(SalesCommissionService::class)->recordForSubscription($sub);
 
             return $sub;
         });

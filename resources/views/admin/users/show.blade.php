@@ -254,6 +254,70 @@
                     </div>
                 @endif
             </div>
+
+            <!-- Forfaits souscrits (P6 : code commercial) -->
+            @if(isset($packageSubscriptions) && $packageSubscriptions->isNotEmpty())
+                @php $fmtF = fn ($v) => number_format((float) $v, 0, ',', ' ') . ' F'; @endphp
+                <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                    <h3 class="text-xl font-bold text-white flex items-center mb-4">
+                        <i class="fas fa-box-open text-primary-500 mr-2"></i>
+                        Forfaits souscrits ({{ $packageSubscriptions->count() }})
+                    </h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-gray-400 border-b border-dark-200">
+                                    <th class="px-3 py-2">Date</th>
+                                    <th class="px-3 py-2">Forfait</th>
+                                    <th class="px-3 py-2 text-right">Montant</th>
+                                    <th class="px-3 py-2">Paiement</th>
+                                    <th class="px-3 py-2">Référence</th>
+                                    <th class="px-3 py-2">Code commercial</th>
+                                    <th class="px-3 py-2">Commission</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($packageSubscriptions as $sub)
+                                    <tr class="border-b border-dark-200">
+                                        <td class="px-3 py-2 text-gray-300 whitespace-nowrap">{{ ($sub->paid_at ?? $sub->created_at)->format('d/m/Y H:i') }}</td>
+                                        <td class="px-3 py-2 text-gray-200">{{ $sub->package?->name ?? ($sub->metadata['package_name'] ?? '—') }}</td>
+                                        <td class="px-3 py-2 text-right text-white whitespace-nowrap">{{ $fmtF($sub->amount_xaf) }}</td>
+                                        <td class="px-3 py-2 whitespace-nowrap">
+                                            <span class="text-gray-400">{{ $sub->payment_method }}</span>
+                                            @if($sub->status === 'paid')
+                                                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-300">Payé</span>
+                                            @elseif($sub->status === 'pending')
+                                                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-300">En attente</span>
+                                            @else
+                                                <span class="ml-1 px-2 py-0.5 text-xs rounded-full bg-red-500/20 text-red-300">Échoué</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-3 py-2 font-mono text-xs text-gray-400">{{ $sub->payment_reference ?? '—' }}</td>
+                                        <td class="px-3 py-2">
+                                            @if($sub->sales_code)
+                                                <span class="font-mono text-primary-400">{{ $sub->sales_code }}</span>
+                                                @if($sub->salesAgent)
+                                                    <a href="{{ route('admin.sales.agents.show', $sub->sales_agent_id) }}" class="block text-xs text-gray-400 hover:text-white">{{ $sub->salesAgent->full_name }}</a>
+                                                @endif
+                                            @else
+                                                <span class="text-gray-600">—</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-3 py-2 whitespace-nowrap">
+                                            @if($sub->salesCommission)
+                                                {{ $fmtF($sub->salesCommission->commission_amount) }}
+                                                <span class="text-xs text-gray-400">({{ $sub->salesCommission->status_label }})</span>
+                                            @else
+                                                <span class="text-gray-600">—</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
 </div>

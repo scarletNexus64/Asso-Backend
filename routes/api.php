@@ -237,6 +237,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/subscription/{id}/payment-status', [PackageController::class, 'subscriptionPaymentStatus']);
         });
 
+        // P6 : vérification d'un code commercial avant souscription (anti-énumération : throttle).
+        Route::get('/sales-codes/{code}', [\App\Http\Controllers\Api\SalesCodeController::class, 'show'])
+            ->middleware('throttle:20,1');
+
         // Invoices
         Route::prefix('invoices')->group(function () {
             Route::get('/', [InvoiceController::class, 'index']);
@@ -248,11 +252,11 @@ Route::middleware('auth:sanctum')->group(function () {
         // Vendor process
         Route::post('/vendor/apply', [ProfileController::class, 'applyVendor']);
         Route::get('/vendor/dashboard', [ProfileController::class, 'vendorDashboard']);
+        Route::get('/vendor/statistics', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'vendor']);
         Route::get('/vendor/package/current', [PackageController::class, 'currentPackage']);
 
         // Vendor shop management
         Route::get('/vendor/shop', [ShopController::class, 'show']);
-        Route::get('/vendor/statistics', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'vendor']);
         Route::put('/vendor/shop', [ShopController::class, 'update']);
         Route::get('/vendor/shops', [ShopController::class, 'index']);
         Route::get('/vendor/shop/location-requests', [ShopController::class, 'getLocationRequests']);

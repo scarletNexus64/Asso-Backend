@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\InvalidSalesCodeException;
 use App\Http\Controllers\Controller;
 use App\Models\Package;
 use App\Models\PackageSubscription;
+use App\Models\SalesAgent;
 use App\Models\VendorPackage;
 use App\Services\WalletService;
 use App\Services\InvoiceService;
@@ -12,6 +14,7 @@ use App\Services\InvoiceGenerator;
 use App\Services\FcmService;
 use App\Services\PackageSubscriptionService;
 use App\Services\PaymentMethodService;
+use App\Services\SalesCommissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -24,19 +27,22 @@ class PackageController extends Controller
     protected InvoiceGenerator $invoiceGenerator;
     protected FcmService $fcmService;
     protected PackageSubscriptionService $packageSubscriptionService;
+    protected SalesCommissionService $salesCommissionService;
 
     public function __construct(
         WalletService $walletService,
         InvoiceService $invoiceService,
         InvoiceGenerator $invoiceGenerator,
         FcmService $fcmService,
-        PackageSubscriptionService $packageSubscriptionService
+        PackageSubscriptionService $packageSubscriptionService,
+        SalesCommissionService $salesCommissionService
     ) {
         $this->walletService = $walletService;
         $this->invoiceService = $invoiceService;
         $this->invoiceGenerator = $invoiceGenerator;
         $this->fcmService = $fcmService;
         $this->packageSubscriptionService = $packageSubscriptionService;
+        $this->salesCommissionService = $salesCommissionService;
     }
 
     /**
@@ -110,6 +116,8 @@ class PackageController extends Controller
             'payment_mode' => 'nullable|in:wallet,kpay_direct,stripe_direct',
             'provider' => 'required_if:payment_mode,kpay_direct|nullable|string',
             'phone_number' => 'required_if:payment_mode,kpay_direct|nullable|string',
+            // P6 : code commercial / code de parrainage (facultatif)
+            'sales_code' => 'nullable|string|max:32',
         ]);
 
         $user = $request->user();
@@ -122,8 +130,21 @@ class PackageController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
 
+        // Code commercial vérifié AVANT tout paiement : une faute de frappe ne doit pas
+        // faire perdre la vente au commercial.
+        try {
+            $salesAgent = $this->salesCommissionService->resolveForVendor($validated['sales_code'] ?? null, $user);
+        } catch (InvalidSalesCodeException $e) {
+            return response()->json([
+                'success' => false,
+                'code' => 'invalid_sales_code',
+                'message' => $e->getMessage(),
+                'errors' => ['sales_code' => [$e->getMessage()]],
+            ], 422);
+        }
+
         if (in_array($paymentMode, ['kpay_direct', 'stripe_direct'], true)) {
-            return $this->subscribeDirect($request, $user, $package, $paymentMode);
+            return $this->subscribeDirect($request, $user, $package, $paymentMode, $salesAgent);
         }
 
         // ── Paiement par SOLDE Wallet ASSO ──
@@ -142,7 +163,7 @@ class PackageController extends Controller
         }
 
         try {
-            $subscription = $this->packageSubscriptionService->payWithWallet($user, $package);
+            $subscription = $this->packageSubscriptionService->payWithWallet($user, $package, $salesAgent);
         } catch (\Exception $e) {
             Log::error('[PackageController] Souscription wallet échouée', ['user_id' => $user->id, 'error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -157,6 +178,7 @@ class PackageController extends Controller
             'subscription_id' => $subscription->id,
             'status' => $subscription->status, // paid
             'payment_reference' => $subscription->payment_reference,
+            'sales_code' => $subscription->sales_code,
             'data' => $this->subscriptionPayload($subscription),
         ], 201);
     }
@@ -169,7 +191,7 @@ class PackageController extends Controller
      * paiement (polling GET /v1/packages/subscription/{id}/payment-status). Aucune
      * validation vendeur ici : l'abonnement s'active dès que l'argent est encaissé.
      */
-    private function subscribeDirect(Request $request, $user, Package $package, string $paymentMode)
+    private function subscribeDirect(Request $request, $user, Package $package, string $paymentMode, ?SalesAgent $salesAgent = null)
     {
         // Garde-fou : le rail carte (Stripe natif) n'est proposé que s'il est réellement
         // fonctionnel (clés configurées + activé). Sinon on bloque immédiatement.
@@ -187,6 +209,7 @@ class PackageController extends Controller
                 paymentMode: $paymentMode,
                 kpayProvider: $request->input('provider'),
                 kpayPhone: $request->input('phone_number'),
+                salesAgent: $salesAgent,
             );
         } catch (\Exception $e) {
             Log::error('[PackageController] ❌ Direct subscription init failed', ['error' => $e->getMessage()]);
@@ -207,6 +230,7 @@ class PackageController extends Controller
             'subscription_id' => $subscription->id,
             'status' => $subscription->status, // pending
             'payment_reference' => $subscription->payment_reference,
+            'sales_code' => $subscription->sales_code,
             // Carte native (stripe_direct) : confirmation via Payment Sheet, puis polling.
             'client_secret' => $paymentMode === 'stripe_direct' ? ($subscription->client_secret ?? null) : null,
             'payment_intent_id' => $paymentMode === 'stripe_direct' ? ($subscription->payment_intent_id ?? null) : null,
@@ -254,6 +278,7 @@ class PackageController extends Controller
             'package_type' => $package?->type,
             'package_name' => $package?->name,
             'amount' => (float) $subscription->amount_xaf,
+            'sales_code' => $subscription->sales_code,
             'certification_expires_at' => $subscription->metadata['certification_expires_at'] ?? null,
             'vendor_package_id' => $subscription->vendor_package_id,
             'vendor_package' => $vendorPackage ? [

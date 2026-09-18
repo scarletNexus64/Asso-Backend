@@ -292,6 +292,23 @@
                     </a>
                 </div>
 
+                <!-- Section Commerciaux (P6) -->
+                <div class="mt-8 pt-6 border-t border-dark-200">
+                    <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Commerciaux</p>
+
+                    <a href="{{ route('admin.sales.agents.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.sales.agents.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-user-tie w-5 mr-3"></i>
+                        Commerciaux & codes
+                    </a>
+
+                    <a href="{{ route('admin.sales.commissions.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.sales.commissions.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-hand-holding-usd w-5 mr-3"></i>
+                        Commissions commerciaux
+                    </a>
+                </div>
+
                 <!-- Section Annonce -->
                 <div class="mt-8 pt-6 border-t border-dark-200">
                     <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Annonce</p>
