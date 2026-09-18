@@ -83,6 +83,7 @@ class OrderController extends Controller
         $request->validate([
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
+            'items.*.variant_id' => 'nullable|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
             'delivery_company_id' => 'required|exists:deliverer_companies,id',
             'delivery_zone_id' => 'required|exists:delivery_zones,id',
@@ -249,9 +250,7 @@ class OrderController extends Controller
 
                 // Restaurer le stock décrémenté à la création
                 foreach ($order->items as $item) {
-                    if ($item->product && $item->product->stock !== null) {
-                        $item->product->increment('stock', $item->quantity);
-                    }
+                    $item->restoreStock();
                 }
 
                 $order->update([
@@ -358,6 +357,8 @@ class OrderController extends Controller
             'items' => $order->items->map(fn($item) => [
                 'id' => $item->id,
                 'product_id' => $item->product_id,
+                'variant_id' => $item->product_variant_id,
+                'variant_attributes' => $item->variant_attributes,
                 'product_name' => $item->product->name ?? 'Produit supprimé',
                 'product_image' => $item->product?->primaryImage
                     ? asset('storage/' . $item->product->primaryImage->image_path)

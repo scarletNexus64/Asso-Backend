@@ -238,62 +238,7 @@
 
                 @include('admin.products._variants')
 
-                <!-- Existing Images -->
-                @if($product->images->count() > 0)
-                <div class="bg-dark-100 rounded-xl shadow-lg p-6">
-                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
-                        <i class="fas fa-images text-primary-500 mr-2"></i>
-                        Photos déjà ajoutées
-                    </h2>
-
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        @foreach($product->images as $image)
-                            <div class="relative group" id="image-{{ $image->id }}">
-                                <img src="{{ asset($image->image_path) }}" alt="{{ $product->name }}" class="w-full h-32 object-cover rounded-lg border-2 {{ $image->is_primary ? 'border-orange-500' : 'border-dark-200' }}">
-
-                                @if($image->is_primary)
-                                    <span class="absolute top-2 left-2 px-2 py-1 bg-orange-500 text-white text-xs rounded-full">
-                                        <i class="fas fa-star mr-1"></i>Principal
-                                    </span>
-                                @endif
-
-                                <div class="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                    @if(!$image->is_primary)
-                                        <button type="button" onclick="setPrimaryImage({{ $product->id }}, {{ $image->id }})"
-                                                class="px-3 py-1 bg-orange-500 text-white text-sm rounded hover:bg-orange-600">
-                                            <i class="fas fa-star"></i>
-                                        </button>
-                                    @endif
-                                    <button type="button" onclick="deleteImage({{ $product->id }}, {{ $image->id }})"
-                                            class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-                @endif
-
-                <!-- New Images -->
-                <div class="bg-dark-100 rounded-xl shadow-lg p-6">
-                    <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
-                        <i class="fas fa-camera text-primary-500 mr-2"></i>
-                        Ajouter d'autres photos
-                    </h2>
-
-                    <div class="mb-4">
-                        <label for="images" class="block text-sm font-medium text-white mb-2">
-                            Choisir une ou plusieurs photos
-                        </label>
-                        <input type="file" name="images[]" id="images" multiple accept="image/*" onchange="previewImages(event)"
-                               class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent">
-                        <p class="text-sm text-gray-400 mt-1">Vous pouvez sélectionner plusieurs images</p>
-                    </div>
-
-                    <!-- Image Preview -->
-                    <div id="image_preview" class="grid grid-cols-2 md:grid-cols-4 gap-4 hidden"></div>
-                </div>
+                @include('admin.products._images')
             </div>
 
             <!-- Sidebar (1 column) -->
@@ -327,7 +272,7 @@
                 </div>
 
                 <!-- Weight Category -->
-                <div class="bg-dark-100 rounded-xl shadow-lg p-6">
+                <div id="import_weight_section" class="bg-dark-100 rounded-xl shadow-lg p-6">
                     <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
                         <i class="fas fa-weight-hanging text-primary-500 mr-2"></i>
                         Poids et catégorie de livraison
@@ -515,89 +460,6 @@
             .catch(error => console.error('Error loading subcategories:', error));
     };
 
-    // Preview new images
-    window.previewImages = function(event) {
-        const preview = document.getElementById('image_preview');
-        preview.innerHTML = '';
-
-        const files = event.target.files;
-        if (files.length > 0) {
-            preview.classList.remove('hidden');
-
-            Array.from(files).forEach((file, index) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const div = document.createElement('div');
-                    div.className = 'relative';
-                    div.innerHTML = `
-                        <img src="${e.target.result}" alt="Preview ${index + 1}" class="w-full h-32 object-cover rounded-lg border-2 border-dark-200">
-                        <span class="absolute top-2 left-2 px-2 py-1 bg-blue-500 text-white text-xs rounded-full">
-                            <i class="fas fa-plus mr-1"></i>Nouveau
-                        </span>
-                    `;
-                    preview.appendChild(div);
-                };
-                reader.readAsDataURL(file);
-            });
-        } else {
-            preview.classList.add('hidden');
-        }
-    };
-
-    // Delete image via AJAX
-    window.deleteImage = function(productId, imageId) {
-        window.customConfirm('Êtes-vous sûr de vouloir supprimer cette image ?', function () {
-        fetch(`/admin/products/${productId}/images/${imageId}`, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById(`image-${imageId}`).remove();
-
-                // Reload page if no images left to update the display
-                const remainingImages = document.querySelectorAll('[id^="image-"]');
-                if (remainingImages.length === 0) {
-                    location.reload();
-                }
-            } else {
-                alert('Erreur lors de la suppression de l\'image');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Erreur lors de la suppression de l\'image');
-        });
-        }); // fin de la confirmation
-    };
-
-    // Set primary image via AJAX
-    window.setPrimaryImage = function(productId, imageId) {
-        fetch(`/admin/products/${productId}/images/${imageId}/primary`, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                'Accept': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert('Erreur lors de la définition de l\'image principale');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Erreur lors de la définition de l\'image principale');
-        });
-    };
-
     // ============================================
     // MODULE GROS — Vente en gros par pays d'import
     // ============================================
@@ -697,6 +559,18 @@
         }
     };
 
+    function syncImportWeightSection() {
+        const section = document.getElementById('import_weight_section');
+        const country = document.querySelector('select[name="origin_country"]')?.value?.toUpperCase() ?? '';
+        const type = document.querySelector('input[name="type"]:checked')?.value;
+        const visible = type === 'article' && ['CN', 'TR', 'AE'].includes(country);
+        if (!section) return;
+        section.classList.toggle('hidden', !visible);
+        section.querySelectorAll('input, select').forEach(input => input.disabled = !visible);
+        const weight = document.getElementById('weight');
+        if (weight) weight.required = visible;
+    }
+
     function loadShippingOptions(countryCode) {
         fetch(`/api/v1/import/${countryCode}/shipping`)
             .then(r => r.json())
@@ -772,13 +646,7 @@
 
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
-        const syncWeightRequirement = () => {
-            const weight = document.getElementById('weight');
-            const type = document.querySelector('input[name="type"]:checked')?.value;
-            if (weight) weight.required = type === 'article';
-        };
-        document.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener('change', syncWeightRequirement));
-        syncWeightRequirement();
+        document.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener('change', syncImportWeightSection));
         togglePriceFields();
         @foreach($product->priceTiers ?? [] as $tier)
             addTierRow({
@@ -789,12 +657,16 @@
             });
         @endforeach
 
-        document.querySelector('select[name="origin_country"]')?.addEventListener('change', toggleWholesaleSection);
+        document.querySelector('select[name="origin_country"]')?.addEventListener('change', () => {
+            toggleWholesaleSection();
+            syncImportWeightSection();
+        });
         document.getElementById('category_id')?.addEventListener('change', syncSizeGroups);
         document.getElementById('subcategory_id')?.addEventListener('change', syncSizeGroups);
         document.getElementById('is_wholesale')?.addEventListener('change', toggleTiersContainer);
 
         toggleWholesaleSection();
+        syncImportWeightSection();
         toggleTiersContainer();
         syncSizeGroups();
     });

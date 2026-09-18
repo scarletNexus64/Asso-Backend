@@ -289,9 +289,7 @@ class VendorOrderController extends Controller
 
                 // 3. Restaurer le stock
                 foreach ($order->items as $item) {
-                    if ($item->product && $item->product->stock !== null) {
-                        $item->product->increment('stock', $item->quantity);
-                    }
+                    $item->restoreStock();
                 }
 
                 // 4. Notification au client

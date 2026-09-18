@@ -102,6 +102,7 @@ class Product extends Model
         'weight',
         'weight_category',
         'sizes',
+        'variant_options',
         'latitude',
         'longitude',
         'status',
@@ -118,6 +119,7 @@ class Product extends Model
         'is_wholesale' => 'boolean',
         'min_order_quantity' => 'integer',
         'sizes' => 'array',
+        'variant_options' => 'array',
     ];
 
     /**

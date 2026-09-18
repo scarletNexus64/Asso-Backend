@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ProductPriceTier;
 use App\Models\ImportShippingOption;
 use App\Models\User;
@@ -307,8 +308,21 @@ class OrderService
                     throw new \Exception("Le produit '{$product->name}' n'est plus disponible.");
                 }
 
-                if ($product->stock !== null && $product->stock < $item['quantity']) {
-                    throw new \Exception("Stock insuffisant pour '{$product->name}'. Disponible: {$product->stock}");
+                $variant = null;
+                if (!empty($item['variant_id'])) {
+                    $variant = ProductVariant::where('product_id', $product->id)
+                        ->lockForUpdate()
+                        ->findOrFail($item['variant_id']);
+                    if (!$variant->is_active) {
+                        throw new \Exception("La variante sélectionnée pour '{$product->name}' n'est plus disponible.");
+                    }
+                } elseif ($product->variants()->exists()) {
+                    throw new \Exception("Veuillez sélectionner une variante pour '{$product->name}'.");
+                }
+
+                $availableStock = $variant?->stock ?? $product->stock;
+                if ($availableStock !== null && $availableStock < $item['quantity']) {
+                    throw new \Exception("Stock insuffisant pour '{$product->name}'. Disponible: {$availableStock}");
                 }
 
                 // Prix du produit converti en XAF (devise pivot) au taux du MOMENT de la
@@ -316,7 +330,7 @@ class OrderService
                 // chaîne aval (escrow, wallet, livraison, payin) reste en XAF. Erreur stricte
                 // si aucun taux fiable : on ne devine jamais un montant à débiter.
                 $sourceCurrency = strtoupper($product->currency ?? 'XAF');
-                $sourceUnitPrice = (float) $product->price;
+                $sourceUnitPrice = (float) $product->price + (float) ($variant?->price_adjustment ?? 0);
                 if ($sourceCurrency === 'XAF') {
                     $unitPrice = $sourceUnitPrice;
                 } else {
@@ -333,6 +347,8 @@ class OrderService
 
                 $orderItems[] = [
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
+                    'variant_attributes' => $variant?->attributes,
                     'seller_id' => $product->user_id,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,      // XAF (pivot)
@@ -347,6 +363,9 @@ class OrderService
                 // Décrémenter le stock
                 if ($product->stock !== null) {
                     $product->decrement('stock', $quantity);
+                }
+                if ($variant) {
+                    $variant->decrement('stock', $quantity);
                 }
             }
 
@@ -534,6 +553,17 @@ class OrderService
                     ->where('is_active', true)
                     ->firstOrFail();
 
+                // Variante choisie (couleur, taille…) : conservée sur la ligne pour le fournisseur.
+                $variant = null;
+                if (!empty($item['variant_id'])) {
+                    $variant = ProductVariant::where('product_id', $product->id)
+                        ->where('is_active', true)
+                        ->find($item['variant_id']);
+                    if (!$variant) {
+                        throw new \Exception("La variante sélectionnée pour '{$product->name}' n'est plus disponible.");
+                    }
+                }
+
                 $quantity = (int) $item['quantity'];
                 if ($quantity < $tier->min_quantity) {
                     throw new \Exception("Quantité minimale non atteinte pour '{$product->name}' ({$tier->label}) : minimum {$tier->min_quantity}.");
@@ -561,6 +591,8 @@ class OrderService
 
                 $orderItems[] = [
                     'product_id' => $product->id,
+                    'product_variant_id' => $variant?->id,
+                    'variant_attributes' => $variant?->attributes,
                     'seller_id' => $product->user_id,
                     'price_tier_id' => $tier->id,
                     'tier_label' => $tier->label,
@@ -763,9 +795,7 @@ class OrderService
 
             // Restaurer le stock décrémenté lors de la création
             foreach ($order->items as $item) {
-                if ($item->product && $item->product->stock !== null) {
-                    $item->product->increment('stock', $item->quantity);
-                }
+                $item->restoreStock();
             }
 
             $order->update([
@@ -1017,9 +1047,7 @@ class OrderService
             }
 
             foreach ($order->items as $item) {
-                if ($item->product && $item->product->stock !== null) {
-                    $item->product->increment('stock', $item->quantity);
-                }
+                $item->restoreStock();
             }
 
             $order->update([

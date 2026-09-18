@@ -8,7 +8,9 @@ use App\Models\ProductImage;
 use App\Models\Inventory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use App\Models\DeliveryPricelist;
+use App\Services\ProductVariantService;
 
 class VendorProductController extends Controller
 {
@@ -87,17 +89,12 @@ class VendorProductController extends Controller
             'stock' => 'sometimes|integer|min:0',
             'weight' => 'sometimes|nullable|string|max:255',
             'images' => 'sometimes|array',
-            'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
+            'images.*' => 'file|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'deleted_image_ids' => 'sometimes|array',
             'deleted_image_ids.*' => 'integer|exists:product_images,id',
-            'variants' => 'sometimes|nullable|array',
-            'variants.*.attributes' => 'required_with:variants|array|min:1',
-            'variants.*.attributes.*' => 'required|string|max:100',
-            'variants.*.sku' => 'nullable|string|max:100',
-            'variants.*.price_adjustment' => 'nullable|numeric',
-            'variants.*.stock' => 'required_with:variants|integer|min:0',
-            'variants.*.is_active' => 'nullable|boolean',
-        ]);
+            // Multipart ne sait pas envoyer une liste vide : ce drapeau permet de retirer toutes les variantes.
+            'replace_variants' => 'sometimes|boolean',
+        ] + ProductVariantService::rules());
 
         \Log::info('[VENDOR_PRODUCT_UPDATE] Received data:', [
             'product_id' => $id,
@@ -146,8 +143,9 @@ class VendorProductController extends Controller
 
             // Update product fields (exclude images from update)
             $updateData = $validated;
-            $variants = $updateData['variants'] ?? null;
-            unset($updateData['images'], $updateData['variants']);
+            $variants = $updateData['variants'] ?? ($request->boolean('replace_variants') ? [] : null);
+            $variantOptions = $updateData['variant_options'] ?? null;
+            unset($updateData['images'], $updateData['variants'], $updateData['variant_options'], $updateData['replace_variants']);
 
             // Convert empty strings to null for weight fields
             if (isset($updateData['weight']) && $updateData['weight'] === '') {
@@ -174,7 +172,7 @@ class VendorProductController extends Controller
 
             $product->update($updateData);
             if ($variants !== null) {
-                $this->syncVariants($product, $variants);
+                app(ProductVariantService::class)->sync($product, $variants, $variantOptions);
             }
 
             \Log::info('[VENDOR_PRODUCT_UPDATE] Product updated:', [
@@ -369,6 +367,27 @@ class VendorProductController extends Controller
         }
     }
 
+    /** Activate or deactivate one of the authenticated vendor's products. */
+    public function updateStatus(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:active,inactive',
+        ]);
+
+        $product = Product::where('user_id', $request->user()->id)->findOrFail($id);
+        $product->update(['status' => $validated['status']]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $product->status === 'active'
+                ? 'Produit réactivé avec succès'
+                : 'Produit désactivé avec succès',
+            'product' => $this->formatProduct($product->load([
+                'images', 'primaryImage', 'category', 'subcategory', 'shop', 'variants',
+            ])),
+        ]);
+    }
+
     /**
      * Format product for API response
      */
@@ -393,14 +412,9 @@ class VendorProductController extends Controller
             'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,
             'weight' => $product->weight,
-            'variants' => $product->variants->map(fn ($variant) => [
-                'id' => $variant->id,
-                'sku' => $variant->sku,
-                'attributes' => $variant->attributes,
-                'price_adjustment' => (float) $variant->price_adjustment,
-                'stock' => $variant->stock,
-                'is_active' => $variant->is_active,
-            ])->values(),
+            'variants' => $product->variants
+                ->map(fn ($variant) => app(ProductVariantService::class)->presentVariant($variant, $product))->values(),
+            'variant_options' => app(ProductVariantService::class)->presentOptions($product),
             'status' => $product->status,
             'latitude' => $product->latitude ? (float) $product->latitude : null,
             'longitude' => $product->longitude ? (float) $product->longitude : null,
@@ -602,25 +616,6 @@ class VendorProductController extends Controller
             Product::AVAILABLE_SIZES,
             fn(string $size): bool => in_array($size, $selected, true),
         ));
-    }
-
-    private function syncVariants(Product $product, array $variants): void
-    {
-        $product->variants()->delete();
-        $totalStock = 0;
-        foreach (array_values($variants) as $index => $variant) {
-            $stock = (int) $variant['stock'];
-            $product->variants()->create([
-                'sku' => $variant['sku'] ?? null,
-                'attributes' => $variant['attributes'],
-                'price_adjustment' => $variant['price_adjustment'] ?? 0,
-                'stock' => $stock,
-                'is_active' => $variant['is_active'] ?? true,
-                'sort_order' => $index,
-            ]);
-            $totalStock += $stock;
-        }
-        $product->updateQuietly(['stock' => $totalStock]);
     }
 
     public function updateStock(Request $request, $id)

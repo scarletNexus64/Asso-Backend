@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\DeliveryPricelist;
 use App\Models\Inventory;
 use App\Services\FirebaseMessagingService;
+use App\Services\ProductVariantService;
 use Illuminate\Http\Request;
 
 class ProductController extends Controller
@@ -19,6 +20,11 @@ class ProductController extends Controller
     {
         $query = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user', 'variants'])
             ->where('status', 'active')
+            // Catalogue local par défaut ; les produits importés restent accessibles via ?origin_country=XX.
+            ->when(!$request->filled('origin_country'), fn ($query) => $query->where(function ($q) {
+                $q->whereNull('origin_country')
+                    ->orWhere('origin_country', '');
+            }))
             ->whereHas('shop', function ($q) {
                 $q->where('status', 'active');
             });
@@ -152,6 +158,10 @@ class ProductController extends Controller
 
         $products = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user', 'variants'])
             ->where('status', 'active')
+            ->where(function ($q) {
+                $q->whereNull('origin_country')
+                    ->orWhere('origin_country', '');
+            })
             ->whereHas('shop', function ($q) {
                 $q->where('status', 'active');
             })
@@ -172,6 +182,10 @@ class ProductController extends Controller
     {
         $product = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'user', 'reviews.user', 'variants'])
             ->where('status', 'active')
+            ->where(function ($q) {
+                $q->whereNull('origin_country')
+                    ->orWhere('origin_country', '');
+            })
             ->whereHas('shop', fn ($query) => $query->where('status', 'active'))
             ->findOrFail($id);
 
@@ -290,16 +304,9 @@ class ProductController extends Controller
             'weight_category' => 'nullable|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'sizes' => 'nullable|array',
             'sizes.*' => 'string|in:' . implode(',', Product::AVAILABLE_SIZES),
-            'variants' => 'nullable|array',
-            'variants.*.attributes' => 'required_with:variants|array|min:1',
-            'variants.*.attributes.*' => 'required|string|max:100',
-            'variants.*.sku' => 'nullable|string|max:100',
-            'variants.*.price_adjustment' => 'nullable|numeric',
-            'variants.*.stock' => 'required_with:variants|integer|min:0',
-            'variants.*.is_active' => 'nullable|boolean',
             'images' => 'required|array|min:1',
-            'images.*' => 'file|image|mimes:jpeg,png,jpg,gif|max:5120',
-        ]);
+            'images.*' => 'file|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+        ] + ProductVariantService::rules());
 
         \Log::info('[PRODUCT_STORE] Validation passed');
 
@@ -380,7 +387,9 @@ class ProductController extends Controller
         }
 
         $product = Product::create($productData);
-        $this->syncVariants($product, $validated['variants'] ?? []);
+        if (!empty($validated['variants'])) {
+            app(ProductVariantService::class)->sync($product, $validated['variants'], $validated['variant_options'] ?? null);
+        }
 
         \Log::info('[PRODUCT_STORE] Product created:', [
             'product_id' => $product->id,
@@ -499,14 +508,9 @@ class ProductController extends Controller
             'origin_country' => $product->origin_country, // CN/TR/AE… (produits importés), null = local
             'weight_category' => $product->weight_category ?? 'X-small',
             'sizes' => $product->sizes ?? [],
-            'variants' => $product->variants->where('is_active', true)->values()->map(fn ($variant) => [
-                'id' => $variant->id,
-                'sku' => $variant->sku,
-                'attributes' => $variant->attributes,
-                'price_adjustment' => (float) $variant->price_adjustment,
-                'price' => (float) $product->price + (float) $variant->price_adjustment,
-                'stock' => $variant->stock,
-            ]),
+            'variants' => $product->variants->where('is_active', true)->values()
+                ->map(fn ($variant) => app(ProductVariantService::class)->presentVariant($variant, $product)),
+            'variant_options' => app(ProductVariantService::class)->presentOptions($product),
             'stock' => $product->stock,
             'weight' => $product->weight,
             'status' => $product->status,
@@ -577,25 +581,6 @@ class ProductController extends Controller
             Product::AVAILABLE_SIZES,
             fn(string $size): bool => in_array($size, $selected, true),
         ));
-    }
-
-    private function syncVariants(Product $product, array $variants): void
-    {
-        if ($variants === []) return;
-        $totalStock = 0;
-        foreach (array_values($variants) as $index => $variant) {
-            $stock = (int) $variant['stock'];
-            $product->variants()->create([
-                'sku' => $variant['sku'] ?? null,
-                'attributes' => $variant['attributes'],
-                'price_adjustment' => $variant['price_adjustment'] ?? 0,
-                'stock' => $stock,
-                'is_active' => $variant['is_active'] ?? true,
-                'sort_order' => $index,
-            ]);
-            $totalStock += $stock;
-        }
-        $product->updateQuietly(['stock' => $totalStock]);
     }
 
     /**

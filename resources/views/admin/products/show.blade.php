@@ -89,11 +89,34 @@
             </div>
 
             @if($product->variants->isNotEmpty())
+            @php($variantOptions = app(\App\Services\ProductVariantService::class)->buildOptions($product->variants->pluck('attributes')->filter()->all(), $product->variant_options) ?? [])
             <div class="bg-dark-100 rounded-xl shadow-lg p-6">
-                <h2 class="text-lg font-semibold text-white mb-4"><i class="fas fa-layer-group text-primary-500 mr-2"></i>Variantes et stocks</h2>
-                <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left text-gray-400 border-b border-dark-300"><th class="pb-2">Attributs</th><th>SKU</th><th>Écart de prix</th><th>Stock</th><th>Statut</th></tr></thead><tbody>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-white"><i class="fas fa-swatchbook text-primary-500 mr-2"></i>Choix proposés au client</h2>
+                    <span class="text-sm text-gray-400">Stock total : <span class="font-bold text-white">{{ $product->variants->sum('stock') }}</span></span>
+                </div>
+                <div class="space-y-3 mb-5">
+                    @foreach($variantOptions as $group)
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-sm text-gray-400 w-24">{{ $group['name'] }}</span>
+                            @foreach($group['values'] as $value)
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-dark-50 border border-dark-300 text-sm text-white">
+                                    @if(!empty($value['hex']))<span class="w-3.5 h-3.5 rounded-full border border-white/30" style="background: {{ $value['hex'] }}"></span>@endif
+                                    {{ $value['value'] }}
+                                </span>
+                            @endforeach
+                        </div>
+                    @endforeach
+                </div>
+                <div class="overflow-x-auto rounded-lg border border-dark-300"><table class="w-full text-sm"><thead class="bg-dark-50"><tr class="text-left text-gray-400 text-xs uppercase"><th class="px-4 py-2">Combinaison</th><th class="px-4 py-2">Référence</th><th class="px-4 py-2">Supplément</th><th class="px-4 py-2">Stock</th><th class="px-4 py-2">Statut</th></tr></thead><tbody class="divide-y divide-dark-300">
                     @foreach($product->variants as $variant)
-                    <tr class="border-b border-dark-200/50"><td class="py-3 text-white">{{ collect($variant->attributes)->map(fn($value, $name) => "$name: $value")->implode(' · ') }}</td><td class="text-gray-300">{{ $variant->sku ?: '—' }}</td><td class="text-gray-300">{{ number_format($variant->price_adjustment, 2, ',', ' ') }} {{ $product->currency }}</td><td class="font-semibold text-white">{{ $variant->stock }}</td><td>{{ $variant->is_active ? 'Actif' : 'Inactif' }}</td></tr>
+                    <tr>
+                        <td class="px-4 py-3 text-white">{{ collect($variant->attributes)->map(fn($value, $name) => "$name : $value")->implode(' · ') }}</td>
+                        <td class="px-4 py-3 text-gray-300">{{ $variant->sku ?: '—' }}</td>
+                        <td class="px-4 py-3 text-gray-300">{{ (float) $variant->price_adjustment ? '+' . number_format($variant->price_adjustment, 0, ',', ' ') . ' ' . $product->currency : '—' }}</td>
+                        <td class="px-4 py-3 font-semibold {{ $variant->stock > 0 ? 'text-white' : 'text-amber-400' }}">{{ $variant->stock > 0 ? $variant->stock : 'Épuisé' }}</td>
+                        <td class="px-4 py-3">{!! $variant->is_active ? '<span class="text-green-400">Visible</span>' : '<span class="text-gray-500">Masqué</span>' !!}</td>
+                    </tr>
                     @endforeach
                 </tbody></table></div>
             </div>

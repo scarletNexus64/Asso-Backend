@@ -13,10 +13,16 @@ use App\Models\Currency;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\File;
+use Illuminate\Validation\Rule;
 use App\Models\DeliveryPricelist;
+use App\Services\ProductVariantService;
 
 class ProductController extends Controller
 {
+    public function __construct(private readonly ProductVariantService $variantService)
+    {
+    }
+
     /**
      * Display a listing of products
      */
@@ -101,13 +107,18 @@ class ProductController extends Controller
             'max_price' => 'required_if:price_type,variable|nullable|numeric|min:0',
             'type' => 'required|in:service,article',
             'origin_country' => 'nullable|exists:import_countries,code',
-            'weight' => 'required_if:type,article|nullable|numeric|min:0.001|max:999999',
+            'weight' => [
+                Rule::requiredIf(fn () => $request->input('type') === 'article'
+                    && in_array(strtoupper((string) $request->input('origin_country')), ['CN', 'TR', 'AE'], true)),
+                'nullable', 'numeric', 'min:0.001', 'max:999999',
+            ],
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'sizes' => 'nullable|array',
             'sizes.*' => 'string|in:' . implode(',', Product::AVAILABLE_SIZES),
             'stock' => 'required|integer|min:0',
             'status' => 'required|in:active,inactive',
-            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'images' => 'nullable|array|max:15',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
 
             'is_wholesale'         => 'nullable|boolean',
             'tiers'                => 'nullable|array',
@@ -115,19 +126,14 @@ class ProductController extends Controller
             'tiers.*.unit_price'   => 'required_with:tiers|numeric|min:0',
             'tiers.*.min_quantity' => 'required_with:tiers|integer|min:1',
             'tiers.*.pack_size'    => 'nullable|integer|min:1',
-            'variants' => 'nullable|array',
-            'variants.*.attributes' => 'required_with:variants|string|max:1000',
-            'variants.*.sku' => 'nullable|string|max:100',
-            'variants.*.price_adjustment' => 'nullable|numeric',
-            'variants.*.stock' => 'required_with:variants|integer|min:0',
-            'variants.*.is_active' => 'nullable|boolean',
-        ]);
+        ] + ProductVariantService::rules());
 
         // Isole les données "gros" AVANT toute insertion — elles ne vont pas dans `products`
         $tiers = $validated['tiers'] ?? [];
         $variants = $validated['variants'] ?? [];
+        $variantOptions = $validated['variant_options'] ?? null;
         $isWholesale = $request->boolean('is_wholesale');
-        unset($validated['tiers'], $validated['variants'], $validated['is_wholesale']);
+        unset($validated['tiers'], $validated['variants'], $validated['variant_options'], $validated['is_wholesale'], $validated['images']);
         $validated['currency'] = strtoupper($validated['currency'] ?? 'XAF');
 
         // Get shop owner
@@ -140,6 +146,9 @@ class ProductController extends Controller
         $validated['origin_country'] = $request->filled('origin_country')
             ? strtoupper($request->input('origin_country'))
             : null;
+        if (!in_array($validated['origin_country'], ['CN', 'TR', 'AE'], true)) {
+            $validated['weight'] = null;
+        }
 
         // Generate slug
         $validated['slug'] = Str::slug($validated['name']);
@@ -152,7 +161,7 @@ class ProductController extends Controller
 
         // Paliers de prix (module GROS)
         $this->syncPriceTiers($product, $tiers);
-        $this->syncVariants($product, $variants);
+        $this->variantService->sync($product, $variants, $variantOptions);
 
         // Handle images upload
         if ($request->hasFile('images')) {
@@ -207,13 +216,18 @@ class ProductController extends Controller
             'max_price' => 'required_if:price_type,variable|nullable|numeric|min:0',
             'type' => 'required|in:service,article',
             'origin_country' => 'nullable|exists:import_countries,code',
-            'weight' => 'required_if:type,article|nullable|numeric|min:0.001|max:999999',
+            'weight' => [
+                Rule::requiredIf(fn () => $request->input('type') === 'article'
+                    && in_array(strtoupper((string) $request->input('origin_country')), ['CN', 'TR', 'AE'], true)),
+                'nullable', 'numeric', 'min:0.001', 'max:999999',
+            ],
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'sizes' => 'nullable|array',
             'sizes.*' => 'string|in:' . implode(',', Product::AVAILABLE_SIZES),
             'stock' => 'required|integer|min:0',
             'status' => 'required|in:active,inactive',
-            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'images' => 'nullable|array|max:15',
+            'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
 
             'is_wholesale'         => 'nullable|boolean',
             'tiers'                => 'nullable|array',
@@ -221,19 +235,14 @@ class ProductController extends Controller
             'tiers.*.unit_price'   => 'required_with:tiers|numeric|min:0',
             'tiers.*.min_quantity' => 'required_with:tiers|integer|min:1',
             'tiers.*.pack_size'    => 'nullable|integer|min:1',
-            'variants' => 'nullable|array',
-            'variants.*.attributes' => 'required_with:variants|string|max:1000',
-            'variants.*.sku' => 'nullable|string|max:100',
-            'variants.*.price_adjustment' => 'nullable|numeric',
-            'variants.*.stock' => 'required_with:variants|integer|min:0',
-            'variants.*.is_active' => 'nullable|boolean',
-        ]);
+        ] + ProductVariantService::rules());
 
         // Isole les données "gros" AVANT l'update — elles ne vont pas dans `products`
         $tiers = $validated['tiers'] ?? [];
         $variants = $validated['variants'] ?? [];
+        $variantOptions = $validated['variant_options'] ?? null;
         $isWholesale = $request->boolean('is_wholesale');
-        unset($validated['tiers'], $validated['variants'], $validated['is_wholesale']);
+        unset($validated['tiers'], $validated['variants'], $validated['variant_options'], $validated['is_wholesale'], $validated['images']);
         $validated['currency'] = strtoupper($validated['currency'] ?? $product->currency ?? 'XAF');
 
         // Get shop owner
@@ -245,6 +254,9 @@ class ProductController extends Controller
         $validated['origin_country'] = $request->filled('origin_country')
             ? strtoupper($request->input('origin_country'))
             : null;
+        if (!in_array($validated['origin_country'], ['CN', 'TR', 'AE'], true)) {
+            $validated['weight'] = null;
+        }
 
         // Update slug if name changed
         if ($product->name !== $validated['name']) {
@@ -259,7 +271,7 @@ class ProductController extends Controller
 
         // Paliers de prix (module GROS) — remplace intégralement l'ancienne liste
         $this->syncPriceTiers($product, $tiers);
-        $this->syncVariants($product, $variants);
+        $this->variantService->sync($product, $variants, $variantOptions);
 
         // Handle new images upload
         if ($request->hasFile('images')) {
@@ -307,45 +319,6 @@ class ProductController extends Controller
                 'is_active'    => true,
                 'sort_order'   => $i + 1,
             ]);
-        }
-    }
-
-    private function syncVariants(Product $product, array $variants): void
-    {
-        $product->variants()->delete();
-        $totalStock = 0;
-
-        foreach (array_values($variants) as $index => $variant) {
-            if (blank($variant['attributes'] ?? null)) {
-                continue;
-            }
-
-            $attributes = collect(preg_split('/[;\n]+/', $variant['attributes']))
-                ->mapWithKeys(function (string $item): array {
-                    [$name, $value] = array_pad(explode(':', $item, 2), 2, null);
-                    $name = trim($name);
-                    $value = trim((string) $value);
-                    return $name !== '' && $value !== '' ? [$name => $value] : [];
-                })->all();
-
-            if ($attributes === []) {
-                continue;
-            }
-
-            $stock = (int) ($variant['stock'] ?? 0);
-            $product->variants()->create([
-                'sku' => filled($variant['sku'] ?? null) ? trim($variant['sku']) : null,
-                'attributes' => $attributes,
-                'price_adjustment' => $variant['price_adjustment'] ?? 0,
-                'stock' => $stock,
-                'is_active' => (bool) ($variant['is_active'] ?? false),
-                'sort_order' => $index,
-            ]);
-            $totalStock += $stock;
-        }
-
-        if ($product->variants()->exists()) {
-            $product->updateQuietly(['stock' => $totalStock]);
         }
     }
 
@@ -420,6 +393,30 @@ class ProductController extends Controller
 
         $product->images()->update(['is_primary' => false]);
         $image->update(['is_primary' => true]);
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Réordonne les photos d'un produit ; la première devient la photo principale.
+     */
+    public function reorderImages(Request $request, Product $product)
+    {
+        $ids = $request->validate([
+            'order' => 'required|array|min:1',
+            'order.*' => 'integer',
+        ])['order'];
+
+        $images = $product->images()->whereIn('id', $ids)->get()->keyBy('id');
+        foreach (array_values($ids) as $position => $id) {
+            $images->get($id)?->update([
+                'order' => $position + 1,
+                'is_primary' => $position === 0,
+            ]);
+        }
+        if ($images->has($ids[0] ?? null)) {
+            $product->images()->where('id', '!=', $ids[0])->update(['is_primary' => false]);
+        }
 
         return response()->json(['success' => true]);
     }

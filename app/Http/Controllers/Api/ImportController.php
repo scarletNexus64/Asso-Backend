@@ -10,6 +10,7 @@ use App\Models\ProductImage;
 use App\Services\OrderService;
 use App\Services\PaymentMethodService;
 use App\Services\ExchangeRateService;
+use App\Services\ProductVariantService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -141,6 +142,7 @@ class ImportController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.price_tier_id' => 'required|exists:product_price_tiers,id',
+            'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
             'shipping_option_id' => 'required|exists:import_shipping_options,id',
             'shipping_weight_kg' => 'nullable|numeric|min:0',
@@ -212,13 +214,11 @@ class ImportController extends Controller
             'unit_weight_kg' => is_numeric($p->weight) ? (float) $p->weight : null,
             'stock' => $p->stock,
             'variants' => ($p->relationLoaded('variants') ? $p->variants : collect())
-                ->where('is_active', true)->map(fn ($variant) => [
-                    'id' => $variant->id,
-                    'sku' => $variant->sku,
-                    'attributes' => $variant->attributes,
-                    'price_adjustment' => (float) $variant->price_adjustment,
-                    'stock' => $variant->stock,
-                ])->values(),
+                ->where('is_active', true)
+                ->map(fn ($variant) => app(ProductVariantService::class)->presentVariant($variant, $p))->values(),
+            'variant_options' => $p->relationLoaded('variants')
+                ? app(ProductVariantService::class)->presentOptions($p)
+                : [],
             'price_tiers' => $tiers->map(fn ($tier) => $this->serializeTier($tier, $targetCurrency))->values(),
             'image' => $p->id
                 ? url('/api/v1/import/products/' . $p->id . '/image')

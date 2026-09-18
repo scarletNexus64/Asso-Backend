@@ -317,6 +317,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/', [VendorProductController::class, 'index']);
             Route::put('/{id}', [VendorProductController::class, 'update']);
             Route::post('/{id}', [VendorProductController::class, 'update']); // Support POST avec _method=PUT pour multipart
+            Route::put('/{id}/status', [VendorProductController::class, 'updateStatus']);
             Route::delete('/{id}', [VendorProductController::class, 'destroy']);
 
             // Stock management

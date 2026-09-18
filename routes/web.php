@@ -100,6 +100,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/categories/{category}/subcategories', [ProductController::class, 'getSubcategories'])->name('categories.subcategories');
         Route::delete('/products/{product}/images/{image}', [ProductController::class, 'deleteImage'])->name('products.images.delete');
         Route::post('/products/{product}/images/{image}/primary', [ProductController::class, 'setPrimaryImage'])->name('products.images.setPrimary');
+        Route::post('/products/{product}/images/reorder', [ProductController::class, 'reorderImages'])->name('products.images.reorder');
 
         // Settings
         Route::prefix('settings')->name('settings.')->group(function () {

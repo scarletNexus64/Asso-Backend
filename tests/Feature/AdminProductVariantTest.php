@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ImportCountry;
 use App\Models\Shop;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,6 +50,7 @@ class AdminProductVariantTest extends TestCase
         $product = Product::where('name', 'Basket importée')->firstOrFail();
         $this->assertSame(11, $product->stock);
         $this->assertSame('Semelle antidérapante', $product->characteristics);
+        $this->assertNull($product->weight, 'Un produit local ne doit pas conserver un poids d’importation.');
         $this->assertCount(2, $product->variants);
         $this->assertSame(['Couleur' => 'Rouge', 'Pointure' => '40'], $product->variants->first()->attributes);
 
@@ -59,5 +61,40 @@ class AdminProductVariantTest extends TestCase
             ->assertJsonPath('products.0.commercial_information', 'Garantie 6 mois')
             ->assertJsonPath('products.0.variants.0.attributes.Couleur', 'Rouge')
             ->assertJsonPath('products.0.variants.1.stock', 7);
+    }
+
+    public function test_weight_is_required_only_for_china_dubai_and_turkey_products(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $vendor = User::factory()->create(['role' => 'vendeur']);
+        $shop = Shop::create([
+            'user_id' => $vendor->id,
+            'name' => 'Boutique Import',
+            'slug' => 'boutique-import',
+            'status' => 'active',
+        ]);
+        $category = Category::create(['name' => 'Maison', 'slug' => 'maison']);
+        ImportCountry::create(['code' => 'CN', 'name' => 'Chine']);
+
+        $payload = [
+            'shop_id' => $shop->id,
+            'category_id' => $category->id,
+            'name' => 'Produit Chine',
+            'price_type' => 'fixed',
+            'price' => 15000,
+            'type' => 'article',
+            'origin_country' => 'CN',
+            'stock' => 5,
+            'status' => 'active',
+        ];
+
+        $this->actingAs($admin)->post('/admin/products', $payload)
+            ->assertSessionHasErrors('weight');
+
+        $this->actingAs($admin)->post('/admin/products', $payload + ['weight' => 2.5])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('admin.products.index'));
+
+        $this->assertSame('2.5', Product::where('name', 'Produit Chine')->firstOrFail()->weight);
     }
 }

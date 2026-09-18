@@ -14,6 +14,16 @@
             </div>
         </div>
     </div>
+    @if ($errors->any())
+        <div class="mb-6 p-4 bg-red-900/20 border-l-4 border-red-500 rounded">
+            <p class="font-semibold text-red-400 mb-2"><i class="fas fa-exclamation-circle mr-2"></i>Erreurs de validation :</p>
+            <ul class="list-disc list-inside text-red-300">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
 
     <!-- Form -->
     <form action="{{ route('admin.products.store') }}" method="POST" enctype="multipart/form-data">
@@ -223,17 +233,7 @@
 
                 @include('admin.products._variants')
 
-                <!-- Images Card -->
-                <div class="bg-dark-100 rounded-xl shadow-lg p-6">
-                    <h3 class="text-lg font-bold text-white mb-4 flex items-center">
-                        <i class="fas fa-images text-primary-500 mr-2"></i>
-                        Photos du produit
-                    </h3>
-                    <input type="file" name="images[]" multiple accept="image/*" onchange="previewImages(event)"
-                           class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-                    <p class="mt-2 text-xs text-gray-400">Vous pouvez choisir plusieurs photos. La première sera utilisée comme photo principale.</p>
-                    <div id="image_preview" class="mt-4 grid grid-cols-4 gap-4"></div>
-                </div>
+                @include('admin.products._images')
             </div>
 
             <!-- Sidebar -->
@@ -262,6 +262,7 @@
                         </div>
                     </div>
 
+                    <div id="import_weight_section">
                     <!-- Weight Category -->
                     <div class="mb-4">
                         <label for="weight" class="block text-sm font-medium text-white mb-2">
@@ -292,6 +293,7 @@
                         </select>
                         <p class="mt-1 text-xs text-gray-400">Détermine le prix de livraison chez les partenaires</p>
                         @error('weight_category')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
+                    </div>
                     </div>
 
                     <!-- Sizes -->
@@ -430,26 +432,6 @@ function loadSubcategories(categoryId) {
         });
 }
 
-// Preview images
-function previewImages(event) {
-    const preview = document.getElementById('image_preview');
-    preview.innerHTML = '';
-
-    Array.from(event.target.files).forEach((file, index) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const div = document.createElement('div');
-            div.className = 'relative';
-            div.innerHTML = `
-                <img src="${e.target.result}" class="w-full h-24 object-cover rounded-lg border-2 border-orange-500">
-                ${index === 0 ? '<span class="absolute top-1 right-1 px-2 py-1 bg-orange-500 text-white text-xs rounded">Principal</span>' : ''}
-            `;
-            preview.appendChild(div);
-        };
-        reader.readAsDataURL(file);
-    });
-}
-
 // ============================================
 // MODULE GROS — Vente en gros par pays d'import
 // ============================================
@@ -535,6 +517,18 @@ function toggleWholesaleSection() {
     }
 }
 
+function syncImportWeightSection() {
+    const section = document.getElementById('import_weight_section');
+    const country = document.querySelector('select[name="origin_country"]')?.value?.toUpperCase() ?? '';
+    const type = document.querySelector('input[name="type"]:checked')?.value;
+    const visible = type === 'article' && ['CN', 'TR', 'AE'].includes(country);
+    if (!section) return;
+    section.classList.toggle('hidden', !visible);
+    section.querySelectorAll('input, select').forEach(input => input.disabled = !visible);
+    const weight = document.getElementById('weight');
+    if (weight) weight.required = visible;
+}
+
 function loadShippingOptions(countryCode) {
     fetch(`/api/v1/import/${countryCode}/shipping`)
         .then(r => r.json())
@@ -610,13 +604,7 @@ function syncSizeGroups() {
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', function() {
-    const syncWeightRequirement = () => {
-        const weight = document.getElementById('weight');
-        const type = document.querySelector('input[name="type"]:checked')?.value;
-        if (weight) weight.required = type === 'article';
-    };
-    document.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener('change', syncWeightRequirement));
-    syncWeightRequirement();
+    document.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener('change', syncImportWeightSection));
     togglePriceFields();
     const oldCategoryId = '{{ old("category_id") }}';
     if (oldCategoryId) {
@@ -634,12 +622,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     @endforeach
 
-    document.querySelector('select[name="origin_country"]')?.addEventListener('change', toggleWholesaleSection);
+    document.querySelector('select[name="origin_country"]')?.addEventListener('change', () => {
+        toggleWholesaleSection();
+        syncImportWeightSection();
+    });
     document.getElementById('category_id')?.addEventListener('change', syncSizeGroups);
     document.getElementById('subcategory_id')?.addEventListener('change', syncSizeGroups);
     document.getElementById('is_wholesale')?.addEventListener('change', toggleTiersContainer);
 
     toggleWholesaleSection();
+    syncImportWeightSection();
     toggleTiersContainer();
     syncSizeGroups();
 
