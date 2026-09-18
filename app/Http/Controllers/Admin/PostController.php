@@ -104,16 +104,9 @@ class PostController extends Controller
         try {
             $comment = $post->allComments()->findOrFail($commentId);
 
-            // Delete all replies if any
-            if ($comment->replies) {
-                $comment->replies()->delete();
-            }
-
-            // Delete the comment
-            $comment->delete();
-
-            // Update post comments count
-            $post->decrement('comments_count');
+            // Supprime le commentaire et ses réponses ; posts.comments_count est
+            // tenu à jour par les événements du modèle (pas de décrément manuel).
+            $comment->deleteWithReplies();
 
             return redirect()
                 ->back()

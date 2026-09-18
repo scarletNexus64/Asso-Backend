@@ -332,28 +332,12 @@ class ProfileController extends Controller
                 'products_count' => $products->count(),
             ]);
 
-            $ordersCount = \DB::table('order_items')
-                ->where('seller_id', $user->id)
-                ->distinct('order_id')
-                ->count('order_id');
-
-            // Calculate pending orders count
-            $pendingOrdersCount = \DB::table('order_items')
-                ->join('orders', 'order_items.order_id', '=', 'orders.id')
-                ->where('order_items.seller_id', $user->id)
-                ->where('orders.status', 'pending')
-                ->distinct('order_items.order_id')
-                ->count('order_items.order_id');
-
-            // Total des ventes : comptabilisé DÈS LA VALIDATION de la commande
-            // (encaissement direct — le vendeur est crédité à la validation, pas à la
-            // livraison). On inclut donc tous les statuts postérieurs à la validation
-            // et on exclut uniquement 'pending' (non validée) et 'cancelled' (annulée).
-            $totalSales = \DB::table('order_items')
-                ->join('orders', 'order_items.order_id', '=', 'orders.id')
-                ->where('order_items.seller_id', $user->id)
-                ->whereIn('orders.status', ['confirmed', 'preparing', 'shipped', 'delivered', 'completed'])
-                ->sum('order_items.total_price');
+            // Commandes, ventes, CA (prix vendeur) et audience : même source que
+            // l'écran Statistiques (ShopStatisticsService), pour des chiffres cohérents.
+            $counters = app(\App\Services\ShopStatisticsService::class)->quickCounters($shop);
+            $ordersCount = $counters['orders'];
+            $pendingOrdersCount = $counters['pending_orders'];
+            $totalSales = $counters['revenue'];
 
             // Calculate average rating from product reviews
             $averageRating = 0.0;
@@ -465,6 +449,13 @@ class ProfileController extends Controller
                         'total_products' => $products->count(),
                         'total_reviews' => $totalReviews,
                         'rating' => $averageRating,
+                        'sales_count' => $counters['sales_count'],
+                        'items_sold' => $counters['items_sold'],
+                        'total_visits' => $counters['visits'],
+                        'unique_visitors' => $counters['unique_visitors'],
+                        'total_product_views' => $counters['product_views'],
+                        'total_contacts' => $counters['contacts'],
+                        'visits_last_7_days' => $counters['visits_last_7_days'],
                     ],
                     'package' => $packageInfo,
                     'certification' => [

@@ -178,6 +178,12 @@
                         @endif
                     </a>
 
+                    <a href="{{ route('admin.statistics.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.statistics.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-chart-line w-5 mr-3"></i>
+                        Statistiques boutiques
+                    </a>
+
                     <a href="{{ route('admin.products.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.products.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-box w-5 mr-3"></i>
@@ -253,7 +259,7 @@
                     <a href="{{ route('admin.diaspo.posts.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.diaspo.posts.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-comments w-5 mr-3"></i>
-                        Posts
+                        Voice of Customer
                     </a>
 
                     <a href="{{ route('admin.diaspo.offers.index') }}"

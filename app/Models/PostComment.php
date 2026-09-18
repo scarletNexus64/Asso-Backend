@@ -109,16 +109,28 @@ class PostComment extends Model
     }
 
     /**
-     * Boot method - Auto increment/decrement post comments_count
+     * Supprime le commentaire et ses réponses (les compteurs suivent via les événements).
+     */
+    public function deleteWithReplies(): void
+    {
+        $this->replies()->get()->each->delete();
+        $this->delete();
+    }
+
+    /**
+     * Boot method - tient à jour posts.comments_count (commentaires + réponses).
+     * Requêtes directes : fonctionne même si la publication a été supprimée.
      */
     protected static function booted()
     {
         static::created(function ($comment) {
-            $comment->post->incrementComments();
+            Post::withTrashed()->whereKey($comment->post_id)->increment('comments_count');
         });
 
         static::deleted(function ($comment) {
-            $comment->post->decrementComments();
+            Post::withTrashed()->whereKey($comment->post_id)
+                ->where('comments_count', '>', 0)
+                ->decrement('comments_count');
         });
     }
 }

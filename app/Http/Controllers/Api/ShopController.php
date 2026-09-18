@@ -72,7 +72,7 @@ class ShopController extends Controller
     /**
      * Get public shop info by ID with products
      */
-    public function showPublic($shopId)
+    public function showPublic(Request $request, $shopId)
     {
         $shop = Shop::find($shopId);
 
@@ -116,6 +116,16 @@ class ShopController extends Controller
                 $averageRating = round($sumRatings / $totalReviews, 1);
             }
         }
+
+        // Statistiques (P8) : une visite de boutique, dédoublonnée par visiteur.
+        app(\App\Services\ShopStatisticsService::class)->record(
+            \App\Models\ShopAnalyticsEvent::SHOP_VIEW,
+            $shop,
+            null,
+            $request->user() ?? auth('sanctum')->user(),
+            $request,
+            'api',
+        );
 
         return response()->json([
             'success' => true,
@@ -454,16 +464,10 @@ class ShopController extends Controller
      */
     private function calculateShopStats(Shop $shop, $user): array
     {
-        $ordersCount = DB::table('order_items')
-            ->where('seller_id', $user->id)
-            ->distinct('order_id')
-            ->count('order_id');
-
-        $totalSales = DB::table('order_items')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->where('order_items.seller_id', $user->id)
-            ->whereIn('orders.status', ['delivered', 'completed'])
-            ->sum('order_items.total_price');
+        // Commandes / ventes / CA / audience : même source que l'écran Statistiques.
+        $counters = app(\App\Services\ShopStatisticsService::class)->quickCounters($shop);
+        $ordersCount = $counters['orders'];
+        $totalSales = $counters['revenue'];
 
         $totalProducts = $shop->products()->count();
         $totalStock = $shop->products()->sum('stock');
@@ -491,6 +495,14 @@ class ShopController extends Controller
             'total_sales' => (float) $totalSales,
             'average_rating' => $averageRating,
             'total_reviews' => $totalReviews,
+            'pending_orders' => $counters['pending_orders'],
+            'sales_count' => $counters['sales_count'],
+            'items_sold' => $counters['items_sold'],
+            'total_visits' => $counters['visits'],
+            'unique_visitors' => $counters['unique_visitors'],
+            'total_product_views' => $counters['product_views'],
+            'total_contacts' => $counters['contacts'],
+            'visits_last_7_days' => $counters['visits_last_7_days'],
         ];
     }
 

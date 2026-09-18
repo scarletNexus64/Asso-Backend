@@ -270,6 +270,39 @@
                     </div>
                 </div>
 
+                <!-- Statistiques (P8) -->
+                @isset($statistics)
+                    <div class="mt-6 pt-6 border-t border-dark-200">
+                        <h4 class="text-sm font-semibold text-gray-400 mb-3">
+                            <i class="fas fa-chart-line text-primary-500 mr-2"></i>
+                            Statistiques (cumul)
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            @foreach([
+                                ['Visites', number_format($statistics['visits'], 0, ',', ' ')],
+                                ['Produits consultés', number_format($statistics['product_views'], 0, ',', ' ')],
+                                ['Commandes', number_format($statistics['orders'], 0, ',', ' ')],
+                                ['Ventes', number_format($statistics['sales_count'], 0, ',', ' ')],
+                                ['Articles vendus', number_format($statistics['items_sold'], 0, ',', ' ')],
+                                ['Contacts', number_format($statistics['contacts'], 0, ',', ' ')],
+                            ] as [$label, $value])
+                                <div class="bg-dark-50 rounded-lg p-3">
+                                    <p class="text-gray-400 text-xs">{{ $label }}</p>
+                                    <p class="text-white font-semibold">{{ $value }}</p>
+                                </div>
+                            @endforeach
+                            <div class="col-span-2 bg-dark-50 rounded-lg p-3">
+                                <p class="text-gray-400 text-xs">Chiffre d'affaires vendeur</p>
+                                <p class="text-emerald-400 font-semibold">{{ number_format($statistics['revenue'], 0, ',', ' ') }} FCFA</p>
+                            </div>
+                        </div>
+                        <a href="{{ route('admin.statistics.shops.show', $shop) }}"
+                           class="mt-3 block text-center px-4 py-2 text-sm rounded-lg border border-primary-500/50 text-primary-300 hover:bg-primary-500/10">
+                            <i class="fas fa-chart-bar mr-2"></i>Voir les statistiques détaillées
+                        </a>
+                    </div>
+                @endisset
+
                 <!-- Categories Section -->
                 @if($shop->categories && count($shop->categories) > 0)
                     <div class="mt-6 pt-6 border-t border-dark-200">

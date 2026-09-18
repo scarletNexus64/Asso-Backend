@@ -93,6 +93,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // Shop Location Requests
         Route::post('/shops/{shop}/location-requests/{request}/approve', [ShopController::class, 'approveLocationRequest'])->name('shops.location-requests.approve');
+        // Statistiques boutiques (P8)
+        Route::prefix('statistics')->name('statistics.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'index'])->name('index');
+            Route::post('/settings', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'updateSettings'])->name('settings');
+            Route::get('/shops/{shop}', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'show'])->name('shops.show');
+            Route::post('/shops/{shop}/reset-audience', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'resetAudience'])->name('shops.reset');
+        });
+
         Route::post('/shops/{shop}/location-requests/{request}/reject', [ShopController::class, 'rejectLocationRequest'])->name('shops.location-requests.reject');
 
         // Products management

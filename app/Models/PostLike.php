@@ -36,40 +36,44 @@ class PostLike extends Model
     }
 
     /**
-     * Boot method - Auto increment/decrement counters
+     * Boot method - tient à jour likes_count / dislikes_count de l'élément aimé.
      */
     protected static function booted()
     {
         static::created(function ($like) {
-            if ($like->type === 'like') {
-                $like->likeable->incrementLikes();
-            } else {
-                $like->likeable->incrementDislikes();
-            }
+            static::adjust($like, $like->type, 1);
         });
 
         static::deleted(function ($like) {
-            if ($like->type === 'like') {
-                $like->likeable->decrementLikes();
-            } else {
-                $like->likeable->decrementDislikes();
-            }
+            static::adjust($like, $like->type, -1);
         });
 
         static::updated(function ($like) {
-            // Si le type change (like -> dislike ou vice-versa)
-            if ($like->isDirty('type')) {
-                $oldType = $like->getOriginal('type');
-                $newType = $like->type;
-
-                if ($oldType === 'like' && $newType === 'dislike') {
-                    $like->likeable->decrementLikes();
-                    $like->likeable->incrementDislikes();
-                } elseif ($oldType === 'dislike' && $newType === 'like') {
-                    $like->likeable->decrementDislikes();
-                    $like->likeable->incrementLikes();
-                }
+            // Bascule like <-> dislike
+            $oldType = $like->getOriginal('type');
+            if ($oldType !== $like->type) {
+                static::adjust($like, $oldType, -1);
+                static::adjust($like, $like->type, 1);
             }
         });
+    }
+
+    private static function adjust(PostLike $like, ?string $type, int $delta): void
+    {
+        $column = $type === 'dislike' ? 'dislikes_count' : 'likes_count';
+        $modelClass = $like->likeable_type;
+        if ($type === 'dislike' && $modelClass !== Post::class) {
+            return; // seuls les posts ont des « je n'aime pas »
+        }
+        if (!class_exists($modelClass)) {
+            return;
+        }
+
+        $query = $modelClass::withTrashed()->whereKey($like->likeable_id);
+        if ($delta > 0) {
+            $query->increment($column, $delta);
+        } else {
+            $query->where($column, '>', 0)->decrement($column, -$delta);
+        }
     }
 }

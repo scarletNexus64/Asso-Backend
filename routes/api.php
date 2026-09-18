@@ -137,6 +137,10 @@ Route::prefix('v1')->group(function () {
     // Public shop routes
     Route::get('/shops/{shopId}', [ShopController::class, 'showPublic']);
 
+    // Statistiques boutiques (P8) : visites, produits consultés, contacts — invités compris.
+    Route::post('/analytics/track', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'track'])
+        ->middleware('throttle:120,1');
+
     // Delivery zone availability check (public)
     Route::post('/delivery/check-availability', [DeliveryController::class, 'checkDeliveryAvailability']);
 
@@ -192,15 +196,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/favorites', [ProductController::class, 'favorites']);
         Route::post('/products/{id}/favorite', [ProductController::class, 'toggleFavorite']);
 
-        // Community feed ("MyVoice") — FAKE data for testing
-        Route::get('/posts/my-posts', [PostController::class, 'myPosts']);
-        Route::get('/posts', [PostController::class, 'index']);
-        Route::post('/posts', [PostController::class, 'store']);
-        Route::get('/posts/{id}', [PostController::class, 'show']);
-        Route::put('/posts/{id}', [PostController::class, 'update']);
-        Route::delete('/posts/{id}', [PostController::class, 'destroy']);
-        Route::post('/posts/{id}/react', [PostController::class, 'react']);
-        Route::delete('/posts/{id}/react', [PostController::class, 'unreact']);
+        // Voice of Customer (« MyVoice ») : routes plus bas, groupe prefix('v1/posts').
         // Diaspo — RÉSERVATIONS (flux de paiement KPay direct, DiaspoController).
         // Les OFFRES et la VÉRIFICATION sont servies par DiaspoOfferController (schéma
         // unifié upstream), plus bas dans le groupe prefix('v1/diaspo'). Chaque chemin
@@ -256,6 +252,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Vendor shop management
         Route::get('/vendor/shop', [ShopController::class, 'show']);
+        Route::get('/vendor/statistics', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'vendor']);
         Route::put('/vendor/shop', [ShopController::class, 'update']);
         Route::get('/vendor/shops', [ShopController::class, 'index']);
         Route::get('/vendor/shop/location-requests', [ShopController::class, 'getLocationRequests']);
@@ -402,7 +399,7 @@ Route::middleware('auth:sanctum')->prefix('v1/posts')->group(function () {
     // Posts CRUD
     Route::get('/', [PostController::class, 'index']);
     Route::get('/my-posts', [PostController::class, 'myPosts']);
-    Route::post('/', [PostController::class, 'store']);
+    Route::post('/', [PostController::class, 'store'])->middleware('throttle:20,1');
     Route::get('/{id}', [PostController::class, 'show']);
     Route::put('/{id}', [PostController::class, 'update']);
     Route::delete('/{id}', [PostController::class, 'destroy']);
@@ -413,7 +410,7 @@ Route::middleware('auth:sanctum')->prefix('v1/posts')->group(function () {
 
     // Comments
     Route::get('/{postId}/comments', [PostCommentController::class, 'index']);
-    Route::post('/{postId}/comments', [PostCommentController::class, 'store']);
+    Route::post('/{postId}/comments', [PostCommentController::class, 'store'])->middleware('throttle:40,1');
     Route::put('/{postId}/comments/{commentId}', [PostCommentController::class, 'update']);
     Route::delete('/{postId}/comments/{commentId}', [PostCommentController::class, 'destroy']);
 

@@ -4,139 +4,60 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Post;
+use App\Models\PostLike;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 /**
- * Community feed ("MyVoice") — FAKE/stub implementation for testing.
- * Reads return well-shaped fake data; writes echo back a fabricated resource
- * so the mobile optimistic UI works. No persistence.
+ * Voice of Customer (« MyVoice ») : publications de la communauté ASSO.
+ * Tout est persisté (posts, réactions) ; les commentaires sont servis par
+ * PostCommentController.
  */
 class PostController extends Controller
 {
-    /** Convert a persisted post to the mobile API shape. */
-    private function postPayload(Post $post, ?int $currentUserId): array
+    public const MAX_CONTENT_LENGTH = 5000;
+
+    /** Convertit un post au format attendu par le mobile (Post.fromJson). */
+    public static function payload(Post $post, ?int $currentUserId): array
     {
-        $isMine = $currentUserId !== null && $post->user_id === $currentUserId;
+        $isMine = $currentUserId !== null && (int) $post->user_id === $currentUserId;
         $isAnonymous = (bool) $post->is_anonymous;
+        $hideAuthor = $isAnonymous && !$isMine;
+        $reaction = $currentUserId ? $post->getUserReaction($currentUserId) : null;
 
         return [
             'id' => $post->id,
-            'user_id' => $isAnonymous && !$isMine ? null : $post->user_id,
+            'user_id' => $hideAuthor ? null : $post->user_id,
             'content' => $post->content,
             'is_anonymous' => $isAnonymous,
             'likes_count' => (int) $post->likes_count,
             'dislikes_count' => (int) $post->dislikes_count,
             'comments_count' => (int) $post->comments_count,
-            'user_reaction' => $post->getUserReaction($currentUserId),
-            'is_liked' => $post->isLikedByUser($currentUserId),
-            'is_disliked' => $post->isDislikedByUser($currentUserId),
+            'user_reaction' => $reaction,
+            'is_liked' => $reaction === 'like',
+            'is_disliked' => $reaction === 'dislike',
             'is_my_post' => $isMine,
             'created_at' => $post->created_at?->toIso8601String(),
             'updated_at' => $post->updated_at?->toIso8601String(),
-            'user' => $isAnonymous && !$isMine
-                ? null
-                : ($post->user ? [
-                    'id' => $post->user->id,
-                    'first_name' => $post->user->first_name,
-                    'last_name' => $post->user->last_name,
-                    'avatar' => $post->user->avatar,
-                ] : null),
-        ];
-    }
-
-    /** Build a fake post matching the mobile Post.fromJson shape. */
-    private function fakePost(int $id, ?int $currentUserId = null): array
-    {
-        $samples = [
-            "Quelqu'un connaît un bon vendeur de tissus wax à Cotonou ? 🙏",
-            "Merci à la communauté ASSO, j'ai reçu ma commande en 2 jours ! 🚀",
-            "Astuce : pensez à vérifier les avis avant de commander chez un nouveau vendeur.",
-            "Je propose mes services de livraison sur Calavi, contactez-moi en privé.",
-            "Trop content de la nouvelle fonctionnalité diaspo, ça va aider ma famille ✈️",
-        ];
-        $content = $samples[$id % count($samples)];
-        $anonymous = ($id % 3 === 0);
-
-        return [
-            'id' => $id,
-            'user_id' => $anonymous ? null : (100 + $id),
-            'content' => $content,
-            'is_anonymous' => $anonymous,
-            'likes_count' => (7 * $id) % 25,
-            'dislikes_count' => $id % 3,
-            'comments_count' => $id % 5,
-            'user_reaction' => null,
-            'is_liked' => false,
-            'is_disliked' => false,
-            'is_my_post' => false,
-            'created_at' => Carbon::now()->subHours($id)->toIso8601String(),
-            'updated_at' => Carbon::now()->subHours($id)->toIso8601String(),
-            'user' => $anonymous ? null : [
-                'id' => 100 + $id,
-                'first_name' => 'Membre',
-                'last_name' => '#' . $id,
-                'avatar' => null,
+            'user' => $hideAuthor || !$post->user ? null : [
+                'id' => $post->user->id,
+                'first_name' => $post->user->first_name,
+                'last_name' => $post->user->last_name,
+                'avatar' => $post->user->avatar,
             ],
         ];
     }
 
-    /** Build a fake comment matching PostComment.fromJson shape. */
-    private function fakeComment(int $id, int $postId, string $content, bool $anonymous = false): array
+    private function paginated(Request $request, $query): JsonResponse
     {
-        return [
-            'id' => $id,
-            'post_id' => $postId,
-            'user_id' => $anonymous ? null : (200 + $id),
-            'parent_id' => null,
-            'content' => $content,
-            'is_anonymous' => $anonymous,
-            'likes_count' => $id % 4,
-            'user_reaction' => null,
-            'is_liked' => false,
-            'is_my_comment' => false,
-            'created_at' => Carbon::now()->subMinutes($id * 5)->toIso8601String(),
-            'updated_at' => Carbon::now()->subMinutes($id * 5)->toIso8601String(),
-            'user' => $anonymous ? null : [
-                'id' => 200 + $id,
-                'first_name' => 'Membre',
-                'last_name' => '#' . $id,
-                'avatar' => null,
-            ],
-            'replies' => [],
-        ];
-    }
+        $perPage = max(1, min(50, (int) $request->query('per_page', 20)));
+        $paginator = $query->paginate($perPage)->withQueryString();
+        $userId = $request->user()?->id;
 
-    /** Wrap a list of items into a Laravel-paginator-like envelope. */
-    private function paginate(array $items, int $page, int $perPage): array
-    {
-        return [
-            'current_page' => $page,
-            'data' => $items,
-            'per_page' => $perPage,
-            'last_page' => 1,
-            'total' => count($items),
-            'next_page_url' => null,
-            'prev_page_url' => null,
-        ];
-    }
-
-    /** GET /v1/posts */
-    public function index(Request $request)
-    {
-        $page = (int) $request->query('page', 1);
-        $perPage = (int) $request->query('per_page', 20);
-
-        $query = Post::query()->with('user');
-        if ($request->query('sort', 'recent') === 'popular') {
-            $query->orderByDesc('likes_count');
-        } else {
-            $query->latest();
-        }
-
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $posts = $paginator->getCollection()
-            ->map(fn(Post $post) => $this->postPayload($post, $request->user()?->id))
+            ->map(fn (Post $post) => self::payload($post, $userId))
             ->values()
             ->all();
 
@@ -146,139 +67,209 @@ class PostController extends Controller
         ]);
     }
 
+    private function notFound(): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => 'Publication introuvable'], 404);
+    }
+
+    private function validationError($validator): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $validator->errors()->first(),
+            'errors' => $validator->errors(),
+        ], 422);
+    }
+
+    private function contentRules(): array
+    {
+        return ['required', 'string', 'min:2', 'max:' . self::MAX_CONTENT_LENGTH];
+    }
+
+    private function messages(): array
+    {
+        return [
+            'content.required' => 'Le message ne peut pas être vide.',
+            'content.min' => 'Le message est trop court.',
+            'content.max' => 'Le message ne doit pas dépasser ' . self::MAX_CONTENT_LENGTH . ' caractères.',
+        ];
+    }
+
+    /** GET /v1/posts */
+    public function index(Request $request)
+    {
+        $query = Post::query()->with('user');
+        if ($request->query('sort', 'recent') === 'popular') {
+            $query->orderByDesc('likes_count')->orderByDesc('comments_count');
+        }
+        $query->latest()->orderByDesc('id');
+
+        return $this->paginated($request, $query);
+    }
+
     /** GET /v1/posts/my-posts */
     public function myPosts(Request $request)
     {
-        return response()->json([
-            'success' => true,
-            'data' => $this->paginate([], (int) $request->query('page', 1), (int) $request->query('per_page', 20)),
-        ]);
+        $query = Post::query()
+            ->with('user')
+            ->where('user_id', $request->user()->id)
+            ->latest()
+            ->orderByDesc('id');
+
+        return $this->paginated($request, $query);
     }
 
     /** GET /v1/posts/{id} */
     public function show(Request $request, $id)
     {
         $post = Post::with('user')->find($id);
-
         if (!$post) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Post introuvable',
-            ], 404);
+            return $this->notFound();
         }
 
         return response()->json([
             'success' => true,
-            'data' => $this->postPayload($post, $request->user()?->id),
+            'data' => self::payload($post, $request->user()?->id),
         ]);
     }
 
     /** POST /v1/posts */
     public function store(Request $request)
     {
-        $request->validate(['content' => 'required|string']);
+        $validator = Validator::make($request->all(), [
+            'content' => $this->contentRules(),
+            'is_anonymous' => 'sometimes|boolean',
+        ], $this->messages());
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
         $post = Post::create([
             'user_id' => $request->user()->id,
-            'content' => $request->input('content'),
-            'is_anonymous' => (bool) $request->input('is_anonymous', false),
+            'content' => trim((string) $request->input('content')),
+            'is_anonymous' => $request->boolean('is_anonymous'),
         ])->load('user');
 
         return response()->json([
             'success' => true,
             'message' => 'Publication créée',
-            'data' => $this->postPayload($post, $request->user()->id),
+            'data' => self::payload($post, $request->user()->id),
         ], 201);
     }
 
     /** PUT /v1/posts/{id} */
     public function update(Request $request, $id)
     {
-        $request->validate(['content' => 'required|string']);
-        $post = $this->fakePost((int) $id);
-        $post['content'] = $request->input('content');
-        $post['is_my_post'] = true;
+        $post = Post::with('user')->find($id);
+        if (!$post) {
+            return $this->notFound();
+        }
+        if ((int) $post->user_id !== (int) $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé'], 403);
+        }
 
-        return response()->json(['success' => true, 'message' => 'Publication mise à jour', 'data' => $post]);
+        $validator = Validator::make($request->all(), ['content' => $this->contentRules()], $this->messages());
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        $post->update(['content' => trim((string) $request->input('content'))]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Publication mise à jour',
+            'data' => self::payload($post->fresh('user'), $request->user()->id),
+        ]);
     }
 
     /** DELETE /v1/posts/{id} */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
+        $post = Post::find($id);
+        if (!$post) {
+            return $this->notFound();
+        }
+        if ((int) $post->user_id !== (int) $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé'], 403);
+        }
+
+        $post->delete();
+
         return response()->json(['success' => true, 'message' => 'Publication supprimée']);
     }
 
-    /** POST /v1/posts/{id}/react */
+    /**
+     * POST /v1/posts/{id}/react — type = like | dislike.
+     * Même réaction une seconde fois = retrait ; réaction opposée = bascule.
+     */
     public function react(Request $request, $id)
     {
-        $type = $request->input('type', 'like'); // like | dislike
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'likes_count' => $type === 'like' ? 1 : 0,
-                'dislikes_count' => $type === 'dislike' ? 1 : 0,
-                'user_reaction' => $type,
-            ],
-        ]);
+        $validator = Validator::make($request->all(), ['type' => 'required|in:like,dislike']);
+        if ($validator->fails()) {
+            return $this->validationError($validator);
+        }
+
+        $post = Post::find($id);
+        if (!$post) {
+            return $this->notFound();
+        }
+
+        $userId = (int) $request->user()->id;
+        $type = $request->input('type');
+
+        DB::transaction(function () use ($post, $userId, $type) {
+            $existing = PostLike::where('user_id', $userId)
+                ->where('likeable_id', $post->id)
+                ->where('likeable_type', Post::class)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$existing) {
+                PostLike::create([
+                    'user_id' => $userId,
+                    'likeable_id' => $post->id,
+                    'likeable_type' => Post::class,
+                    'type' => $type,
+                ]);
+            } elseif ($existing->type === $type) {
+                $existing->delete();
+            } else {
+                $existing->update(['type' => $type]);
+            }
+        });
+
+        return $this->reactionResponse($post, $userId);
     }
 
     /** DELETE /v1/posts/{id}/react */
-    public function unreact($id)
+    public function unreact(Request $request, $id)
     {
+        $post = Post::find($id);
+        if (!$post) {
+            return $this->notFound();
+        }
+
+        $userId = (int) $request->user()->id;
+        PostLike::where('user_id', $userId)
+            ->where('likeable_id', $post->id)
+            ->where('likeable_type', Post::class)
+            ->first()
+            ?->delete();
+
+        return $this->reactionResponse($post, $userId);
+    }
+
+    private function reactionResponse(Post $post, int $userId): JsonResponse
+    {
+        $post->refresh();
+
         return response()->json([
             'success' => true,
-            'data' => ['likes_count' => 0, 'dislikes_count' => 0, 'user_reaction' => null],
+            'data' => [
+                'likes_count' => (int) $post->likes_count,
+                'dislikes_count' => (int) $post->dislikes_count,
+                'user_reaction' => $post->getUserReaction($userId),
+            ],
         ]);
-    }
-
-    // ==================== COMMENTS ====================
-
-    /** GET /v1/posts/{postId}/comments */
-    public function comments($postId)
-    {
-        $list = [
-            $this->fakeComment(1, (int) $postId, 'Bonne question, je suis preneur aussi !'),
-            $this->fakeComment(2, (int) $postId, 'Regarde au marché Dantokpa, il y a du choix.', true),
-        ];
-
-        return response()->json(['success' => true, 'data' => $list]);
-    }
-
-    /** POST /v1/posts/{postId}/comments */
-    public function storeComment(Request $request, $postId)
-    {
-        $request->validate(['content' => 'required|string']);
-        $comment = $this->fakeComment(random_int(1000, 9999), (int) $postId, $request->input('content'), (bool) $request->input('is_anonymous', false));
-        $comment['is_my_comment'] = true;
-        $comment['parent_id'] = $request->input('parent_id');
-
-        return response()->json(['success' => true, 'message' => 'Commentaire ajouté', 'data' => $comment], 201);
-    }
-
-    /** PUT /v1/posts/{postId}/comments/{commentId} */
-    public function updateComment(Request $request, $postId, $commentId)
-    {
-        $request->validate(['content' => 'required|string']);
-        $comment = $this->fakeComment((int) $commentId, (int) $postId, $request->input('content'));
-        $comment['is_my_comment'] = true;
-
-        return response()->json(['success' => true, 'message' => 'Commentaire mis à jour', 'data' => $comment]);
-    }
-
-    /** DELETE /v1/posts/{postId}/comments/{commentId} */
-    public function destroyComment($postId, $commentId)
-    {
-        return response()->json(['success' => true, 'message' => 'Commentaire supprimé']);
-    }
-
-    /** POST /v1/posts/{postId}/comments/{commentId}/react */
-    public function reactComment($postId, $commentId)
-    {
-        return response()->json(['success' => true, 'data' => ['likes_count' => 1, 'user_reaction' => 'like']]);
-    }
-
-    /** DELETE /v1/posts/{postId}/comments/{commentId}/react */
-    public function unreactComment($postId, $commentId)
-    {
-        return response()->json(['success' => true, 'data' => ['likes_count' => 0, 'user_reaction' => null]]);
     }
 }

@@ -9,320 +9,257 @@ use App\Models\PostLike;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class PostCommentController extends Controller
 {
-    /**
-     * Liste des commentaires d'un post
-     */
-    public function index(int $postId): JsonResponse
-    {
-        $post = Post::find($postId);
+    public const MAX_CONTENT_LENGTH = 2000;
 
-        if (!$post) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Post introuvable',
-            ], 404);
+    /**
+     * Format attendu par le mobile (PostComment.fromJson). L'auteur d'un
+     * commentaire anonyme n'est jamais exposé, sauf à lui-même.
+     */
+    private function payload(PostComment $comment, ?int $userId, bool $withReplies = true): array
+    {
+        $isMine = $userId !== null && (int) $comment->user_id === $userId;
+        $hideAuthor = $comment->is_anonymous && !$isMine;
+        $reaction = $userId ? $comment->getUserReaction($userId) : null;
+
+        $data = [
+            'id' => $comment->id,
+            'post_id' => (int) $comment->post_id,
+            'user_id' => $hideAuthor ? null : $comment->user_id,
+            'parent_id' => $comment->parent_id,
+            'content' => $comment->content,
+            'is_anonymous' => (bool) $comment->is_anonymous,
+            'likes_count' => (int) $comment->likes_count,
+            'user_reaction' => $reaction,
+            'is_liked' => $reaction === 'like',
+            'is_my_comment' => $isMine,
+            'created_at' => $comment->created_at?->toIso8601String(),
+            'updated_at' => $comment->updated_at?->toIso8601String(),
+            'user' => $hideAuthor || !$comment->user
+                ? ['id' => null, 'first_name' => 'Anonyme', 'last_name' => '', 'avatar' => null]
+                : [
+                    'id' => $comment->user->id,
+                    'first_name' => $comment->user->first_name,
+                    'last_name' => $comment->user->last_name,
+                    'avatar' => $comment->user->avatar,
+                ],
+        ];
+
+        if ($withReplies) {
+            $data['replies'] = $comment->relationLoaded('replies')
+                ? $comment->replies
+                    ->sortBy('created_at')
+                    ->map(fn (PostComment $reply) => $this->payload($reply, $userId, false))
+                    ->values()
+                    ->all()
+                : [];
         }
 
-        $comments = PostComment::where('post_id', $postId)
-            ->whereNull('parent_id')
-            ->with([
-                'user:id,first_name,last_name,avatar',
-                'replies.user:id,first_name,last_name,avatar',
-            ])
-            ->recent()
-            ->get();
-
-        $userId = Auth::id();
-
-        // Masquer les infos des commentaires anonymes et ajouter user_reaction
-        $comments->transform(function ($comment) use ($userId) {
-            $comment->user_reaction = $userId ? $comment->getUserReaction($userId) : null;
-            $comment->is_liked = $userId ? $comment->isLikedByUser($userId) : false;
-            $comment->is_my_comment = $userId && $comment->user_id === $userId;
-
-            // Masquer les infos utilisateur si anonyme ET que ce n'est pas mon commentaire
-            if ($comment->is_anonymous && $comment->user_id !== $userId) {
-                $comment->user = [
-                    'id' => null,
-                    'first_name' => 'Anonyme',
-                    'last_name' => '',
-                    'avatar' => null,
-                ];
-            }
-
-            // Masquer les réponses anonymes
-            $comment->replies->transform(function ($reply) use ($userId) {
-                $reply->user_reaction = $userId ? $reply->getUserReaction($userId) : null;
-                $reply->is_liked = $userId ? $reply->isLikedByUser($userId) : false;
-                $reply->is_my_comment = $userId && $reply->user_id === $userId;
-
-                // Masquer les infos utilisateur si anonyme ET que ce n'est pas ma réponse
-                if ($reply->is_anonymous && $reply->user_id !== $userId) {
-                    $reply->user = [
-                        'id' => null,
-                        'first_name' => 'Anonyme',
-                        'last_name' => '',
-                        'avatar' => null,
-                    ];
-                }
-
-                return $reply;
-            });
-
-            return $comment;
-        });
-
-        return response()->json([
-            'success' => true,
-            'data' => $comments,
-        ]);
+        return $data;
     }
 
-    /**
-     * Créer un commentaire
-     */
-    public function store(Request $request, int $postId): JsonResponse
+    private function findComment(int $postId, int $commentId): ?PostComment
     {
-        $post = Post::find($postId);
+        return PostComment::where('post_id', $postId)->find($commentId);
+    }
 
-        if (!$post) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Post introuvable',
-            ], 404);
-        }
+    private function notFound(string $message = 'Commentaire introuvable'): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => $message], 404);
+    }
 
-        $validator = Validator::make($request->all(), [
-            'content' => 'required|string|max:2000',
-            'is_anonymous' => 'boolean',
-            'parent_id' => 'nullable|exists:post_comments,id',
+    private function validateInput(Request $request, array $rules): ?JsonResponse
+    {
+        $validator = Validator::make($request->all(), $rules, [
+            'content.required' => 'Le commentaire ne peut pas être vide.',
+            'content.max' => 'Le commentaire ne doit pas dépasser ' . self::MAX_CONTENT_LENGTH . ' caractères.',
+            'parent_id.exists' => 'Le commentaire auquel vous répondez n\'existe plus.',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
+                'message' => $validator->errors()->first(),
                 'errors' => $validator->errors(),
             ], 422);
         }
 
-        // Si parent_id existe, vérifier qu'il appartient au même post
-        if ($request->parent_id) {
-            $parentComment = PostComment::find($request->parent_id);
-            if ($parentComment->post_id !== $postId) {
+        return null;
+    }
+
+    /** Liste des commentaires d'un post (avec leurs réponses). */
+    public function index(int $postId): JsonResponse
+    {
+        if (!Post::whereKey($postId)->exists()) {
+            return $this->notFound('Publication introuvable');
+        }
+
+        $userId = Auth::id();
+        $comments = PostComment::where('post_id', $postId)
+            ->whereNull('parent_id')
+            ->with(['user:id,first_name,last_name,avatar', 'replies.user:id,first_name,last_name,avatar'])
+            ->recent()
+            ->get()
+            ->map(fn (PostComment $comment) => $this->payload($comment, $userId))
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $comments]);
+    }
+
+    /** Créer un commentaire ou une réponse. */
+    public function store(Request $request, int $postId): JsonResponse
+    {
+        if (!Post::whereKey($postId)->exists()) {
+            return $this->notFound('Publication introuvable');
+        }
+
+        if ($error = $this->validateInput($request, [
+            'content' => 'required|string|max:' . self::MAX_CONTENT_LENGTH,
+            'is_anonymous' => 'sometimes|boolean',
+            'parent_id' => 'nullable|integer|exists:post_comments,id',
+        ])) {
+            return $error;
+        }
+
+        $parentId = null;
+        if ($request->filled('parent_id')) {
+            $parent = PostComment::find($request->integer('parent_id'));
+            if ((int) $parent->post_id !== $postId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Le commentaire parent n\'appartient pas à ce post',
+                    'message' => 'Le commentaire parent n\'appartient pas à cette publication',
                 ], 422);
             }
+            // Un seul niveau de réponses : répondre à une réponse la rattache au fil.
+            $parentId = $parent->parent_id ?? $parent->id;
+        }
+
+        $content = trim((string) $request->input('content'));
+        if ($content === '') {
+            return response()->json(['success' => false, 'message' => 'Le commentaire ne peut pas être vide.'], 422);
         }
 
         $comment = PostComment::create([
             'post_id' => $postId,
             'user_id' => Auth::id(),
-            'parent_id' => $request->parent_id,
-            'content' => $request->content,
-            'is_anonymous' => $request->get('is_anonymous', false),
-        ]);
-
-        $comment->load('user:id,first_name,last_name,avatar');
-
-        $userId = Auth::id();
-        $comment->is_my_comment = $userId && $comment->user_id === $userId;
-
-        // Masquer les infos utilisateur si anonyme ET que ce n'est pas mon commentaire
-        if ($comment->is_anonymous && $comment->user_id !== $userId) {
-            $comment->user = [
-                'id' => null,
-                'first_name' => 'Anonyme',
-                'last_name' => '',
-                'avatar' => null,
-            ];
-        }
+            'parent_id' => $parentId,
+            'content' => $content,
+            'is_anonymous' => $request->boolean('is_anonymous'),
+        ])->load('user:id,first_name,last_name,avatar');
 
         return response()->json([
             'success' => true,
-            'message' => 'Commentaire créé avec succès',
-            'data' => $comment,
+            'message' => 'Commentaire ajouté',
+            'data' => $this->payload($comment, Auth::id()),
+            'comments_count' => (int) Post::whereKey($postId)->value('comments_count'),
         ], 201);
     }
 
-    /**
-     * Modifier un commentaire
-     */
+    /** Modifier un commentaire (auteur uniquement). */
     public function update(Request $request, int $postId, int $commentId): JsonResponse
     {
-        $comment = PostComment::where('post_id', $postId)->find($commentId);
-
+        $comment = $this->findComment($postId, $commentId);
         if (!$comment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Commentaire introuvable',
-            ], 404);
+            return $this->notFound();
+        }
+        if ((int) $comment->user_id !== (int) Auth::id()) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé'], 403);
+        }
+        if ($error = $this->validateInput($request, ['content' => 'required|string|max:' . self::MAX_CONTENT_LENGTH])) {
+            return $error;
         }
 
-        // Vérifier que l'utilisateur est le propriétaire du commentaire
-        if ($comment->user_id !== Auth::id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Non autorisé',
-            ], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'content' => 'required|string|max:2000',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        $comment->update([
-            'content' => $request->content,
-        ]);
-
-        $comment->load('user:id,first_name,last_name,avatar');
-
-        $userId = Auth::id();
-        $comment->is_my_comment = $userId && $comment->user_id === $userId;
-
-        // Masquer les infos utilisateur si anonyme ET que ce n'est pas mon commentaire
-        if ($comment->is_anonymous && $comment->user_id !== $userId) {
-            $comment->user = [
-                'id' => null,
-                'first_name' => 'Anonyme',
-                'last_name' => '',
-                'avatar' => null,
-            ];
-        }
+        $comment->update(['content' => trim((string) $request->input('content'))]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Commentaire modifié avec succès',
-            'data' => $comment,
+            'message' => 'Commentaire modifié',
+            'data' => $this->payload($comment->load('user:id,first_name,last_name,avatar', 'replies.user'), Auth::id()),
         ]);
     }
 
-    /**
-     * Supprimer un commentaire
-     */
+    /** Supprimer un commentaire (auteur uniquement) et ses réponses. */
     public function destroy(int $postId, int $commentId): JsonResponse
     {
-        $comment = PostComment::where('post_id', $postId)->find($commentId);
-
+        $comment = $this->findComment($postId, $commentId);
         if (!$comment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Commentaire introuvable',
-            ], 404);
+            return $this->notFound();
+        }
+        if ((int) $comment->user_id !== (int) Auth::id()) {
+            return response()->json(['success' => false, 'message' => 'Non autorisé'], 403);
         }
 
-        // Vérifier que l'utilisateur est le propriétaire du commentaire
-        if ($comment->user_id !== Auth::id()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Non autorisé',
-            ], 403);
-        }
-
-        $comment->delete();
+        $comment->deleteWithReplies();
 
         return response()->json([
             'success' => true,
-            'message' => 'Commentaire supprimé avec succès',
+            'message' => 'Commentaire supprimé',
+            'comments_count' => (int) Post::whereKey($postId)->value('comments_count'),
         ]);
     }
 
-    /**
-     * Liker un commentaire
-     */
-    public function react(Request $request, int $postId, int $commentId): JsonResponse
+    /** Liker / retirer son like d'un commentaire (bascule). */
+    public function react(int $postId, int $commentId): JsonResponse
     {
-        $comment = PostComment::where('post_id', $postId)->find($commentId);
-
+        $comment = $this->findComment($postId, $commentId);
         if (!$comment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Commentaire introuvable',
-            ], 404);
+            return $this->notFound();
         }
 
-        $userId = Auth::id();
+        $userId = (int) Auth::id();
+        DB::transaction(function () use ($comment, $userId) {
+            $existing = PostLike::where('user_id', $userId)
+                ->where('likeable_id', $comment->id)
+                ->where('likeable_type', PostComment::class)
+                ->lockForUpdate()
+                ->first();
 
-        // Chercher si un like existe déjà
-        $existingLike = PostLike::where('user_id', $userId)
-            ->where('likeable_id', $commentId)
-            ->where('likeable_type', PostComment::class)
-            ->first();
+            if ($existing) {
+                $existing->delete();
+            } else {
+                PostLike::create([
+                    'user_id' => $userId,
+                    'likeable_id' => $comment->id,
+                    'likeable_type' => PostComment::class,
+                    'type' => 'like',
+                ]);
+            }
+        });
 
-        if ($existingLike) {
-            // Si déjà liké, retirer le like
-            $existingLike->delete();
-            $message = 'Like retiré';
-        } else {
-            // Créer un nouveau like
-            PostLike::create([
-                'user_id' => $userId,
-                'likeable_id' => $commentId,
-                'likeable_type' => PostComment::class,
-                'type' => 'like',
-            ]);
-            $message = 'Commentaire liké';
-        }
-
-        // Recharger le commentaire avec les counts mis à jour
-        $comment->refresh();
-
-        return response()->json([
-            'success' => true,
-            'message' => $message,
-            'data' => [
-                'likes_count' => $comment->likes_count,
-                'user_reaction' => $comment->getUserReaction($userId),
-            ],
-        ]);
+        return $this->reactionResponse($comment, $userId);
     }
 
-    /**
-     * Retirer un like d'un commentaire
-     */
+    /** Retirer son like d'un commentaire. */
     public function unreact(int $postId, int $commentId): JsonResponse
     {
-        $comment = PostComment::where('post_id', $postId)->find($commentId);
-
+        $comment = $this->findComment($postId, $commentId);
         if (!$comment) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Commentaire introuvable',
-            ], 404);
+            return $this->notFound();
         }
 
-        $userId = Auth::id();
-
-        $like = PostLike::where('user_id', $userId)
-            ->where('likeable_id', $commentId)
+        $userId = (int) Auth::id();
+        PostLike::where('user_id', $userId)
+            ->where('likeable_id', $comment->id)
             ->where('likeable_type', PostComment::class)
-            ->first();
+            ->first()
+            ?->delete();
 
-        if ($like) {
-            $like->delete();
-        }
+        return $this->reactionResponse($comment, $userId);
+    }
 
-        // Recharger le commentaire avec les counts mis à jour
+    private function reactionResponse(PostComment $comment, int $userId): JsonResponse
+    {
         $comment->refresh();
 
         return response()->json([
             'success' => true,
-            'message' => 'Like retiré',
             'data' => [
-                'likes_count' => $comment->likes_count,
-                'user_reaction' => null,
+                'likes_count' => (int) $comment->likes_count,
+                'user_reaction' => $comment->getUserReaction($userId),
             ],
         ]);
     }

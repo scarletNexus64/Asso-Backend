@@ -103,7 +103,9 @@ class ShopController extends Controller
         $shop->load(['user', 'products', 'locationRequests' => function($q) {
             $q->latest();
         }]);
-        return view('admin.shops.show', compact('shop'));
+        $statistics = app(\App\Services\ShopStatisticsService::class)->quickCounters($shop);
+
+        return view('admin.shops.show', compact('shop', 'statistics'));
     }
 
     /**
