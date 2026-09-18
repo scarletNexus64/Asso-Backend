@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\LocationFormatter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -17,6 +18,8 @@ class Shop extends Model
         'logo',
         'shop_link',
         'address',
+        'city',
+        'country',
         'phone',
         'email',
         'latitude',
@@ -47,7 +50,24 @@ class Shop extends Model
      */
     protected $appends = [
         'logo_url',
+        'location_label',
     ];
+
+    /** « Ville, Pays » (ex. « Douala, Cameroun »), déduit de l'adresse pour les anciennes boutiques. */
+    public function getLocationLabelAttribute(): ?string
+    {
+        return LocationFormatter::label($this->city, $this->country, $this->address);
+    }
+
+    /**
+     * Renseigne ville/pays depuis l'adresse quand le client ne les a pas envoyés.
+     */
+    public function fillCityCountryFromAddress(): void
+    {
+        if (blank($this->city) && blank($this->country)) {
+            [$this->city, $this->country] = LocationFormatter::parse($this->address);
+        }
+    }
 
     /**
      * Get the logo URL attribute

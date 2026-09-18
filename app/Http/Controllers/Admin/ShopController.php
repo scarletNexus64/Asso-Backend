@@ -276,10 +276,16 @@ class ShopController extends Controller
             ]);
 
             // Update shop location
-            $shop->update([
+            $shop->update(array_filter([
                 'latitude' => $request->latitude,
                 'longitude' => $request->longitude,
-            ]);
+                // L'adresse demandée accompagne désormais le nouveau point GPS.
+                'address' => $request->address ?: null,
+            ], fn ($value) => $value !== null));
+            if ($request->address) {
+                [$city, $country] = \App\Support\LocationFormatter::parse($request->address);
+                $shop->update(['city' => $city, 'country' => $country]);
+            }
 
             // Update request status
             $request->update([

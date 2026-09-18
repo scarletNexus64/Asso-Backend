@@ -25,6 +25,8 @@ class ProfileController extends Controller
                 'shop_name' => 'required|string|max:255',
                 'shop_description' => 'nullable|string',
                 'shop_address' => 'nullable|string',
+                'shop_city' => 'nullable|string|max:120',
+                'shop_country' => 'nullable|string|max:120',
                 'shop_logo' => 'nullable|image|max:2048',
                 'shop_latitude' => 'nullable|numeric',
                 'shop_longitude' => 'nullable|numeric',
@@ -125,6 +127,8 @@ class ProfileController extends Controller
             'name' => $request->shop_name,
             'description' => $request->shop_description,
             'address' => $request->shop_address,
+            'city' => $request->shop_city,
+            'country' => $request->shop_country,
             'latitude' => $request->shop_latitude,
             'longitude' => $request->shop_longitude,
             'categories' => $request->categories ?? [],
@@ -165,7 +169,9 @@ class ProfileController extends Controller
 
         try {
             // Create shop
-            $shop = Shop::create($shopData);
+            $shop = new Shop($shopData);
+            $shop->fillCityCountryFromAddress();
+            $shop->save();
             \Log::info('[VENDOR_APPLY] Shop created successfully:', [
                 'shop_id' => $shop->id,
                 'shop_slug' => $shop->slug,
@@ -197,6 +203,9 @@ class ProfileController extends Controller
                     'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
                     'description' => $shop->description,
                     'address' => $shop->address,
+                    'city' => $shop->city,
+                    'country' => $shop->country,
+                    'location_label' => $shop->location_label,
                     'latitude' => $shop->latitude,
                     'longitude' => $shop->longitude,
                     'categories' => $shop->categories,
@@ -440,6 +449,9 @@ class ProfileController extends Controller
                         'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
                         'description' => $shop->description,
                         'address' => $shop->address,
+                    'city' => $shop->city,
+                    'country' => $shop->country,
+                    'location_label' => $shop->location_label,
                         'latitude' => $shop->latitude,
                         'longitude' => $shop->longitude,
                         'categories' => $shop->categories,

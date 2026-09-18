@@ -181,8 +181,9 @@ class ShopController extends Controller
             'all_request_data' => $request->all(),
         ]);
 
-        // Validate input - Note: latitude/longitude can only be updated by admin
         $validated = $request->validate([
+            'shop_city' => 'sometimes|nullable|string|max:120',
+            'shop_country' => 'sometimes|nullable|string|max:120',
             'shop_name' => 'sometimes|string|max:255',
             'shop_description' => 'sometimes|nullable|string',
             'shop_address' => 'sometimes|nullable|string',
@@ -228,6 +229,13 @@ class ShopController extends Controller
             }
             if (isset($validated['shop_address'])) {
                 $updateData['address'] = $validated['shop_address'];
+            }
+            if (array_key_exists('shop_city', $validated) || array_key_exists('shop_country', $validated)) {
+                $updateData['city'] = $validated['shop_city'] ?? null;
+                $updateData['country'] = $validated['shop_country'] ?? null;
+            } elseif (isset($validated['shop_address'])) {
+                // Ancienne version de l'app : on déduit « Ville, Pays » de l'adresse.
+                [$updateData['city'], $updateData['country']] = \App\Support\LocationFormatter::parse($validated['shop_address']);
             }
             if (isset($validated['shop_phone'])) {
                 $updateData['phone'] = $validated['shop_phone'];
@@ -318,6 +326,9 @@ class ShopController extends Controller
             'description' => $shop->description,
             'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
             'address' => $shop->address,
+            'city' => $shop->city,
+            'country' => $shop->country,
+            'location_label' => $shop->location_label,
             'latitude' => $shop->latitude,
             'longitude' => $shop->longitude,
             'categories' => $shop->categories ?? [],
@@ -343,6 +354,9 @@ class ShopController extends Controller
             'description' => $shop->description,
             'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
             'address' => $shop->address,
+            'city' => $shop->city,
+            'country' => $shop->country,
+            'location_label' => $shop->location_label,
             'latitude' => $shop->latitude,
             'longitude' => $shop->longitude,
             'categories' => $shop->categories ?? [],
@@ -357,7 +371,7 @@ class ShopController extends Controller
      */
     private function formatShopPublicWithProducts(Shop $shop): array
     {
-        $products = $shop->products->map(function ($product) {
+        $products = $shop->products->map(function ($product) use ($shop) {
             // Get all images
             $images = [];
 
@@ -389,7 +403,7 @@ class ShopController extends Controller
                 'condition' => $product->condition,
                 'latitude' => $product->latitude,
                 'longitude' => $product->longitude,
-                'location' => $product->address,
+                'location' => $shop->location_label ?? $product->address,
                 'created_at' => $product->created_at->toIso8601String(),
             ];
         });
@@ -401,6 +415,9 @@ class ShopController extends Controller
             'description' => $shop->description,
             'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
             'address' => $shop->address,
+            'city' => $shop->city,
+            'country' => $shop->country,
+            'location_label' => $shop->location_label,
             'latitude' => $shop->latitude,
             'longitude' => $shop->longitude,
             'categories' => $shop->categories ?? [],

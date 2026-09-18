@@ -548,8 +548,13 @@ class ProductController extends Controller
                 'latitude' => $product->shop->latitude ? (float) $product->shop->latitude : null,
                 'longitude' => $product->shop->longitude ? (float) $product->shop->longitude : null,
                 'address' => $product->shop->address,
+                'city' => $product->shop->city,
+                'country' => $product->shop->country,
+                'location_label' => $product->shop->location_label,
             ] : null,
-            'location' => $product->shop ? $product->shop->address : ($product->user ? $product->user->address : null),
+            'location' => $product->shop
+                ? ($product->shop->location_label ?? $product->shop->address)
+                : ($product->user ? $product->user->address : null),
             'created_at' => $product->created_at->toIso8601String(),
         ];
 
