@@ -35,7 +35,7 @@ class VendorOrderController extends Controller
 
         $query = Order::with(['items' => function($q) use ($user) {
             $q->where('seller_id', $user->id)->with('product.primaryImage');
-        }, 'user', 'deliveryPerson'])
+        }, 'user', 'deliveryPerson', 'deliveryCompany'])
             ->whereIn('id', $orderIds);
 
         if ($request->has('status') && $request->status) {
@@ -496,31 +496,85 @@ class VendorOrderController extends Controller
     }
 
     /**
-     * Format vendor order
+     * Commandes encore en cours (non livrées, non annulées) : la boutique ne peut
+     * pas déménager tant qu'elles ne sont pas terminées.
+     */
+    public function checkActiveOrders(Request $request)
+    {
+        $count = Order::whereIn('id', OrderItem::where('seller_id', $request->user()->id)->select('order_id'))
+            ->whereIn('status', ['pending', 'confirmed', 'preparing', 'shipped'])
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'has_active_orders' => $count > 0,
+            'active_orders_count' => $count,
+        ]);
+    }
+
+    /**
+     * Détail d'une commande pour le vendeur (uniquement ses articles).
+     */
+    public function show(Request $request, $id)
+    {
+        $user = $request->user();
+        $order = Order::with([
+            'items' => fn ($q) => $q->where('seller_id', $user->id)->with('product.primaryImage'),
+            'user', 'deliveryPerson', 'deliveryCompany',
+        ])->whereIn('id', OrderItem::where('seller_id', $user->id)->select('order_id'))
+            ->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'order' => $this->formatVendorOrder($order, $user->id),
+        ]);
+    }
+
+    /**
+     * Format vendor order : tout ce qu'il faut pour préparer et suivre la commande.
      */
     private function formatVendorOrder($order, $vendorId): array
     {
+        [$city] = \App\Support\LocationFormatter::parse($order->delivery_address);
+
         return [
             'id' => $order->id,
             'order_number' => $order->order_number,
             'status' => $order->status,
+            'is_wholesale' => (bool) $order->is_wholesale,
             'total' => (float) $order->total,
             'subtotal' => (float) $order->subtotal,
             'delivery_fee' => (float) $order->delivery_fee,
+            // Montant réellement dû au vendeur (ses articles uniquement).
+            'vendor_amount' => (float) $order->items->sum('total_price'),
             'delivery_address' => $order->delivery_address,
+            'delivery_address_details' => $order->delivery_address_details,
+            'delivery_latitude' => $order->delivery_latitude !== null ? (float) $order->delivery_latitude : null,
+            'delivery_longitude' => $order->delivery_longitude !== null ? (float) $order->delivery_longitude : null,
+            'city' => $city,
+            'notes' => $order->notes,
             'payment_method' => $order->payment_method,
             'payment_status' => $order->payment_status,
+            'tracking_number' => $order->tracking_number,
+            'cancel_reason' => $order->cancel_reason,
             'customer' => $order->user ? [
                 'id' => $order->user->id,
                 'name' => $order->user->name,
                 'phone' => $order->user->phone,
             ] : null,
+            // Numéro saisi pour la livraison (souvent différent de celui du compte).
+            'customer_phone' => $order->customer_phone ?: $order->user?->phone,
+            'delivery_company' => $order->deliveryCompany ? [
+                'id' => $order->deliveryCompany->id,
+                'name' => $order->deliveryCompany->name,
+            ] : null,
+            'delivery_person_id' => $order->delivery_person_id,
             'delivery_person' => $order->deliveryPerson ? [
                 'id' => $order->deliveryPerson->id,
                 'name' => $order->deliveryPerson->name,
                 'phone' => $order->deliveryPerson->phone,
             ] : null,
-            'items' => $order->items->map(fn($item) => [
+            'items' => $order->items->map(fn ($item) => [
                 'id' => $item->id,
                 'product_id' => $item->product_id,
                 'product_name' => $item->product->name ?? 'Produit',
@@ -528,9 +582,19 @@ class VendorOrderController extends Controller
                 'quantity' => $item->quantity,
                 'unit_price' => (float) $item->unit_price,
                 'total_price' => (float) $item->total_price,
-            ]),
+                // Choix du client à préparer : couleur, taille, pointure…
+                'variant_id' => $item->product_variant_id,
+                'variant_attributes' => $item->variant_attributes,
+                'variant_label' => $item->variant_attributes
+                    ? collect($item->variant_attributes)->map(fn ($v, $k) => "$k : $v")->implode(' · ')
+                    : null,
+                'tier_label' => $item->tier_label,
+            ])->values(),
             'created_at' => $order->created_at->toIso8601String(),
             'confirmed_at' => $order->confirmed_at?->toIso8601String(),
+            'shipped_at' => $order->shipped_at?->toIso8601String(),
+            'delivered_at' => $order->delivered_at?->toIso8601String(),
+            'cancelled_at' => $order->cancelled_at?->toIso8601String(),
         ];
     }
 }

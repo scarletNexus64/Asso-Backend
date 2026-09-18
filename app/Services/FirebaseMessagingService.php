@@ -49,6 +49,10 @@ class FirebaseMessagingService
      */
     public function sendToUser(User $user, string $title, string $body, array $data = [], ?string $platform = null): array
     {
+        // Enregistrée d'abord : l'app reçoit l'id et peut marquer la notification lue.
+        $notificationId = $this->saveNotificationToDatabase($user->id, $title, $body, $data);
+        $data = self::stringifyData($data + ($notificationId ? ['notification_id' => $notificationId] : []));
+
         $tokens = $user->deviceTokens()->active();
 
         if ($platform) {
@@ -59,20 +63,24 @@ class FirebaseMessagingService
 
         if (empty($tokens)) {
             Log::info("No active tokens found for user {$user->id}");
-            // Enregistrer quand même la notification dans la BDD
-            $this->saveNotificationToDatabase($user->id, $title, $body, $data);
             return [
                 'success' => false,
                 'message' => 'No active device tokens found for this user',
             ];
         }
 
-        $result = $this->sendToTokens($tokens, $title, $body, $data);
+        return $this->sendToTokens($tokens, $title, $body, $data);
+    }
 
-        // Enregistrer la notification dans la BDD
-        $this->saveNotificationToDatabase($user->id, $title, $body, $data);
-
-        return $result;
+    /** FCM n'accepte que des chaînes dans `data` : null devient '' et les tableaux du JSON. */
+    public static function stringifyData(array $data): array
+    {
+        return array_map(
+            fn ($value) => is_array($value) || is_object($value)
+                ? json_encode($value, JSON_UNESCAPED_UNICODE)
+                : (string) ($value ?? ''),
+            $data,
+        );
     }
 
     /**
@@ -258,6 +266,7 @@ class FirebaseMessagingService
      */
     public function sendToTokens(array $tokens, string $title, string $body, array $data = []): array
     {
+        $data = self::stringifyData($data);
         if (!$this->messaging) {
             return [
                 'success' => false,
@@ -422,10 +431,10 @@ class FirebaseMessagingService
      * @param array $data
      * @return void
      */
-    private function saveNotificationToDatabase(int $userId, string $title, string $body, array $data = []): void
+    private function saveNotificationToDatabase(int $userId, string $title, string $body, array $data = []): ?int
     {
         try {
-            NotificationModel::create([
+            $notification = NotificationModel::create([
                 'user_id' => $userId,
                 'title' => $title,
                 'body' => $body,
@@ -436,8 +445,11 @@ class FirebaseMessagingService
             ]);
 
             Log::info("Notification saved to database for user {$userId}");
+            return $notification->id;
         } catch (Exception $e) {
             Log::error("Error saving notification to database: {$e->getMessage()}");
+            return null;
         }
     }
+
 }

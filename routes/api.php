@@ -266,10 +266,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('vendor/orders')->group(function () {
             Route::get('/', [VendorOrderController::class, 'index']);
             Route::get('/check-active', [VendorOrderController::class, 'checkActiveOrders']);
+            Route::get('/delivery-persons', [VendorOrderController::class, 'availableDeliveryPersons']);
+            Route::get('/{id}', [VendorOrderController::class, 'show'])->whereNumber('id');
             Route::post('/{id}/validate', [VendorOrderController::class, 'validate']);
             Route::post('/{id}/reject', [VendorOrderController::class, 'reject']);
             Route::post('/{id}/assign-delivery', [VendorOrderController::class, 'assignDelivery']);
-            Route::get('/delivery-persons', [VendorOrderController::class, 'availableDeliveryPersons']);
         });
 
         // Delivery management

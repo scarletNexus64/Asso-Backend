@@ -68,3 +68,15 @@ Schedule::job(new UpdateExchangeRatesJob)
 Schedule::command('stripe:reconcile-payouts')
     ->everyFifteenMinutes()
     ->withoutOverlapping(300);
+
+/**
+ * =====================================================
+ * FORFAITS VENDEURS — RAPPELS D'EXPIRATION
+ * =====================================================
+ *
+ * Rappel à J-7, J-3 et J-1 pour que le vendeur renouvelle avant de perdre
+ * la possibilité de publier ses produits.
+ */
+Schedule::command('packages:notify-expiring')
+    ->dailyAt('09:00')
+    ->withoutOverlapping(300);

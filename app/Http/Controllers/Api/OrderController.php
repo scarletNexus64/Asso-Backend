@@ -260,6 +260,12 @@ class OrderController extends Controller
                 ]);
             });
 
+            $order->notifySellers(
+                'Commande annulée par le client',
+                "La commande #{$order->order_number} a été annulée" . ($request->reason ? " : {$request->reason}" : '.') . ' Le stock a été remis en vente.',
+                ['type' => 'order_cancelled_vendor', 'cancel_reason' => $request->reason],
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Commande annulée, fonds débloqués.',

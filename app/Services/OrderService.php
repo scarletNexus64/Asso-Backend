@@ -662,6 +662,16 @@ class OrderService
                 ['type' => 'wholesale_order_created', 'order_id' => (string) $order->id, 'order_number' => $order->order_number]
             );
 
+            // Payée tout de suite via le portefeuille : le vendeur peut préparer.
+            // (En paiement direct, il est prévenu à la confirmation du paiement.)
+            if (!$isDirect) {
+                $order->notifySellers(
+                    'Nouvelle commande en gros',
+                    "Commande gros #{$order->order_number} payée : {$order->items()->sum('quantity')} article(s) à préparer.",
+                    ['type' => 'new_order_vendor'],
+                );
+            }
+
             $order->load(['items.product.primaryImage']);
 
             Log::info('[OrderService] Commande GROS créée', [

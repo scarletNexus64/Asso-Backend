@@ -106,6 +106,12 @@ class DeliveryController extends Controller
                 return $order;
             });
 
+            $order->notifySellers(
+                'Commande en cours de livraison',
+                "Le livreur {$user->first_name} a pris en charge la commande #{$order->order_number}.",
+                ['type' => 'order_shipped_vendor', 'deliverer_name' => trim($user->first_name . ' ' . $user->last_name), 'deliverer_phone' => $user->phone],
+            );
+
             // FCM au client : livraison en cours + code de confirmation
             $client = $order->user;
             if ($client) {
@@ -219,32 +225,19 @@ class DeliveryController extends Controller
 
                 $assoCommission = (float) $order->delivery_commission;
 
-                // 6. Décrémenter le stock des produits et créer les entrées d'inventaire
+                // 6. Historique d'inventaire. Le stock a déjà été réservé (décrémenté) à la
+                //    création de la commande : on ne le retire pas une seconde fois ici.
                 foreach ($order->items as $item) {
                     $product = $item->product;
                     if ($product) {
-                        $previousStock = $product->stock ?? 0;
-                        $newStock = max(0, $previousStock - $item->quantity);
-
-                        // Mettre à jour le stock du produit
-                        $product->update(['stock' => $newStock]);
-
-                        // Créer une entrée d'inventaire (sortie)
                         \App\Models\Inventory::create([
                             'product_id' => $product->id,
                             'user_id' => $item->seller_id,
                             'type' => 'exit',
                             'quantity' => -$item->quantity, // Négatif pour une sortie
-                            'stock_after' => $newStock,
+                            'stock_after' => $product->stock ?? 0,
                             'order_id' => $order->id,
                             'notes' => "Vente - Commande #{$order->order_number}",
-                        ]);
-
-                        Log::info("[DeliveryController] Stock décrémenté", [
-                            'product_id' => $product->id,
-                            'quantity' => $item->quantity,
-                            'stock_before' => $previousStock,
-                            'stock_after' => $newStock,
                         ]);
                     }
                 }
