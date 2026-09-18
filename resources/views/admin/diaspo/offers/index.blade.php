@@ -14,7 +14,7 @@
     </div>
 
     <!-- Statistics Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-7 gap-4 mb-6">
         <div class="bg-dark-100 rounded-xl shadow-lg p-6">
             <div class="flex items-center justify-between">
                 <div>
@@ -35,6 +35,18 @@
                 </div>
                 <div class="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
                     <i class="fas fa-clock text-yellow-500 text-xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-dark-100 rounded-xl shadow-lg p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-400 text-sm">Profil non vérifié</p>
+                    <p class="text-2xl font-bold text-orange-400 mt-1">{{ $stats['unverified'] }}</p>
+                </div>
+                <div class="w-12 h-12 bg-orange-500/20 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-user-clock text-orange-400 text-xl"></i>
                 </div>
             </div>
         </div>
@@ -107,12 +119,13 @@
                 <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approuvées</option>
                 <option value="rejected" {{ request('status') === 'rejected' ? 'selected' : '' }}>Rejetées</option>
                 <option value="expired" {{ request('status') === 'expired' ? 'selected' : '' }}>Expirées</option>
+                <option value="removed" {{ request('status') === 'removed' ? 'selected' : '' }}>Retirées / supprimées</option>
             </select>
 
             <!-- Verification status filter -->
             <select name="verification_status" class="px-4 py-2 bg-dark-50 text-white border border-dark-200 rounded-lg focus:outline-none focus:border-primary-500">
                 <option value="all">Vérification: Tous</option>
-                <option value="pending" {{ request('verification_status') === 'pending' ? 'selected' : '' }}>En attente</option>
+                <option value="pending" {{ request('verification_status') === 'pending' ? 'selected' : '' }}>Profil non vérifié</option>
                 <option value="verified" {{ request('verification_status') === 'verified' ? 'selected' : '' }}>Vérifiées</option>
                 <option value="rejected" {{ request('verification_status') === 'rejected' ? 'selected' : '' }}>Rejetées</option>
             </select>
@@ -201,10 +214,23 @@
 
                                     <!-- Status Badges -->
                                     <div class="flex items-center gap-2 flex-wrap">
-                                        @if($offer->status === 'pending' || $offer->verification_status === 'pending')
+                                        @if($offer->trashed())
+                                            <span class="px-3 py-1 bg-red-500/20 text-red-400 text-xs font-semibold rounded-full">
+                                                <i class="fas fa-ban mr-1"></i>Retirée{{ $offer->removal_reason ? ' — ' . $offer->removal_reason : '' }}
+                                            </span>
+                                        @elseif($offer->status === 'pending')
                                             <span class="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-semibold rounded-full">
                                                 <i class="fas fa-clock mr-1"></i>En attente
                                             </span>
+                                        @elseif($offer->status === 'approved' && $offer->verification_status === 'pending')
+                                            <span class="px-3 py-1 bg-orange-500/20 text-orange-400 text-xs font-semibold rounded-full">
+                                                <i class="fas fa-user-clock mr-1"></i>En ligne — Profil non vérifié
+                                            </span>
+                                            @if($offer->verification_deadline_at)
+                                                <span class="text-xs text-orange-300">
+                                                    Retrait le {{ $offer->verification_deadline_at->format('d/m/Y à H:i') }}
+                                                </span>
+                                            @endif
                                         @elseif($offer->status === 'approved' && $offer->verification_status === 'verified')
                                             <span class="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-semibold rounded-full">
                                                 <i class="fas fa-check-circle mr-1"></i>Approuvée
@@ -238,6 +264,7 @@
                                    class="px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all">
                                     <i class="fas fa-eye mr-1"></i>Voir
                                 </a>
+                                @unless($offer->trashed())
                                 <form action="{{ route('admin.diaspo.offers.destroy', $offer->id) }}"
                                       method="POST"
                                       class="inline"
@@ -248,6 +275,7 @@
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
+                                @endunless
                             </div>
                         </div>
 

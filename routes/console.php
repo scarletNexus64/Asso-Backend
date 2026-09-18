@@ -92,3 +92,16 @@ Schedule::command('packages:notify-expiring')
 Schedule::command('packages:reconcile-pending')
     ->everyFiveMinutes()
     ->withoutOverlapping(300);
+
+/**
+ * =====================================================
+ * DIASPO — ÉCHÉANCE DE RÉGULARISATION DE L'IDENTITÉ
+ * =====================================================
+ *
+ * Une offre publiée par un profil non vérifié reste en ligne avec la mention
+ * « Profil non vérifié » jusqu'à l'échéance fixée par ASSO (admin → Vérifications
+ * DIASPO). Rappel 48 h avant, puis retrait si l'identité n'est toujours pas validée.
+ */
+Schedule::command('diaspo:enforce-verification-deadline')
+    ->hourly()
+    ->withoutOverlapping(300);

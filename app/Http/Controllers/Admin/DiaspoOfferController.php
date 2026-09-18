@@ -4,10 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\DiaspoOffer;
+use App\Models\DiaspoVerificationEvent;
+use App\Services\DiaspoVerificationService;
 use Illuminate\Http\Request;
 
 class DiaspoOfferController extends Controller
 {
+    public function __construct(private DiaspoVerificationService $verifications)
+    {
+    }
+
     /**
      * Display a listing of the offers.
      */
@@ -32,10 +38,13 @@ class DiaspoOfferController extends Controller
             });
         }
 
-        // Filter by status
+        // Filter by status ; « removed » = offres retirées (supprimées), conservées
+        // pour la trace administrable.
         if ($request->filled('status')) {
             if ($request->status === 'all') {
                 // No filter
+            } elseif ($request->status === 'removed') {
+                $query->onlyTrashed();
             } else {
                 $query->where('status', $request->status);
             }
@@ -73,7 +82,9 @@ class DiaspoOfferController extends Controller
         // Stats
         $stats = [
             'total' => DiaspoOffer::count(),
-            'pending' => DiaspoOffer::where('status', 'pending')->orWhere('verification_status', 'pending')->count(),
+            'pending' => DiaspoOffer::where('status', 'pending')->count(),
+            // En ligne avec la mention « Profil non vérifié », en attente de régularisation.
+            'unverified' => DiaspoOffer::where('status', 'approved')->where('verification_status', 'pending')->count(),
             'approved' => DiaspoOffer::where('status', 'approved')->where('verification_status', 'verified')->count(),
             'available' => DiaspoOffer::where('status', 'approved')
                 ->where('verification_status', 'verified')
@@ -93,8 +104,13 @@ class DiaspoOfferController extends Controller
     public function show(DiaspoOffer $offer)
     {
         $offer->load(['user', 'bookings.buyer', 'bookings.seller', 'verifiedBy']);
+        $events = DiaspoVerificationEvent::with('actor')
+            ->where('diaspo_offer_id', $offer->id)
+            ->latest('created_at')
+            ->latest('id')
+            ->get();
 
-        return view('admin.diaspo.offers.show', compact('offer'));
+        return view('admin.diaspo.offers.show', compact('offer', 'events'));
     }
 
     /**
@@ -103,6 +119,7 @@ class DiaspoOfferController extends Controller
     public function approve(DiaspoOffer $offer)
     {
         try {
+            $previous = $offer->verification_status;
             $offer->update([
                 'status' => 'approved',
                 'verification_status' => 'verified',
@@ -110,6 +127,7 @@ class DiaspoOfferController extends Controller
                 'verified_by' => auth()->id(),
                 'rejection_reason' => null,
             ]);
+            DiaspoVerificationService::log(DiaspoVerificationEvent::OFFER_APPROVED_BY_ADMIN, $offer->user_id, $offer->id, auth()->id(), $previous, 'verified');
 
             return redirect()
                 ->back()
@@ -131,6 +149,7 @@ class DiaspoOfferController extends Controller
         ]);
 
         try {
+            $previous = $offer->verification_status;
             $offer->update([
                 'status' => 'rejected',
                 'verification_status' => 'rejected',
@@ -138,6 +157,7 @@ class DiaspoOfferController extends Controller
                 'verified_at' => now(),
                 'verified_by' => auth()->id(),
             ]);
+            DiaspoVerificationService::log(DiaspoVerificationEvent::OFFER_REJECTED_BY_ADMIN, $offer->user_id, $offer->id, auth()->id(), $previous, 'rejected', $request->reason);
 
             return redirect()
                 ->back()
@@ -161,6 +181,8 @@ class DiaspoOfferController extends Controller
             }
 
             // Delete the offer
+            $offer->forceFill(['removal_reason' => 'Supprimée par l\'administration'])->saveQuietly();
+            DiaspoVerificationService::log(DiaspoVerificationEvent::OFFER_DELETED_BY_ADMIN, $offer->user_id, $offer->id, auth()->id(), $offer->verification_status, 'removed');
             $offer->delete();
 
             return redirect()
@@ -171,6 +193,27 @@ class DiaspoOfferController extends Controller
                 ->back()
                 ->with('error', 'Erreur lors de la suppression: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Prolonge l'échéance de régularisation d'une offre « Profil non vérifié ».
+     */
+    public function extendDeadline(Request $request, DiaspoOffer $offer)
+    {
+        $validated = $request->validate([
+            'days' => 'required|integer|min:1|max:90',
+        ]);
+
+        if ($offer->verification_status !== 'pending') {
+            return redirect()->back()->with('error', 'Cette offre n\'est pas en attente de vérification d\'identité.');
+        }
+
+        $this->verifications->extendDeadline($offer, (int) $validated['days'], auth()->id());
+
+        return redirect()->back()->with(
+            'success',
+            'Échéance repoussée au ' . $offer->fresh()->verification_deadline_at->format('d/m/Y à H:i') . '.'
+        );
     }
 
     /**

@@ -13,6 +13,36 @@
         </div>
     </div>
 
+    <!-- Délai de régularisation -->
+    <div class="bg-dark-100 rounded-xl shadow-lg p-4 mb-6">
+        <form method="POST" action="{{ route('admin.diaspo.verifications.settings') }}" class="flex flex-col md:flex-row md:items-end gap-4">
+            @csrf
+            <input type="hidden" name="status" value="{{ $status }}">
+            <div class="flex-1">
+                <h2 class="text-white font-semibold"><i class="fas fa-hourglass-half text-primary-500 mr-2"></i>Délai de régularisation</h2>
+                <p class="text-sm text-gray-400 mt-1">
+                    Un voyageur non vérifié peut publier son offre : elle s'affiche avec la mention « Profil non vérifié » et n'est pas réservable.
+                    Sans pièces conformes validées à l'échéance, elle est retirée automatiquement (rappel envoyé 48 h avant).
+                    Le délai s'applique aux nouvelles offres ; une échéance existante se prolonge depuis la fiche de l'offre.
+                </p>
+            </div>
+            <div class="flex items-end gap-2">
+                <div>
+                    <label for="grace_days" class="block text-xs text-gray-400 mb-1">Jours</label>
+                    <input type="number" id="grace_days" name="grace_days" min="1" max="90" required
+                           value="{{ old('grace_days', $graceDays) }}"
+                           class="w-24 px-3 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500">
+                </div>
+                <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-all">
+                    Enregistrer
+                </button>
+            </div>
+        </form>
+        @error('grace_days')
+            <p class="text-sm text-red-400 mt-2">{{ $message }}</p>
+        @enderror
+    </div>
+
     <!-- Status Tabs -->
     <div class="bg-dark-100 rounded-xl shadow-lg p-4 mb-6">
         <div class="flex gap-2 flex-wrap">
@@ -22,6 +52,14 @@
                 En attente
                 <span class="ml-2 px-2 py-0.5 bg-yellow-500 text-dark-100 text-xs font-bold rounded-full">
                     {{ $counts['pending'] }}
+                </span>
+            </a>
+            <a href="{{ route('admin.diaspo.verifications.index', ['status' => 'unverified']) }}"
+               class="px-6 py-3 rounded-lg transition-all {{ $status === 'unverified' ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'bg-dark-50 text-gray-300 hover:bg-dark-200' }}">
+                <i class="fas fa-user-slash mr-2"></i>
+                Sans pièces
+                <span class="ml-2 px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
+                    {{ $counts['unverified'] }}
                 </span>
             </a>
             <a href="{{ route('admin.diaspo.verifications.index', ['status' => 'verified']) }}"
@@ -56,6 +94,8 @@
             <p class="text-gray-400">
                 @if($status === 'pending')
                     Il n'y a pas de vérifications en attente pour le moment.
+                @elseif($status === 'unverified')
+                    Aucun voyageur n'a publié d'offre sans fournir ses pièces.
                 @elseif($status === 'verified')
                     Aucune vérification approuvée.
                 @elseif($status === 'rejected')
@@ -90,8 +130,21 @@
                                     </div>
                                     <div class="text-xs text-gray-500 mt-1">
                                         <i class="fas fa-calendar mr-1"></i>
-                                        Soumis le {{ $verification->updated_at->format('d/m/Y à H:i') }}
+                                        @if($verification->diaspo_id_document_id)
+                                            Soumis le {{ $verification->updated_at->format('d/m/Y à H:i') }}
+                                        @else
+                                            Aucune pièce fournie
+                                        @endif
                                     </div>
+                                    @if($verification->unverified_offers_count > 0)
+                                        <div class="text-xs text-orange-400 mt-1">
+                                            <i class="fas fa-user-clock mr-1"></i>
+                                            {{ $verification->unverified_offers_count }} offre(s) en ligne « Profil non vérifié »
+                                            @if($verification->next_deadline)
+                                                — retrait le {{ \Illuminate\Support\Carbon::parse($verification->next_deadline)->format('d/m/Y à H:i') }}
+                                            @endif
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
 
@@ -108,6 +161,10 @@
                                 @elseif($verification->diaspo_verification_status === 'rejected')
                                     <span class="px-4 py-2 bg-red-500/20 text-red-400 text-sm font-semibold rounded-full">
                                         <i class="fas fa-times-circle mr-1"></i>Rejeté
+                                    </span>
+                                @else
+                                    <span class="px-4 py-2 bg-orange-500/20 text-orange-400 text-sm font-semibold rounded-full">
+                                        <i class="fas fa-user-slash mr-1"></i>Profil non vérifié
                                     </span>
                                 @endif
 

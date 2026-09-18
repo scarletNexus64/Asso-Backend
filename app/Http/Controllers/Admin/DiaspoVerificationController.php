@@ -6,14 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Document;
 use App\Models\DiaspoOffer;
-use App\Services\FirebaseMessagingService;
+use App\Models\DiaspoVerificationEvent;
+use App\Services\DiaspoVerificationService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class DiaspoVerificationController extends Controller
 {
+    public function __construct(private DiaspoVerificationService $verifications)
+    {
+    }
+
     /**
      * Display a listing of users pending DIASPO verification
      */
@@ -133,70 +136,12 @@ class DiaspoVerificationController extends Controller
     {
         $user = User::findOrFail($userId);
 
-        if ($user->diaspo_verification_status !== 'pending') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cette vérification a déjà été traitée',
-            ], 422);
+        if ($error = $this->approvalError($user)) {
+            return response()->json(['success' => false, 'message' => $error], 422);
         }
 
-        if (!$user->diaspo_id_document_id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Aucun document soumis pour cet utilisateur',
-            ], 422);
-        }
-
-        DB::beginTransaction();
         try {
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Approving verification', [
-                'user_id' => $user->id,
-                'admin_id' => auth()->id(),
-            ]);
-
-            $user->update([
-                'diaspo_verification_status' => 'verified',
-                'diaspo_verified_at' => now(),
-                'diaspo_rejection_reason' => null,
-            ]);
-
-            DiaspoOffer::where('user_id', $user->id)
-                ->where('status', 'pending')
-                ->where('verification_status', 'pending')
-                ->update([
-                    'status' => 'approved',
-                    'verification_status' => 'verified',
-                    'verified_at' => now(),
-                    'verified_by' => auth()->id(),
-                    'rejection_reason' => null,
-                ]);
-
-            DB::commit();
-
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Verification approved successfully', [
-                'user_id' => $user->id,
-            ]);
-
-            // Send FCM notification to user
-            try {
-                $fcmService = app(FirebaseMessagingService::class);
-                $fcmService->sendToUser(
-                    $user,
-                    'Vérification DIASPO approuvée !',
-                    'Félicitations ! Votre identité a été vérifiée. Vos offres DIASPO en attente sont maintenant publiées.',
-                    [
-                        'type' => 'diaspo_verified',
-                        'action' => 'open_diaspo',
-                    ]
-                );
-
-                Log::info('[ADMIN-DIASPO-VERIFICATION] FCM notification sent to user', ['user_id' => $user->id]);
-            } catch (\Exception $e) {
-                Log::error('[ADMIN-DIASPO-VERIFICATION] Failed to send FCM notification', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->verifications->approveIdentity($user, auth()->id());
 
             return response()->json([
                 'success' => true,
@@ -208,7 +153,6 @@ class DiaspoVerificationController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('[ADMIN-DIASPO-VERIFICATION] Error approving verification', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
@@ -239,47 +183,8 @@ class DiaspoVerificationController extends Controller
             ], 422);
         }
 
-        DB::beginTransaction();
         try {
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Rejecting verification', [
-                'user_id' => $user->id,
-                'admin_id' => auth()->id(),
-                'reason' => $request->reason,
-            ]);
-
-            $user->update([
-                'diaspo_verification_status' => 'rejected',
-                'diaspo_verified_at' => null,
-                'diaspo_rejection_reason' => $request->reason,
-            ]);
-
-            DB::commit();
-
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Verification rejected successfully', [
-                'user_id' => $user->id,
-            ]);
-
-            // Send FCM notification to user
-            try {
-                $fcmService = app(FirebaseMessagingService::class);
-                $fcmService->sendToUser(
-                    $user,
-                    'Vérification DIASPO non approuvée',
-                    'Votre document d\'identité n\'a pas été approuvé. Raison: ' . $request->reason,
-                    [
-                        'type' => 'diaspo_rejected',
-                        'action' => 'open_diaspo',
-                        'reason' => $request->reason,
-                    ]
-                );
-
-                Log::info('[ADMIN-DIASPO-VERIFICATION] FCM notification sent to user', ['user_id' => $user->id]);
-            } catch (\Exception $e) {
-                Log::error('[ADMIN-DIASPO-VERIFICATION] Failed to send FCM notification', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->verifications->rejectIdentity($user, $request->reason, auth()->id());
 
             return response()->json([
                 'success' => true,
@@ -291,7 +196,6 @@ class DiaspoVerificationController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('[ADMIN-DIASPO-VERIFICATION] Error rejecting verification', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
@@ -304,6 +208,18 @@ class DiaspoVerificationController extends Controller
         }
     }
 
+    private function approvalError(User $user): ?string
+    {
+        if ($user->diaspo_verification_status !== 'pending') {
+            return 'Cette vérification a déjà été traitée';
+        }
+        if (!$user->diaspo_id_document_id) {
+            return 'Aucun document soumis pour cet utilisateur';
+        }
+
+        return null;
+    }
+
     // ============================================
     // WEB METHODS (for Blade views)
     // ============================================
@@ -313,12 +229,21 @@ class DiaspoVerificationController extends Controller
      */
     public function indexWeb(Request $request)
     {
+        // Profils ayant envoyé des pièces, et profils non vérifiés qui ont publié
+        // sans en fournir (« Sans pièces ») : les deux doivent être régularisés.
         $query = User::with(['diaspoIdDocument'])
-            ->whereNotNull('diaspo_id_document_id');
+            ->where(function ($q) {
+                $q->whereNotNull('diaspo_id_document_id')
+                    ->orWhereHas('diaspoOffers', fn ($o) => $o->awaitingVerification());
+            })
+            ->withMin(['diaspoOffers as next_deadline' => fn ($o) => $o->awaitingVerification()], 'verification_deadline_at')
+            ->withCount(['diaspoOffers as unverified_offers_count' => fn ($o) => $o->awaitingVerification()]);
 
         // Filter by status
         $status = $request->get('status', 'pending');
-        if ($status !== 'all') {
+        if ($status === 'unverified') {
+            $query->whereNull('diaspo_id_document_id')->where('diaspo_verification_status', 'unverified');
+        } elseif ($status !== 'all') {
             $query->where('diaspo_verification_status', $status);
         }
 
@@ -327,11 +252,32 @@ class DiaspoVerificationController extends Controller
         // Get counts for each status
         $counts = [
             'pending' => User::where('diaspo_verification_status', 'pending')->count(),
+            'unverified' => User::where('diaspo_verification_status', 'unverified')
+                ->whereNull('diaspo_id_document_id')
+                ->whereHas('diaspoOffers', fn ($o) => $o->awaitingVerification())
+                ->count(),
             'verified' => User::where('diaspo_verification_status', 'verified')->count(),
             'rejected' => User::where('diaspo_verification_status', 'rejected')->count(),
         ];
+        $graceDays = DiaspoVerificationService::graceDays();
 
-        return view('admin.diaspo.verifications.index', compact('verifications', 'counts', 'status'));
+        return view('admin.diaspo.verifications.index', compact('verifications', 'counts', 'status', 'graceDays'));
+    }
+
+    /**
+     * Délai de régularisation (jours) accordé aux profils non vérifiés. S'applique
+     * aux nouvelles offres ; les échéances déjà fixées se prolongent offre par offre.
+     */
+    public function updateSettingsWeb(Request $request)
+    {
+        $validated = $request->validate([
+            'grace_days' => 'required|integer|min:1|max:90',
+        ]);
+
+        DiaspoVerificationService::setGraceDays((int) $validated['grace_days']);
+
+        return redirect()->route('admin.diaspo.verifications.index', ['status' => $request->get('status', 'pending')])
+            ->with('success', 'Délai de régularisation fixé à ' . $validated['grace_days'] . ' jour(s) pour les nouvelles offres.');
     }
 
     /**
@@ -341,17 +287,29 @@ class DiaspoVerificationController extends Controller
     {
         $user = User::with(['diaspoIdDocument'])->findOrFail($userId);
 
-        if (!$user->diaspo_id_document_id) {
+        $offers = DiaspoOffer::withTrashed()
+            ->where('user_id', $user->id)
+            ->latest()
+            ->get();
+        $events = DiaspoVerificationEvent::with(['actor', 'offer'])
+            ->where('user_id', $user->id)
+            ->latest('created_at')
+            ->latest('id')
+            ->get();
+
+        if (!$user->diaspo_id_document_id && $offers->isEmpty() && $events->isEmpty()) {
             return redirect()->route('admin.diaspo.verifications.index')
                 ->with('error', 'Cet utilisateur n\'a pas soumis de document de vérification');
         }
 
         // Get both front and back documents
         $frontDocument = $user->diaspoIdDocument;
-        $backDocument = Document::where('uploaded_by', $user->id)
-            ->where('title', 'LIKE', '%DIASPO%Verso%')
-            ->latest()
-            ->first();
+        $backDocument = $user->diaspo_id_document_id
+            ? Document::where('uploaded_by', $user->id)
+                ->where('title', 'LIKE', '%DIASPO%Verso%')
+                ->latest()
+                ->first()
+            : null;
 
         $frontUrl = $frontDocument && $frontDocument->file_path
             ? asset('storage/' . $frontDocument->file_path)
@@ -361,7 +319,7 @@ class DiaspoVerificationController extends Controller
             ? asset('storage/' . $backDocument->file_path)
             : null;
 
-        return view('admin.diaspo.verifications.show', compact('user', 'frontDocument', 'backDocument', 'frontUrl', 'backUrl'));
+        return view('admin.diaspo.verifications.show', compact('user', 'frontDocument', 'backDocument', 'frontUrl', 'backUrl', 'offers', 'events'));
     }
 
     /**
@@ -371,69 +329,16 @@ class DiaspoVerificationController extends Controller
     {
         $user = User::findOrFail($userId);
 
-        if ($user->diaspo_verification_status !== 'pending') {
-            return redirect()->back()->with('error', 'Cette vérification a déjà été traitée');
+        if ($error = $this->approvalError($user)) {
+            return redirect()->back()->with('error', $error);
         }
 
-        if (!$user->diaspo_id_document_id) {
-            return redirect()->back()->with('error', 'Aucun document soumis pour cet utilisateur');
-        }
-
-        DB::beginTransaction();
         try {
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Approving verification', [
-                'user_id' => $user->id,
-                'admin_id' => auth()->id(),
-            ]);
-
-            $user->update([
-                'diaspo_verification_status' => 'verified',
-                'diaspo_verified_at' => now(),
-                'diaspo_rejection_reason' => null,
-            ]);
-
-            DiaspoOffer::where('user_id', $user->id)
-                ->where('status', 'pending')
-                ->where('verification_status', 'pending')
-                ->update([
-                    'status' => 'approved',
-                    'verification_status' => 'verified',
-                    'verified_at' => now(),
-                    'verified_by' => auth()->id(),
-                    'rejection_reason' => null,
-                ]);
-
-            DB::commit();
-
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Verification approved successfully', [
-                'user_id' => $user->id,
-            ]);
-
-            // Send FCM notification to user
-            try {
-                $fcmService = app(FirebaseMessagingService::class);
-                $fcmService->sendToUser(
-                    $user,
-                    'Vérification DIASPO approuvée !',
-                    'Félicitations ! Votre identité a été vérifiée. Vos offres DIASPO en attente sont maintenant publiées.',
-                    [
-                        'type' => 'diaspo_verified',
-                        'action' => 'open_diaspo',
-                    ]
-                );
-
-                Log::info('[ADMIN-DIASPO-VERIFICATION] FCM notification sent to user', ['user_id' => $user->id]);
-            } catch (\Exception $e) {
-                Log::error('[ADMIN-DIASPO-VERIFICATION] Failed to send FCM notification', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->verifications->approveIdentity($user, auth()->id());
 
             return redirect()->route('admin.diaspo.verifications.index')
                 ->with('success', 'Vérification approuvée avec succès pour ' . $user->first_name . ' ' . $user->last_name);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('[ADMIN-DIASPO-VERIFICATION] Error approving verification', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),
@@ -458,52 +363,12 @@ class DiaspoVerificationController extends Controller
             return redirect()->back()->with('error', 'Cette vérification a déjà été traitée');
         }
 
-        DB::beginTransaction();
         try {
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Rejecting verification', [
-                'user_id' => $user->id,
-                'admin_id' => auth()->id(),
-                'reason' => $request->reason,
-            ]);
-
-            $user->update([
-                'diaspo_verification_status' => 'rejected',
-                'diaspo_verified_at' => null,
-                'diaspo_rejection_reason' => $request->reason,
-            ]);
-
-            DB::commit();
-
-            Log::info('[ADMIN-DIASPO-VERIFICATION] Verification rejected successfully', [
-                'user_id' => $user->id,
-            ]);
-
-            // Send FCM notification to user
-            try {
-                $fcmService = app(FirebaseMessagingService::class);
-                $fcmService->sendToUser(
-                    $user,
-                    'Vérification DIASPO non approuvée',
-                    'Votre document d\'identité n\'a pas été approuvé. Raison: ' . $request->reason,
-                    [
-                        'type' => 'diaspo_rejected',
-                        'action' => 'open_diaspo',
-                        'reason' => $request->reason,
-                    ]
-                );
-
-                Log::info('[ADMIN-DIASPO-VERIFICATION] FCM notification sent to user', ['user_id' => $user->id]);
-            } catch (\Exception $e) {
-                Log::error('[ADMIN-DIASPO-VERIFICATION] Failed to send FCM notification', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->verifications->rejectIdentity($user, $request->reason, auth()->id());
 
             return redirect()->route('admin.diaspo.verifications.index')
                 ->with('success', 'Vérification rejetée pour ' . $user->first_name . ' ' . $user->last_name);
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('[ADMIN-DIASPO-VERIFICATION] Error rejecting verification', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage(),

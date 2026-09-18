@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DiaspoOffer;
 use App\Models\Document;
+use App\Services\DiaspoVerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -12,12 +13,13 @@ use Illuminate\Support\Facades\Storage;
 class DiaspoOfferController extends Controller
 {
     /**
-     * Get all approved and available offers
+     * Catalogue public : offres publiées, y compris celles des profils non vérifiés
+     * (drapeau profile_verified = false → mention « Profil non vérifié » côté app).
      */
     public function index(Request $request)
     {
         $query = DiaspoOffer::with(['user'])
-            ->available()
+            ->published()
             ->recent();
 
         // Filtres
@@ -109,23 +111,29 @@ class DiaspoOfferController extends Controller
             'currency' => 'nullable|string|max:3',
         ]);
 
-        // Une identité incomplète ne bloque plus la saisie de l'offre. L'offre reste
-        // invisible du catalogue public jusqu'à la validation de l'identité et peut
-        // ensuite être rejetée/supprimée par l'équipe depuis l'administration.
+        // Une identité non validée ne bloque pas la publication : l'offre est en ligne
+        // avec la mention « Profil non vérifié » (non réservable) jusqu'à la validation,
+        // et retirée si l'identité n'est pas régularisée avant l'échéance fixée par ASSO.
         $isVerified = $user->canCreateDiaspoOffers();
         $offer = DiaspoOffer::create([
             'user_id' => auth()->id(),
-            'status' => $isVerified ? 'approved' : 'pending',
+            'status' => 'approved',
             'verification_status' => $isVerified ? 'verified' : 'pending',
             ...$validated,
         ]);
 
+        if (!$isVerified) {
+            app(DiaspoVerificationService::class)->publishUnverified($offer);
+        }
+
         // Refresh to get updated status from observer
         $offer->refresh();
 
-        $message = $offer->status === 'approved'
+        $message = $isVerified
             ? 'Offre créée et publiée avec succès!'
-            : 'Offre enregistrée. Elle sera publiée après validation de votre identité. Notre équipe vous demandera un complément si nécessaire.';
+            : 'Offre publiée avec la mention « Profil non vérifié ». Faites vérifier votre identité avant le '
+                . $offer->verification_deadline_at->format('d/m/Y')
+                . ' : sans validation, elle sera retirée. Les réservations ouvriront dès la validation.';
 
         return response()->json([
             'success' => true,
@@ -229,6 +237,14 @@ class DiaspoOfferController extends Controller
 
         $user = auth()->user();
 
+        if ($user->isDiaspoVerified()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Votre identité est déjà vérifiée.',
+            ], 422);
+        }
+        $previousStatus = $user->diaspo_verification_status ?? 'unverified';
+
         DB::beginTransaction();
         try {
             // Upload front image
@@ -275,6 +291,8 @@ class DiaspoOfferController extends Controller
                 'diaspo_verification_status' => 'pending',
             ]);
 
+            app(DiaspoVerificationService::class)->documentsSubmitted($user, $previousStatus);
+
             DB::commit();
 
             return response()->json([
@@ -302,6 +320,7 @@ class DiaspoOfferController extends Controller
     public function getVerificationStatus()
     {
         $user = auth()->user();
+        $nextDeadline = DiaspoVerificationService::nextDeadlineFor($user);
 
         return response()->json([
             'success' => true,
@@ -309,7 +328,11 @@ class DiaspoOfferController extends Controller
                 'verification_status' => $user->diaspo_verification_status,
                 'verified_at' => $user->diaspo_verified_at,
                 'rejection_reason' => $user->diaspo_rejection_reason,
+                // Historique : la création n'est plus bloquée, seul le badge change.
                 'can_create_offers' => $user->canCreateDiaspoOffers(),
+                'grace_days' => DiaspoVerificationService::graceDays(),
+                // Échéance la plus proche avant retrait d'une offre non vérifiée.
+                'next_deadline' => $nextDeadline?->toIso8601String(),
             ],
         ]);
     }

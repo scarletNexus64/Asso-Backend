@@ -19,6 +19,9 @@ class DiaspoOffer extends Model
         'verified_at',
         'verified_by',
         'rejection_reason',
+        'verification_deadline_at',
+        'verification_reminder_sent_at',
+        'removal_reason',
         'departure_country',
         'departure_city',
         'departure_datetime',
@@ -37,6 +40,8 @@ class DiaspoOffer extends Model
         'departure_datetime' => 'datetime',
         'arrival_datetime' => 'datetime',
         'verified_at' => 'datetime',
+        'verification_deadline_at' => 'datetime',
+        'verification_reminder_sent_at' => 'datetime',
         'price_per_kg' => 'decimal:2',
         'available_kg' => 'decimal:2',
         'remaining_kg' => 'decimal:2',
@@ -47,6 +52,8 @@ class DiaspoOffer extends Model
     protected $appends = [
         'formatted_price',
         'is_available',
+        'is_published',
+        'profile_verified',
         'trip_duration_hours',
     ];
 
@@ -90,6 +97,26 @@ class DiaspoOffer extends Model
     {
         return $query->where('status', 'approved')
             ->where('verification_status', 'verified');
+    }
+
+    /**
+     * Offres visibles dans le catalogue public : publiées, avec ou sans identité
+     * validée (mention « Profil non vérifié » côté app). Seules les offres dont le
+     * profil est vérifié sont réservables (scopeAvailable).
+     */
+    public function scopePublished($query)
+    {
+        return $query->where('status', 'approved')
+            ->where('verification_status', '!=', 'rejected')
+            ->where('remaining_kg', '>', 0)
+            ->where('departure_datetime', '>', now());
+    }
+
+    /** Offres en ligne (ou en attente) dont le voyageur n'a pas encore été vérifié. */
+    public function scopeAwaitingVerification($query)
+    {
+        return $query->where('verification_status', 'pending')
+            ->whereIn('status', ['approved', 'pending']);
     }
 
     public function scopeAvailable($query)
@@ -138,6 +165,20 @@ class DiaspoOffer extends Model
             && $this->verification_status === 'verified'
             && $this->remaining_kg > 0
             && $this->departure_datetime > now();
+    }
+
+    public function getIsPublishedAttribute(): bool
+    {
+        return $this->status === 'approved'
+            && $this->verification_status !== 'rejected'
+            && $this->remaining_kg > 0
+            && $this->departure_datetime > now();
+    }
+
+    /** Faux tant que l'identité du voyageur n'est pas validée (« Profil non vérifié »). */
+    public function getProfileVerifiedAttribute(): bool
+    {
+        return $this->verification_status === 'verified';
     }
 
     public function getTripDurationHoursAttribute(): ?float
@@ -229,6 +270,7 @@ class DiaspoOffer extends Model
             'verified_at' => $this->verified_at?->toIso8601String(),
             'verified_by' => $this->verified_by,
             'rejection_reason' => $this->rejection_reason,
+            'verification_deadline_at' => $this->verification_deadline_at?->toIso8601String(),
             'departure_country' => $this->departure_country,
             'departure_city' => $this->departure_city,
             'departure_datetime' => $this->departure_datetime?->toIso8601String(),
@@ -246,6 +288,8 @@ class DiaspoOffer extends Model
             'can_delete' => !$this->bookings()->whereIn('status', ['paid', 'confirmed'])->exists(),
             'formatted_price' => number_format($this->pricePerKgForViewer(), 0) . ' ' . $this->currency . '/kg',
             'is_available' => $this->is_available,
+            'is_published' => $this->is_published,
+            'profile_verified' => $this->profile_verified,
             'trip_duration_hours' => $this->trip_duration_hours,
             'user' => $this->relationLoaded('user') && $this->user ? [
                 'id' => $this->user->id,

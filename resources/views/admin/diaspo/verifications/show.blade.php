@@ -33,7 +33,11 @@
                     </div>
                     <div class="text-sm text-gray-500 mt-1">
                         <i class="fas fa-calendar mr-1"></i>
-                        Soumis le {{ $user->updated_at->format('d/m/Y à H:i') }}
+                        @if($user->diaspo_id_document_id)
+                            Soumis le {{ $user->updated_at->format('d/m/Y à H:i') }}
+                        @else
+                            Aucune pièce d'identité fournie
+                        @endif
                     </div>
                 </div>
             </div>
@@ -56,6 +60,10 @@
                 @elseif($user->diaspo_verification_status === 'rejected')
                     <span class="px-6 py-3 bg-red-500/20 text-red-400 text-lg font-semibold rounded-full inline-block">
                         <i class="fas fa-times-circle mr-2"></i>Rejeté
+                    </span>
+                @else
+                    <span class="px-6 py-3 bg-orange-500/20 text-orange-400 text-lg font-semibold rounded-full inline-block">
+                        <i class="fas fa-user-slash mr-2"></i>Profil non vérifié
                     </span>
                 @endif
             </div>
@@ -132,6 +140,46 @@
             </div>
         </div>
     </div>
+
+    <!-- Offres du voyageur -->
+    <div class="bg-dark-100 rounded-xl shadow-lg p-6 mb-6">
+        <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+            <i class="fas fa-plane-departure text-primary-500 mr-3"></i>
+            Offres du voyageur
+        </h2>
+        @if($offers->isEmpty())
+            <p class="text-sm text-gray-500 italic">Aucune offre publiée.</p>
+        @else
+            <div class="divide-y divide-dark-200">
+                @foreach($offers as $offer)
+                    <div class="py-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <a href="{{ route('admin.diaspo.offers.show', $offer->id) }}" class="text-white font-medium hover:text-primary-500">
+                                #{{ $offer->id }} {{ $offer->departure_city }} → {{ $offer->arrival_city }}
+                            </a>
+                            <div class="text-xs text-gray-500 mt-0.5">Départ le {{ $offer->departure_datetime->format('d/m/Y') }}</div>
+                        </div>
+                        <div class="text-sm">
+                            @if($offer->trashed())
+                                <span class="text-red-400"><i class="fas fa-ban mr-1"></i>Retirée{{ $offer->removal_reason ? ' — ' . $offer->removal_reason : '' }}</span>
+                            @elseif($offer->verification_status === 'pending')
+                                <span class="text-orange-400"><i class="fas fa-user-clock mr-1"></i>Profil non vérifié</span>
+                                @if($offer->verification_deadline_at)
+                                    <span class="text-gray-400">— retrait le {{ $offer->verification_deadline_at->format('d/m/Y à H:i') }}</span>
+                                @endif
+                            @elseif($offer->verification_status === 'verified')
+                                <span class="text-green-400"><i class="fas fa-check-circle mr-1"></i>Vérifiée</span>
+                            @else
+                                <span class="text-red-400"><i class="fas fa-times-circle mr-1"></i>Rejetée</span>
+                            @endif
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
+    @include('admin.diaspo.partials.verification-events', ['events' => $events, 'showOffer' => true])
 
     <!-- Actions -->
     @if($user->diaspo_verification_status === 'pending')

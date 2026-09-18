@@ -218,6 +218,12 @@ class DiaspoController extends Controller
             if ($offer->status !== 'approved' || (float) $offer->remaining_kg < $data['kg_booked']) {
                 return response()->json(['success' => false, 'message' => 'Offre non disponible ou kg insuffisants.'], 422);
             }
+            // « Profil non vérifié » : l'offre est visible mais aucun paiement n'est
+            // séquestré tant que l'identité du voyageur n'est pas validée (elle peut
+            // encore être retirée à l'échéance de régularisation).
+            if ($offer->verification_status !== 'verified') {
+                return response()->json(['success' => false, 'message' => 'Ce voyageur n\'a pas encore fait vérifier son identité. La réservation sera possible dès sa validation.'], 422);
+            }
 
             // Le voyageur touche son prix ; le client paie le prix public au kilo
             // (majoré de la commission ASSO, exactement celui affiché dans l'app).

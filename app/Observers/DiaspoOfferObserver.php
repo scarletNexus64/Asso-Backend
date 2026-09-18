@@ -10,7 +10,8 @@ class DiaspoOfferObserver
 {
     /**
      * Handle the DiaspoOffer "created" event.
-     * Auto-approve offers from verified users immediately after creation
+     * Auto-approve offers from verified users immediately after creation ; les offres
+     * des profils non vérifiés sont elles aussi publiées (mention « Profil non vérifié »).
      */
     public function created(DiaspoOffer $offer): void
     {
@@ -23,7 +24,9 @@ class DiaspoOfferObserver
                 'verified_at' => now(),
                 'verified_by' => $offer->user_id, // Self-verified (user is already KYC verified)
             ]);
+        }
 
+        if ($offer->status === 'approved') {
             // Envoyer une notification push à tous les utilisateurs pour la nouvelle offre diaspo
             Log::info('[DIASPO_OFFER] Sending push notification for new approved diaspo offer', [
                 'offer_id' => $offer->id,
@@ -31,7 +34,7 @@ class DiaspoOfferObserver
             ]);
 
             try {
-                $fcmService = new FirebaseMessagingService();
+                $fcmService = app(FirebaseMessagingService::class);
                 $fcmService->sendToTopic(
                     'all_users',
                     'Nouvelle offre DIASPO disponible',
@@ -43,7 +46,7 @@ class DiaspoOfferObserver
                         'departure_city' => $offer->departure_city,
                         'arrival_country' => $offer->arrival_country,
                         'arrival_city' => $offer->arrival_city,
-                        'price_per_kg' => (string) $offer->price_per_kg,
+                        'price_per_kg' => (string) $offer->publicPricePerKg(),
                         'departure_datetime' => $offer->departure_datetime->toIso8601String(),
                     ]
                 );
@@ -53,8 +56,6 @@ class DiaspoOfferObserver
                 // On ne bloque pas la création de l'offre si la notification échoue
             }
         }
-        // If user is not verified, offer stays in 'pending' status
-        // and will need manual admin approval
     }
 
     /**

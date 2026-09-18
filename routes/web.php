@@ -267,6 +267,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::prefix('diaspo')->name('diaspo.')->group(function () {
             Route::prefix('verifications')->name('verifications.')->group(function () {
                 Route::get('/', [DiaspoVerificationController::class, 'indexWeb'])->name('index');
+                Route::post('/settings', [DiaspoVerificationController::class, 'updateSettingsWeb'])->name('settings');
                 Route::get('/{userId}', [DiaspoVerificationController::class, 'showWeb'])->name('show');
                 Route::post('/{userId}/approve', [DiaspoVerificationController::class, 'approveWeb'])->name('approve');
                 Route::post('/{userId}/reject', [DiaspoVerificationController::class, 'rejectWeb'])->name('reject');
@@ -283,9 +284,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
             // Offers management
             Route::prefix('offers')->name('offers.')->group(function () {
                 Route::get('/', [DiaspoOfferController::class, 'index'])->name('index');
-                Route::get('/{offer}', [DiaspoOfferController::class, 'show'])->name('show');
+                Route::get('/{offer}', [DiaspoOfferController::class, 'show'])->name('show')->withTrashed();
                 Route::post('/{offer}/approve', [DiaspoOfferController::class, 'approve'])->name('approve');
                 Route::post('/{offer}/reject', [DiaspoOfferController::class, 'reject'])->name('reject');
+                Route::post('/{offer}/extend-deadline', [DiaspoOfferController::class, 'extendDeadline'])->name('extend-deadline');
                 Route::delete('/{offer}', [DiaspoOfferController::class, 'destroy'])->name('destroy');
                 Route::post('/{offer}/bookings/{booking}/cancel', [DiaspoOfferController::class, 'cancelBooking'])->name('bookings.cancel');
             });

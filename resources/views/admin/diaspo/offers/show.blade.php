@@ -42,6 +42,9 @@
 
             <!-- Actions -->
             <div class="flex gap-2">
+                @if($offer->trashed())
+                    <span class="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg"><i class="fas fa-ban mr-2"></i>Offre retirée</span>
+                @else
                 @if($offer->status === 'pending' || $offer->verification_status === 'pending')
                     <form action="{{ route('admin.diaspo.offers.approve', $offer->id) }}" method="POST" class="inline">
                         @csrf
@@ -66,14 +69,23 @@
                         <i class="fas fa-trash mr-2"></i>Supprimer
                     </button>
                 </form>
+                @endif
             </div>
         </div>
 
         <!-- Status Badges -->
         <div class="flex items-center gap-3 mb-6">
-            @if($offer->status === 'pending' || $offer->verification_status === 'pending')
+            @if($offer->trashed())
+                <span class="px-4 py-2 bg-red-500/20 text-red-400 text-sm font-semibold rounded-full">
+                    <i class="fas fa-ban mr-1"></i>Retirée le {{ $offer->deleted_at->format('d/m/Y à H:i') }}
+                </span>
+            @elseif($offer->status === 'pending')
                 <span class="px-4 py-2 bg-yellow-500/20 text-yellow-400 text-sm font-semibold rounded-full">
                     <i class="fas fa-clock mr-1"></i>En attente de validation
+                </span>
+            @elseif($offer->status === 'approved' && $offer->verification_status === 'pending')
+                <span class="px-4 py-2 bg-orange-500/20 text-orange-400 text-sm font-semibold rounded-full">
+                    <i class="fas fa-user-clock mr-1"></i>En ligne — Profil non vérifié (non réservable)
                 </span>
             @elseif($offer->status === 'approved' && $offer->verification_status === 'verified')
                 <span class="px-4 py-2 bg-green-500/20 text-green-400 text-sm font-semibold rounded-full">
@@ -95,6 +107,37 @@
                 </span>
             @endif
         </div>
+
+        @if(!$offer->trashed() && $offer->verification_status === 'pending')
+            @php($identity = $offer->user->diaspo_verification_status ?? 'unverified')
+            <div class="mb-6 p-4 bg-orange-900/20 border-l-4 border-orange-500 rounded">
+                <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+                    <div class="text-sm text-orange-200 space-y-1">
+                        <p>
+                            <strong>Identité du voyageur :</strong>
+                            {{ ['pending' => 'pièces envoyées, à examiner', 'rejected' => 'pièces refusées', 'verified' => 'vérifiée'][$identity] ?? 'aucune pièce fournie' }}
+                            — <a href="{{ route('admin.diaspo.verifications.show', $offer->user_id) }}" class="underline hover:text-white">ouvrir la vérification</a>
+                        </p>
+                        <p>
+                            <strong>Échéance de régularisation :</strong>
+                            {{ $offer->verification_deadline_at ? $offer->verification_deadline_at->format('d/m/Y à H:i') : 'non définie' }}.
+                            Sans identité validée à cette date, l'offre sera retirée automatiquement.
+                        </p>
+                    </div>
+                    <form action="{{ route('admin.diaspo.offers.extend-deadline', $offer->id) }}" method="POST" class="flex items-end gap-2">
+                        @csrf
+                        <div>
+                            <label for="extend_days" class="block text-xs text-gray-400 mb-1">Prolonger de (jours)</label>
+                            <input type="number" id="extend_days" name="days" min="1" max="90" value="7" required
+                                   class="w-24 px-3 py-2 bg-dark-50 border border-dark-300 rounded-lg text-white">
+                        </div>
+                        <button type="submit" class="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-all">
+                            <i class="fas fa-hourglass-half mr-1"></i>Prolonger
+                        </button>
+                    </form>
+                </div>
+            </div>
+        @endif
 
         @if(($offer->status === 'rejected' || $offer->verification_status === 'rejected') && $offer->rejection_reason)
             <div class="mb-6 p-4 bg-red-900/20 border-l-4 border-red-500 rounded">
@@ -276,6 +319,10 @@
             <p class="text-gray-400">Cette offre n'a pas encore de réservations.</p>
         </div>
     @endif
+
+    <div class="mt-6">
+        @include('admin.diaspo.partials.verification-events', ['events' => $events, 'showOffer' => false])
+    </div>
 </div>
 
 <!-- Reject Modal -->
