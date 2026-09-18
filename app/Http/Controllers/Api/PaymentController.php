@@ -21,17 +21,28 @@ class PaymentController extends Controller
      * disponibilité (`available` = activé ET montant ≥ minimum), minimum affiché
      * dans la devise du montant, et montant converti dans la devise du rail
      * (via les taux de change stockés). Le mobile grise les moyens `available=false`
-     * et affiche `converted_amount` à la sélection. Aucun solde wallet ici.
+     * et affiche `converted_amount` à la sélection. Avec `include_wallet=1`, l'option
+     * « Wallet ASSO » (solde disponible) est ajoutée en tête.
      */
     public function methods(Request $request)
     {
         $validated = $request->validate([
             'amount' => 'required|numeric|min:0',
             'currency' => 'nullable|string|size:3',
+            'include_wallet' => 'nullable|boolean',
         ]);
 
         $currency = strtoupper($validated['currency'] ?? 'XAF');
         $methods = PaymentMethodService::forAmount((float) $validated['amount'], $currency);
+
+        // Wallet ASSO en tête de liste pour les parcours qui l'acceptent.
+        if ($request->boolean('include_wallet') && $request->user()) {
+            array_unshift($methods, PaymentMethodService::walletOption(
+                $request->user(),
+                (float) $validated['amount'],
+                $currency
+            ));
+        }
 
         return response()->json([
             'success' => true,
@@ -39,6 +50,37 @@ class PaymentController extends Controller
                 'amount' => (float) $validated['amount'],
                 'currency' => $currency,
                 'methods' => $methods,
+            ],
+        ]);
+    }
+
+    /**
+     * Aperçu du prix public d'un produit pour le vendeur qui le saisit.
+     *
+     * GET /v1/pricing/preview?price=10000&currency=XAF
+     * → { seller_price, buyer_price, currency } : le client paie buyer_price
+     *   (commission ASSO incluse), le vendeur reçoit seller_price.
+     */
+    public function pricingPreview(Request $request)
+    {
+        $validated = $request->validate([
+            'price' => 'required|numeric|min:0',
+            'currency' => 'nullable|string|size:3',
+        ]);
+
+        $currency = strtoupper($validated['currency'] ?? 'XAF');
+        $price = (float) $validated['price'];
+        $priceXaf = $currency === 'XAF'
+            ? $price
+            : (\App\Services\ExchangeRateService::convertAmount($currency, 'XAF', $price) ?? $price);
+        $rate = \App\Services\CommissionService::rateFor($priceXaf);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'seller_price' => $price,
+                'buyer_price' => \App\Services\CommissionService::markup($price, $rate, $currency),
+                'currency' => $currency,
             ],
         ]);
     }

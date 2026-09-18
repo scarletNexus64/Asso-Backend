@@ -7,6 +7,7 @@ use App\Models\CommissionRange;
 use App\Models\ServiceConfiguration;
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class SettingsController extends Controller
@@ -22,7 +23,33 @@ class SettingsController extends Controller
         $systemSettings = Setting::where('group', 'system')->get()->keyBy('key');
         $commissionRanges = CommissionRange::orderBy('min_amount')->get();
 
-        return view('admin.settings.index', compact('generalSettings', 'systemSettings', 'commissionRanges'));
+        // Commissions ASSO (toutes en MAJORATION du prix payé par le client).
+        $commissionSettings = [
+            'default_sale_commission_rate' => (float) Setting::get('default_sale_commission_rate', 0),
+            'diaspo_commission_rate' => (float) Setting::get('diaspo_commission_rate', 5),
+        ];
+        // Livraison : montant fixe par grille tarifaire, réglé sur chaque entreprise.
+        $deliveryCommissions = \App\Models\DelivererCompany::with('deliveryZones.pricelist')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($company) {
+                $amounts = $company->deliveryZones
+                    ->map(fn ($z) => $z->pricelist?->asso_commission)
+                    ->filter(fn ($v) => $v !== null)
+                    ->map(fn ($v) => (float) $v);
+
+                return [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'zones' => $company->deliveryZones->count(),
+                    'min' => $amounts->min(),
+                    'max' => $amounts->max(),
+                ];
+            });
+
+        return view('admin.settings.index', compact(
+            'generalSettings', 'systemSettings', 'commissionRanges', 'commissionSettings', 'deliveryCommissions'
+        ));
     }
 
     /**
@@ -438,27 +465,48 @@ class SettingsController extends Controller
     {
         try {
             $validated = $request->validate([
-                'ranges' => 'required|array|min:1',
+                'default_sale_commission_rate' => 'required|numeric|min:0|max:100',
+                'diaspo_commission_rate' => 'required|numeric|min:0|max:100',
+                // Plages facultatives : sans plage, le taux par défaut s'applique partout.
+                'ranges' => 'nullable|array',
                 'ranges.*.min_amount' => 'required|numeric|min:0',
                 'ranges.*.max_amount' => 'required|numeric|gt:ranges.*.min_amount',
                 'ranges.*.percentage' => 'required|numeric|min:0|max:100',
                 'ranges.*.is_active' => 'nullable|boolean',
+            ], [
+                'ranges.*.max_amount.gt' => 'Le prix maximum d\'une plage doit être supérieur à son prix minimum.',
             ]);
 
-            // Supprimer les anciennes plages et recréer
-            CommissionRange::truncate();
-
-            foreach ($validated['ranges'] as $range) {
-                CommissionRange::create([
-                    'min_amount' => $range['min_amount'],
-                    'max_amount' => $range['max_amount'],
-                    'percentage' => $range['percentage'],
-                    'is_active' => isset($range['is_active']) ? true : false,
-                ]);
+            $ranges = collect($validated['ranges'] ?? [])->sortBy('min_amount')->values();
+            // Plages actives qui se chevauchent : le taux appliqué serait ambigu.
+            $active = $ranges->filter(fn ($r) => !empty($r['is_active']))->values();
+            for ($i = 1; $i < $active->count(); $i++) {
+                if ((float) $active[$i]['min_amount'] <= (float) $active[$i - 1]['max_amount']) {
+                    return redirect()->back()->withInput()->with('error', 'Deux plages actives se chevauchent : chaque prix doit correspondre à une seule plage.');
+                }
             }
 
+            DB::transaction(function () use ($validated, $ranges) {
+                Setting::set('default_sale_commission_rate', $validated['default_sale_commission_rate'], 'string', 'commissions', 'Majoration ASSO par défaut sur le prix des produits (%)');
+                Setting::set('diaspo_commission_rate', $validated['diaspo_commission_rate'], 'string', 'commissions', 'Majoration ASSO sur les réservations Diaspo (%)');
+
+                CommissionRange::query()->delete();
+                foreach ($ranges as $range) {
+                    CommissionRange::create([
+                        'min_amount' => $range['min_amount'],
+                        'max_amount' => $range['max_amount'],
+                        'percentage' => $range['percentage'],
+                        'is_active' => !empty($range['is_active']),
+                    ]);
+                }
+            });
+
+            \App\Services\CommissionService::flush();
+
             return redirect()->route('admin.settings.index', ['tab' => 'commissions'])
-                ->with('success', 'Plages de commissions mises à jour avec succès');
+                ->with('success', 'Commissions mises à jour. Les nouveaux prix s\'appliquent immédiatement aux prochaines commandes.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Erreur lors de la mise à jour: ' . $e->getMessage())

@@ -23,15 +23,6 @@ use Illuminate\Support\Facades\Log;
  */
 class DiaspoController extends Controller
 {
-    // Taux de commission Diaspo par défaut : 5 % (aligné sur l'affichage mobile).
-    // Configurable via le Setting `diaspo_commission_rate` (en pourcentage).
-    private const DEFAULT_COMMISSION_RATE = 5.0;
-
-    /** Taux de commission Diaspo sous forme de fraction (ex. 0.05 pour 5 %). */
-    private function commissionRate(): float
-    {
-        return ((float) Setting::get('diaspo_commission_rate', self::DEFAULT_COMMISSION_RATE)) / 100;
-    }
 
     private function paginate($query, Request $request, ?int $viewerId = null): array
     {
@@ -228,9 +219,11 @@ class DiaspoController extends Controller
                 return response()->json(['success' => false, 'message' => 'Offre non disponible ou kg insuffisants.'], 422);
             }
 
+            // Le voyageur touche son prix ; le client paie le prix public au kilo
+            // (majoré de la commission ASSO, exactement celui affiché dans l'app).
             $subtotal = round($data['kg_booked'] * (float) $offer->price_per_kg, 2);
-            $commission = round($subtotal * $this->commissionRate(), 2);
-            $total = $subtotal + $commission;
+            $total = round($data['kg_booked'] * $offer->publicPricePerKg(), 2);
+            $commission = round($total - $subtotal, 2);
 
             // Garde-fou serveur : le montant doit atteindre le minimum du moyen choisi
             // (comparaison dans la devise pivot XAF, via les taux stockés).

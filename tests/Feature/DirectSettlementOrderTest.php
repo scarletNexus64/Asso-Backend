@@ -33,12 +33,23 @@ class DirectSettlementOrderTest extends TestCase
         });
     }
 
+    // Source de vérité du solde : table wallet_balances (ligne XAF).
     private function setBalances(User $u, float $balance = 0, float $locked = 0): void
     {
-        $u->forceFill([
-            'kpay_wallet_balance' => $balance,
-            'locked_kpay_balance' => $locked,
-        ])->saveQuietly();
+        \App\Models\WalletBalance::updateOrCreate(
+            ['user_id' => $u->id, 'currency' => 'XAF'],
+            ['balance' => $balance, 'locked_balance' => $locked]
+        );
+    }
+
+    private function bal(User $u): float
+    {
+        return $u->fresh()->kpayBalanceFor('XAF');
+    }
+
+    private function locked(User $u): float
+    {
+        return $u->fresh()->kpayBalanceFor('XAF') - $u->fresh()->kpayAvailableFor('XAF');
     }
 
     /** @return array<string,mixed> */
@@ -120,16 +131,16 @@ class DirectSettlementOrderTest extends TestCase
         $this->assertSame('confirmed', $order->status);
 
         // Client prélevé définitivement (releaseEscrow) : solde ET blocage à 0.
-        $this->assertEquals(0, (float) $client->fresh()->kpay_wallet_balance);
-        $this->assertEquals(0, (float) $client->fresh()->locked_kpay_balance);
+        $this->assertEquals(0, $this->bal($client));
+        $this->assertEquals(0, $this->locked($client));
 
         // Bénéficiaires crédités ET disponibles (locked == 0).
-        $this->assertEquals($subtotal, (float) $seller->fresh()->kpay_wallet_balance);
-        $this->assertEquals(0, (float) $seller->fresh()->locked_kpay_balance);
-        $this->assertEquals($base, (float) $deliverer->fresh()->kpay_wallet_balance);
-        $this->assertEquals(0, (float) $deliverer->fresh()->locked_kpay_balance);
-        $this->assertEquals($commission, (float) $asso->fresh()->kpay_wallet_balance);
-        $this->assertEquals(0, (float) $asso->fresh()->locked_kpay_balance);
+        $this->assertEquals($subtotal, $this->bal($seller));
+        $this->assertEquals(0, $this->locked($seller));
+        $this->assertEquals($base, $this->bal($deliverer));
+        $this->assertEquals(0, $this->locked($deliverer));
+        $this->assertEquals($commission, $this->bal($asso));
+        $this->assertEquals(0, $this->locked($asso));
 
         // Plus AUCUN blocage de fonds bénéficiaire (type 'lock' absent pour le vendeur).
         $this->assertDatabaseMissing('wallet_transactions', [
@@ -163,9 +174,9 @@ class DirectSettlementOrderTest extends TestCase
             'confirmation_code' => '123456',
         ]);
 
-        $sellerBefore = (float) $seller->fresh()->kpay_wallet_balance;
-        $delivererBefore = (float) $deliverer->fresh()->kpay_wallet_balance;
-        $assoBefore = (float) $asso->fresh()->kpay_wallet_balance;
+        $sellerBefore = $this->bal($seller);
+        $delivererBefore = $this->bal($deliverer);
+        $assoBefore = $this->bal($asso);
 
         // 3. Confirmer la livraison.
         $this->actingAs($deliverer, 'sanctum')
@@ -176,9 +187,9 @@ class DirectSettlementOrderTest extends TestCase
         $this->assertSame('delivered', $order->status);
 
         // Aucun mouvement de fonds à la livraison.
-        $this->assertEquals($sellerBefore, (float) $seller->fresh()->kpay_wallet_balance);
-        $this->assertEquals($delivererBefore, (float) $deliverer->fresh()->kpay_wallet_balance);
-        $this->assertEquals($assoBefore, (float) $asso->fresh()->kpay_wallet_balance);
+        $this->assertEquals($sellerBefore, $this->bal($seller));
+        $this->assertEquals($delivererBefore, $this->bal($deliverer));
+        $this->assertEquals($assoBefore, $this->bal($asso));
     }
 
     public function test_kpay_direct_validate_credits_without_touching_client(): void
@@ -194,7 +205,7 @@ class DirectSettlementOrderTest extends TestCase
         $this->assertSame('confirmed', $order->status);
 
         // kpay_direct : pas de releaseEscrow (le client n'a rien de bloqué dans le wallet).
-        $this->assertEquals(0, (float) $client->fresh()->kpay_wallet_balance);
+        $this->assertEquals(0, $this->bal($client));
         $this->assertDatabaseMissing('wallet_transactions', [
             'user_id' => $client->id,
             'reference_type' => 'order',
@@ -203,10 +214,10 @@ class DirectSettlementOrderTest extends TestCase
         ]);
 
         // Bénéficiaires crédités et disponibles.
-        $this->assertEquals($subtotal, (float) $seller->fresh()->kpay_wallet_balance);
-        $this->assertEquals(0, (float) $seller->fresh()->locked_kpay_balance);
-        $this->assertEquals($base, (float) $deliverer->fresh()->kpay_wallet_balance);
-        $this->assertEquals($commission, (float) $asso->fresh()->kpay_wallet_balance);
+        $this->assertEquals($subtotal, $this->bal($seller));
+        $this->assertEquals(0, $this->locked($seller));
+        $this->assertEquals($base, $this->bal($deliverer));
+        $this->assertEquals($commission, $this->bal($asso));
     }
 
     protected function tearDown(): void

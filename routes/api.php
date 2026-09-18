@@ -227,6 +227,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Payments
         Route::get('/payments/methods', [PaymentController::class, 'methods']);
+        // Aperçu prix vendeur → prix client (commission ASSO incluse), saisie produit.
+        Route::get('/pricing/preview', [PaymentController::class, 'pricingPreview']);
         Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
         Route::get('/payments/status/{reference}', [PaymentController::class, 'status']);
 
@@ -307,6 +309,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/withdraw/stripe/quote', [WalletController::class, 'getStripeWithdrawalQuote']);
             Route::post('/withdraw/stripe', [WalletController::class, 'initiateStripeWithdrawal']);
             Route::get('/withdrawals', [WalletController::class, 'getWithdrawalHistory']);
+
+            // Coordonnées de versement Mobile Money enregistrées (pré-remplissage des retraits).
+            Route::get('/payout-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'show']);
+            Route::put('/payout-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'upsert']);
+            Route::delete('/payout-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'destroy']);
             Route::get('/withdrawal-status/{withdrawalId}', [WalletController::class, 'checkWithdrawalStatus']);
         });
 

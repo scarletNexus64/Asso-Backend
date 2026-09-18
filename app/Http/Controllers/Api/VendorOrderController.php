@@ -7,6 +7,7 @@ use App\Models\OrderItem;
 use App\Models\User;
 use App\Models\DelivererCodeSync;
 use App\Services\WalletService;
+use App\Services\OrderService;
 use App\Services\FirebaseMessagingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,11 +17,13 @@ class VendorOrderController extends Controller
 {
     protected WalletService $walletService;
     protected FirebaseMessagingService $fcmService;
+    protected OrderService $orderService;
 
-    public function __construct(WalletService $walletService, FirebaseMessagingService $fcmService)
+    public function __construct(WalletService $walletService, FirebaseMessagingService $fcmService, OrderService $orderService)
     {
         $this->walletService = $walletService;
         $this->fcmService = $fcmService;
+        $this->orderService = $orderService;
     }
 
     /**
@@ -87,97 +90,21 @@ class VendorOrderController extends Controller
 
         try {
             DB::transaction(function () use ($vendor, $order) {
-                // 1. Confirmer la commande
-                $order->update([
+                // 1. Confirmer la commande — verrou de ligne + re-contrôle du statut :
+                //    deux validations simultanées ne peuvent plus créditer deux fois.
+                $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+                if (!$locked || $locked->status !== 'pending') {
+                    throw new \Exception('Cette commande a déjà été traitée.');
+                }
+                $locked->update([
                     'status' => 'confirmed',
                     'confirmed_at' => now(),
                 ]);
 
-                // 2. Déterminer le wallet provider depuis le payment_method
-                $walletProvider = str_replace('wallet_', '', $order->payment_method);
-                if (!in_array($walletProvider, ['kpay', 'paypal'])) {
-                    $walletProvider = 'kpay';
-                }
-
-                // 3. ENCAISSEMENT DIRECT — l'argent est distribué immédiatement, sans escrow.
-                //    a) Mode wallet : on prélève DÉFINITIVEMENT les fonds du client (jusqu'ici
-                //       bloqués depuis la création). En modes directs (kpay_direct / paypal_direct)
-                //       le client a déjà réglé hors solde (Mobile Money / PayPal, fonds côté
-                //       plateforme) → rien à prélever du wallet.
-                if (!in_array($order->payment_method, ['kpay_direct', 'paypal_direct', 'stripe_direct'])) {
-                    $this->walletService->releaseEscrow(
-                        $order->user,
-                        (float) $order->total,
-                        "Paiement commande #{$order->order_number} — validée par le vendeur",
-                        'order',
-                        $order->id,
-                        [],
-                        $walletProvider
-                    );
-                }
-
-                //    b) Créditer le vendeur (subtotal) — fonds IMMÉDIATEMENT disponibles.
-                $vendorAmount = (float) $order->subtotal;
-                $this->walletService->credit(
-                    $vendor,
-                    $vendorAmount,
-                    null,
-                    "Vente commande #{$order->order_number}",
-                    ['order_id' => $order->id, 'direct_settlement' => true],
-                    $walletProvider
-                );
-
-                //    c) Créditer l'entreprise de livraison (base_delivery_price) — disponible.
-                $baseDeliveryPrice = (float) $order->base_delivery_price;
-                if ($baseDeliveryPrice > 0 && $order->delivery_company_id) {
-                    $deliveryCompany = \App\Models\DelivererCompany::find($order->delivery_company_id);
-                    if ($deliveryCompany && $deliveryCompany->user_id) {
-                        $companyUser = \App\Models\User::find($deliveryCompany->user_id);
-                        if ($companyUser) {
-                            $this->walletService->credit(
-                                $companyUser,
-                                $baseDeliveryPrice,
-                                null,
-                                "Commission livraison #{$order->order_number}",
-                                ['order_id' => $order->id, 'direct_settlement' => true],
-                                $walletProvider
-                            );
-                        }
-                    }
-                }
-
-                //    d) Créditer ASSO (delivery_commission) — disponible.
-                $assoCommission = (float) $order->delivery_commission;
-                if ($assoCommission > 0) {
-                    // Récupérer le user admin ASSO (par convention, user_id = 1 ou email = admin@asso.com)
-                    $assoAdmin = \App\Models\User::where('email', 'admin@asso.com')->first();
-                    if (!$assoAdmin) {
-                        // Fallback sur user_id = 1
-                        $assoAdmin = \App\Models\User::find(1);
-                    }
-
-                    if ($assoAdmin) {
-                        $this->walletService->credit(
-                            $assoAdmin,
-                            $assoCommission,
-                            null,
-                            "Commission ASSO — Commande #{$order->order_number}",
-                            ['order_id' => $order->id, 'direct_settlement' => true],
-                            $walletProvider
-                        );
-
-                        \Log::info("[VendorOrderController] Commission ASSO créditée (direct)", [
-                            'order_id' => $order->id,
-                            'asso_admin_id' => $assoAdmin->id,
-                            'commission' => $assoCommission,
-                        ]);
-                    } else {
-                        \Log::warning("[VendorOrderController] User admin ASSO non trouvé", [
-                            'order_id' => $order->id,
-                            'commission' => $assoCommission,
-                        ]);
-                    }
-                }
+                // 2. ENCAISSEMENT DIRECT (sans escrow) : prélèvement de l'acheteur (mode
+                //    wallet) puis crédit immédiat du vendeur (net de commission ASSO),
+                //    de l'entreprise de livraison et d'ASSO. Idempotent (settled_at).
+                $this->orderService->settleOrder($locked, $vendor);
 
                 // 4. Notifications FCM
 
@@ -241,51 +168,29 @@ class VendorOrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Cette commande ne peut plus être refusée'], 422);
         }
 
+        $refunded = 0.0;
         try {
-            DB::transaction(function () use ($request, $order) {
+            DB::transaction(function () use ($request, $order, &$refunded) {
                 $cancelReason = $request->reason ?? 'Refusée par le vendeur';
 
-                // 1. Annuler la commande
+                // 1. Annuler la commande (verrou + re-contrôle : pas de refus après validation)
+                $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+                if (!$locked || $locked->status !== 'pending') {
+                    throw new \Exception('Cette commande a déjà été traitée.');
+                }
                 $order->update([
                     'status' => 'cancelled',
                     'cancel_reason' => $cancelReason,
                     'cancelled_at' => now(),
                 ]);
 
-                // 2. Rembourser le client
-                $client = $order->user;
-                if ($client) {
-                    if ($order->payment_method === 'kpay_direct') {
-                        // kpay_direct : le client a payé en Mobile Money direct (aucun fonds
-                        // bloqué dans son wallet). L'argent est sur le compte marchand
-                        // plateforme → on rembourse en créditant son solde wallet KPay.
-                        if ($order->payment_status === 'paid') {
-                            $this->walletService->credit(
-                                $client,
-                                (float) $order->total,
-                                null,
-                                "Remboursement commande #{$order->order_number} — refusée par vendeur",
-                                ['order_id' => $order->id, 'refund' => true, 'cancel_reason' => $cancelReason],
-                                'kpay'
-                            );
-                        }
-                        // Si non payée (paiement jamais abouti), rien à rembourser.
-                    } else {
-                        // Mode wallet : débloquer les fonds escrow du client.
-                        $walletProvider = str_replace('wallet_', '', $order->payment_method);
-                        if (in_array($walletProvider, ['kpay', 'paypal'])) {
-                            $this->walletService->unlockFunds(
-                                $client,
-                                (float) $order->total,
-                                "Remboursement commande #{$order->order_number} — refusée par vendeur",
-                                'order',
-                                $order->id,
-                                ['cancel_reason' => $cancelReason],
-                                $walletProvider
-                            );
-                        }
-                    }
-                }
+                // 2. Rembourser le client : déblocage de l'escrow (wallet) ou crédit du
+                //    Wallet ASSO (Mobile Money / carte déjà encaissés). Idempotent.
+                $refunded = $this->orderService->refundBuyer(
+                    $order,
+                    "Remboursement commande #{$order->order_number} — refusée par le vendeur",
+                    ['cancel_reason' => $cancelReason]
+                );
 
                 // 3. Restaurer le stock
                 foreach ($order->items as $item) {
@@ -298,7 +203,9 @@ class VendorOrderController extends Controller
                     $this->fcmService->sendToUser(
                         $client,
                         'Commande refusée',
-                        "Votre commande #{$order->order_number} a été refusée. Vous avez été remboursé.",
+                        $refunded > 0
+                            ? "Votre commande #{$order->order_number} a été refusée. " . number_format($refunded, 0, ',', ' ') . " FCFA ont été rendus disponibles sur votre Wallet ASSO."
+                            : "Votre commande #{$order->order_number} a été refusée.",
                         [
                             'type' => 'order_rejected',
                             'order_id' => (string) $order->id,
@@ -311,7 +218,9 @@ class VendorOrderController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Commande refusée. Fonds du client débloqués.',
+                'message' => $refunded > 0
+                    ? 'Commande refusée. Le client a été remboursé sur son Wallet ASSO.'
+                    : 'Commande refusée.',
             ]);
 
         } catch (\Exception $e) {
@@ -545,8 +454,8 @@ class VendorOrderController extends Controller
             'total' => (float) $order->total,
             'subtotal' => (float) $order->subtotal,
             'delivery_fee' => (float) $order->delivery_fee,
-            // Montant réellement dû au vendeur (ses articles uniquement).
-            'vendor_amount' => (float) $order->items->sum('total_price'),
+            // Montant dû au vendeur : SES prix (hors majoration ASSO payée par le client).
+            'vendor_amount' => (float) $order->items->sum(fn ($i) => $i->seller_total_price ?? $i->total_price),
             'delivery_address' => $order->delivery_address,
             'delivery_address_details' => $order->delivery_address_details,
             'delivery_latitude' => $order->delivery_latitude !== null ? (float) $order->delivery_latitude : null,
@@ -580,8 +489,9 @@ class VendorOrderController extends Controller
                 'product_name' => $item->product->name ?? 'Produit',
                 'product_image' => $item->product?->primaryImage ? asset('storage/' . $item->product->primaryImage->image_path) : null,
                 'quantity' => $item->quantity,
-                'unit_price' => (float) $item->unit_price,
-                'total_price' => (float) $item->total_price,
+                // Prix du vendeur (ce qu'il touche), pas le prix public majoré.
+                'unit_price' => (float) ($item->seller_unit_price ?? $item->unit_price),
+                'total_price' => (float) ($item->seller_total_price ?? $item->total_price),
                 // Choix du client à préparer : couleur, taille, pointure…
                 'variant_id' => $item->product_variant_id,
                 'variant_attributes' => $item->variant_attributes,

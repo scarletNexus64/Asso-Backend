@@ -9,8 +9,23 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Order extends Model
 {
+    /**
+     * Statuts de paiement (colonne enum `payment_status`). Transitions autorisées :
+     *   pending → paid | failed
+     *   paid    → refunded (annulation/refus d'une commande déjà encaissée)
+     * Aucun retour arrière : un statut final (failed, refunded) ne change plus.
+     */
+    public const PAYMENT_PENDING = 'pending';
+    public const PAYMENT_PAID = 'paid';
+    public const PAYMENT_FAILED = 'failed';
+    public const PAYMENT_REFUNDED = 'refunded';
+
+    /** Rails encaissés hors solde wallet (Mobile Money / carte). */
+    public const DIRECT_PAYMENT_METHODS = ['kpay_direct', 'paypal_direct', 'stripe_direct'];
+
     protected $fillable = [
         'order_number', 'user_id', 'status', 'subtotal', 'delivery_fee', 'base_delivery_price', 'delivery_commission', 'total',
+        'sale_commission_rate', 'sale_commission', 'vendor_net_amount', 'settled_at', 'refunded_at',
         'is_wholesale', 'import_country_code', 'shipping_mode', 'shipping_option_id',
         'delivery_address',
         'delivery_address_details',
@@ -31,6 +46,11 @@ class Order extends Model
         'base_delivery_price' => 'decimal:2',
         'delivery_commission' => 'decimal:2',
         'total' => 'decimal:2',
+        'sale_commission_rate' => 'decimal:2',
+        'sale_commission' => 'decimal:2',
+        'vendor_net_amount' => 'decimal:2',
+        'settled_at' => 'datetime',
+        'refunded_at' => 'datetime',
         'confirmed_at' => 'datetime',
         'shipped_at' => 'datetime',
         'delivered_at' => 'datetime',
@@ -70,6 +90,18 @@ class Order extends Model
     public function isDeliveryFullyConfirmed(): bool
     {
         return $this->confirmed_by_client_at !== null && $this->confirmed_by_deliverer_at !== null;
+    }
+
+    /** Payée hors solde wallet (Mobile Money / carte) ? */
+    public function isDirectPayment(): bool
+    {
+        return in_array($this->payment_method, self::DIRECT_PAYMENT_METHODS, true);
+    }
+
+    /** Payée depuis le solde Wallet ASSO (fonds bloqués en escrow à la création) ? */
+    public function isWalletPayment(): bool
+    {
+        return str_starts_with((string) $this->payment_method, 'wallet_');
     }
 
     // Relations

@@ -298,6 +298,8 @@ class OrderService
 
             // 1. Valider les produits et calculer le sous-total
             $subtotal = 0;
+            $sellerSubtotal = 0;
+            $itemRates = [];
             $orderItems = [];
             $sellers = [];
 
@@ -329,21 +331,32 @@ class OrderService
                 // commande. Le vendeur peut fixer son prix dans une autre devise ; toute la
                 // chaîne aval (escrow, wallet, livraison, payin) reste en XAF. Erreur stricte
                 // si aucun taux fiable : on ne devine jamais un montant à débiter.
+                //
+                // Commission ASSO en MAJORATION : l'acheteur paie le prix vendeur majoré
+                // du taux admin (exactement le prix public affiché) ; le vendeur touchera
+                // son prix. Les deux sont figés sur la ligne de commande.
                 $sourceCurrency = strtoupper($product->currency ?? 'XAF');
-                $sourceUnitPrice = (float) $product->price + (float) ($variant?->price_adjustment ?? 0);
+                $sellerSourceUnit = (float) $product->price + (float) ($variant?->price_adjustment ?? 0);
+                $commissionRate = CommissionService::rateForProduct($product);
+                $buyerSourceUnit = CommissionService::markup($sellerSourceUnit, $commissionRate, $sourceCurrency);
                 if ($sourceCurrency === 'XAF') {
-                    $unitPrice = $sourceUnitPrice;
+                    $unitPrice = $buyerSourceUnit;
+                    $sellerUnitPrice = $sellerSourceUnit;
                 } else {
-                    $conv = \App\Services\ExchangeRateService::convert($sourceCurrency, 'XAF', $sourceUnitPrice);
-                    if (empty($conv['success']) || $conv['amount'] === null) {
+                    $conv = \App\Services\ExchangeRateService::convert($sourceCurrency, 'XAF', $buyerSourceUnit);
+                    $sellerConv = \App\Services\ExchangeRateService::convert($sourceCurrency, 'XAF', $sellerSourceUnit);
+                    if (empty($conv['success']) || $conv['amount'] === null || empty($sellerConv['success']) || $sellerConv['amount'] === null) {
                         throw new \Exception("Conversion {$sourceCurrency} → XAF indisponible pour '{$product->name}'. Réessayez plus tard.");
                     }
                     $unitPrice = round((float) $conv['amount'], 2);
+                    $sellerUnitPrice = min($unitPrice, round((float) $sellerConv['amount'], 2));
                 }
 
                 $quantity = $item['quantity'];
                 $totalPrice = $unitPrice * $quantity;
                 $subtotal += $totalPrice;
+                $sellerSubtotal += $sellerUnitPrice * $quantity;
+                $itemRates[] = $commissionRate;
 
                 $orderItems[] = [
                     'product_id' => $product->id,
@@ -351,8 +364,11 @@ class OrderService
                     'variant_attributes' => $variant?->attributes,
                     'seller_id' => $product->user_id,
                     'quantity' => $quantity,
-                    'unit_price' => $unitPrice,      // XAF (pivot)
+                    'unit_price' => $unitPrice,      // XAF (pivot) — prix acheteur, commission incluse
                     'total_price' => $totalPrice,    // XAF (pivot)
+                    'seller_unit_price' => $sellerUnitPrice,               // ce que touche le vendeur
+                    'seller_total_price' => $sellerUnitPrice * $quantity,
+                    'commission_rate' => $commissionRate,
                 ];
 
                 // Collecter les vendeurs pour notification
@@ -416,7 +432,13 @@ class OrderService
                 );
             }
 
-            // 4. Créer la commande
+            // 4. Créer la commande — commission ASSO = majoration payée par l'acheteur.
+            $uniqueRates = array_values(array_unique($itemRates));
+            $saleCommission = [
+                'rate' => count($uniqueRates) === 1 ? $uniqueRates[0] : null,
+                'commission' => round($subtotal - $sellerSubtotal, 2),
+                'vendor_net' => round($sellerSubtotal, 2),
+            ];
             $order = Order::create([
                 'user_id' => $client->id,
                 'status' => 'pending',
@@ -424,6 +446,10 @@ class OrderService
                 'delivery_fee' => $deliveryFee,
                 'base_delivery_price' => $baseDeliveryPrice,
                 'delivery_commission' => $assoCommission,
+                // Commission ASSO sur la vente, figée à la création (cf. CommissionService).
+                'sale_commission_rate' => $saleCommission['rate'],
+                'sale_commission' => $saleCommission['commission'],
+                'vendor_net_amount' => $saleCommission['vendor_net'],
                 'total' => $total,
                 'delivery_address' => $deliveryAddress,
                 'delivery_address_details' => $deliveryAddressDetails,
@@ -625,6 +651,8 @@ class OrderService
                 );
             }
 
+            // Catalogue import (prix fixés par ASSO) : aucune majoration.
+            $saleCommission = ['rate' => 0.0, 'commission' => 0.0, 'vendor_net' => (float) $subtotal];
             $order = Order::create([
                 'user_id' => $client->id,
                 'status' => 'pending',
@@ -636,6 +664,9 @@ class OrderService
                 'delivery_fee' => $shippingCost, // coût d'expédition internationale
                 'base_delivery_price' => $shippingCost,
                 'delivery_commission' => 0,
+                'sale_commission_rate' => $saleCommission['rate'],
+                'sale_commission' => $saleCommission['commission'],
+                'vendor_net_amount' => $saleCommission['vendor_net'],
                 'total' => $total,
                 'delivery_address' => $deliveryAddress,
                 'payment_method' => match (true) {
@@ -695,10 +726,11 @@ class OrderService
     public function confirmKpayOrderPayment(Order $order): void
     {
         $sellers = [];
+        $lateRefund = false;
 
-        DB::transaction(function () use ($order, &$sellers) {
+        DB::transaction(function () use ($order, &$sellers, &$lateRefund) {
             $order = Order::whereKey($order->id)->lockForUpdate()->with('items')->first();
-            if (!$order || $order->payment_status === 'paid') {
+            if (!$order || in_array($order->payment_status, [Order::PAYMENT_PAID, Order::PAYMENT_REFUNDED], true)) {
                 return; // déjà traité
             }
 
@@ -715,7 +747,8 @@ class OrderService
             // N.B. : le solde du wallet n'est PAS modifié — l'argent provient de Mobile
             // Money (KPay PayIn direct), pas du solde. Cet enregistrement sert uniquement
             // à rendre l'achat visible dans l'historique des paiements (GET /v1/wallet/transactions).
-            $buyerBalance = (float) (User::where('id', $order->user_id)->value('kpay_wallet_balance') ?? 0);
+            // Solde indicatif (non modifié : l'argent vient du rail direct, pas du Wallet).
+            $buyerBalance = (float) (User::find($order->user_id)?->kpayBalanceFor('XAF') ?? 0);
             WalletTransaction::create([
                 'user_id' => $order->user_id,
                 'type' => 'debit',
@@ -735,11 +768,28 @@ class OrderService
                 'provider' => 'kpay',
             ]);
 
+            // Paiement arrivé APRÈS l'annulation de la commande (annulation client ou
+            // échec présumé) : l'argent est encaissé, on le rend sur le Wallet ASSO.
+            if ($order->status === 'cancelled') {
+                $this->refundBuyer(
+                    $order,
+                    "Remboursement commande #{$order->order_number} — paiement reçu après annulation",
+                    ['late_payment' => true]
+                );
+                $sellers = [];
+                $lateRefund = true;
+            }
+
             Log::info('[OrderService] Commande KPay confirmée (payée)', [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
             ]);
         });
+
+        if ($lateRefund) {
+            $this->notifyLateRefund($order);
+            return;
+        }
 
         // Notifier le client (hors transaction)
         try {
@@ -967,17 +1017,19 @@ class OrderService
     public function confirmStripeOrderPayment(Order $order): void
     {
         $sellers = [];
+        $lateRefund = false;
 
-        DB::transaction(function () use ($order, &$sellers) {
+        DB::transaction(function () use ($order, &$sellers, &$lateRefund) {
             $order = Order::whereKey($order->id)->lockForUpdate()->with('items')->first();
-            if (!$order || $order->payment_status === 'paid') {
+            if (!$order || in_array($order->payment_status, [Order::PAYMENT_PAID, Order::PAYMENT_REFUNDED], true)) {
                 return;
             }
 
             $order->update(['payment_status' => 'paid']);
             $sellers = $order->items->pluck('seller_id')->unique()->values()->all();
 
-            $buyerBalance = (float) (User::where('id', $order->user_id)->value('kpay_wallet_balance') ?? 0);
+            // Solde indicatif (non modifié : l'argent vient du rail direct, pas du Wallet).
+            $buyerBalance = (float) (User::find($order->user_id)?->kpayBalanceFor('XAF') ?? 0);
             WalletTransaction::create([
                 'user_id' => $order->user_id,
                 'type' => 'debit',
@@ -997,11 +1049,28 @@ class OrderService
                 'provider' => 'stripe',
             ]);
 
+            // Paiement arrivé APRÈS l'annulation de la commande (annulation client ou
+            // échec présumé) : l'argent est encaissé, on le rend sur le Wallet ASSO.
+            if ($order->status === 'cancelled') {
+                $this->refundBuyer(
+                    $order,
+                    "Remboursement commande #{$order->order_number} — paiement reçu après annulation",
+                    ['late_payment' => true]
+                );
+                $sellers = [];
+                $lateRefund = true;
+            }
+
             Log::info('[OrderService] Commande Stripe confirmée (payée)', [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
             ]);
         });
+
+        if ($lateRefund) {
+            $this->notifyLateRefund($order);
+            return;
+        }
 
         try {
             $this->fcmService->sendToUser(
@@ -1088,6 +1157,207 @@ class OrderService
     /**
      * Calcule la distance entre deux points GPS (Haversine).
      */
+    /**
+     * Rembourse l'acheteur d'une commande annulée/refusée (idempotent, à appeler DANS
+     * une transaction DB).
+     *
+     *  - Paiement wallet (escrow) : les fonds bloqués sont simplement débloqués.
+     *  - Paiement direct (Mobile Money / carte) DÉJÀ encaissé : le montant est crédité
+     *    sur le Wallet ASSO de l'acheteur (l'argent est sur le compte marchand ASSO) et
+     *    payment_status passe à 'refunded'.
+     *  - Paiement direct jamais abouti : rien à rembourser.
+     *
+     * Renvoie le montant rendu disponible à l'acheteur (0 si rien à rembourser).
+     */
+    public function refundBuyer(Order $order, string $label, array $metadata = []): float
+    {
+        $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+        // Déjà remboursée ou déjà réglée aux vendeurs : on ne touche plus aux fonds.
+        if ($order->refunded_at || $order->settled_at) {
+            return 0.0;
+        }
+
+        $client = $order->user;
+        if (!$client) {
+            return 0.0;
+        }
+
+        $amount = (float) $order->total;
+
+        if ($order->isWalletPayment()) {
+            if ($order->payment_status !== Order::PAYMENT_PAID) {
+                return 0.0;
+            }
+            $this->walletService->unlockFunds(
+                $client,
+                $amount,
+                $label,
+                'order',
+                $order->id,
+                $metadata,
+                'kpay'
+            );
+        } elseif ($order->isDirectPayment()) {
+            if ($order->payment_status !== Order::PAYMENT_PAID) {
+                return 0.0; // paiement jamais encaissé
+            }
+            $this->walletService->credit(
+                $client,
+                $amount,
+                null,
+                $label,
+                array_merge($metadata, [
+                    'order_id' => $order->id,
+                    'refund' => true,
+                    'original_payment_method' => $order->payment_method,
+                    'original_payment_reference' => $order->payment_reference,
+                ]),
+                'kpay'
+            );
+        } else {
+            return 0.0;
+        }
+
+        $order->update([
+            'payment_status' => Order::PAYMENT_REFUNDED,
+            'refunded_at' => now(),
+        ]);
+
+        Log::info('[OrderService] Acheteur remboursé', [
+            'order_id' => $order->id,
+            'amount' => $amount,
+            'payment_method' => $order->payment_method,
+        ]);
+
+        return $amount;
+    }
+
+    /** Prévient l'acheteur qu'un paiement tardif a été crédité sur son Wallet. */
+    private function notifyLateRefund(Order $order): void
+    {
+        try {
+            $this->fcmService->sendToUser(
+                $order->user,
+                'Paiement remboursé',
+                "Votre paiement pour la commande annulée #{$order->order_number} a été crédité sur votre Wallet ASSO.",
+                ['type' => 'wallet_refund', 'order_id' => (string) $order->id, 'order_number' => $order->order_number]
+            );
+        } catch (\Exception $e) {
+            Log::warning('[OrderService] FCM wallet_refund échec: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Règle une commande validée par le vendeur (idempotent, à appeler DANS une
+     * transaction DB) : prélève l'acheteur (mode wallet) puis crédite le vendeur de SON
+     * prix, l'entreprise de livraison et ASSO (majorations vente + livraison).
+     */
+    public function settleOrder(Order $order, User $vendor): void
+    {
+        $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+        if ($order->settled_at) {
+            return; // déjà réglée
+        }
+        if ($order->payment_status !== Order::PAYMENT_PAID) {
+            throw new \Exception("Le paiement de cette commande n'est pas encore confirmé.");
+        }
+
+        // a) Mode wallet : prélèvement définitif des fonds bloqués depuis la création.
+        if ($order->isWalletPayment()) {
+            $this->walletService->releaseEscrow(
+                $order->user,
+                (float) $order->total,
+                "Paiement commande #{$order->order_number} — validée par le vendeur",
+                'order',
+                $order->id,
+                [],
+                'kpay'
+            );
+        }
+
+        // b) Part vendeur / ASSO figées à la création (majoration). Commande antérieure
+        //    à la majoration : l'acheteur a payé le prix vendeur, tout revient au vendeur.
+        $subtotal = (float) $order->subtotal;
+        if ($order->vendor_net_amount === null) {
+            $order->sale_commission_rate = 0;
+            $order->sale_commission = 0;
+            $order->vendor_net_amount = $subtotal;
+        }
+        $saleCommission = (float) $order->sale_commission;
+        $vendorNet = (float) $order->vendor_net_amount;
+
+        if ($vendorNet > 0) {
+            $this->walletService->credit(
+                $vendor,
+                $vendorNet,
+                null,
+                "Vente commande #{$order->order_number}",
+                [
+                    'order_id' => $order->id,
+                    'direct_settlement' => true,
+                    'subtotal' => $subtotal,
+                    'sale_commission' => $saleCommission,
+                    'sale_commission_rate' => (float) $order->sale_commission_rate,
+                ],
+                'kpay'
+            );
+        }
+
+        // c) Entreprise de livraison (prix de base de la course).
+        $baseDeliveryPrice = (float) $order->base_delivery_price;
+        if ($baseDeliveryPrice > 0 && $order->delivery_company_id) {
+            $companyUserId = DelivererCompany::whereKey($order->delivery_company_id)->value('user_id');
+            $companyUser = $companyUserId ? User::find($companyUserId) : null;
+            if ($companyUser) {
+                $this->walletService->credit(
+                    $companyUser,
+                    $baseDeliveryPrice,
+                    null,
+                    "Commission livraison #{$order->order_number}",
+                    ['order_id' => $order->id, 'direct_settlement' => true],
+                    'kpay'
+                );
+            }
+        }
+
+        // d) ASSO : commission vente + commission livraison.
+        $assoTotal = $saleCommission + (float) $order->delivery_commission;
+        if ($assoTotal > 0) {
+            $platform = CommissionService::platformAccount();
+            if ($platform) {
+                $this->walletService->credit(
+                    $platform,
+                    $assoTotal,
+                    null,
+                    "Commission ASSO — Commande #{$order->order_number}",
+                    [
+                        'order_id' => $order->id,
+                        'direct_settlement' => true,
+                        'sale_commission' => $saleCommission,
+                        'delivery_commission' => (float) $order->delivery_commission,
+                    ],
+                    'kpay'
+                );
+            } else {
+                Log::warning('[OrderService] Compte plateforme ASSO introuvable, commission non créditée', [
+                    'order_id' => $order->id,
+                    'commission' => $assoTotal,
+                ]);
+            }
+        }
+
+        $order->settled_at = now();
+        $order->save();
+
+        Log::info('[OrderService] Commande réglée', [
+            'order_id' => $order->id,
+            'vendor_net' => $vendorNet,
+            'sale_commission' => $saleCommission,
+            'delivery_commission' => (float) $order->delivery_commission,
+        ]);
+    }
+
     private function calculateDistance(float $lat1, float $lon1, float $lat2, float $lon2): float
     {
         $earthRadius = 6371;

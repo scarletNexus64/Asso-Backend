@@ -45,7 +45,7 @@ class ConversationController extends Controller
                     'product' => $conv->product ? [
                         'id' => $conv->product->id,
                         'name' => $conv->product->name,
-                        'price' => (float) $conv->product->price,
+                        'price' => \App\Services\CommissionService::buyerPrice($conv->product), // prix public
                         'image' => $conv->product->primaryImage ? asset('storage/' . $conv->product->primaryImage->image_path) : null,
                     ] : null,
                     'diaspo_offer' => $conv->diaspoOffer ? [
@@ -259,7 +259,7 @@ class ConversationController extends Controller
                 'product' => $msg->product ? [
                     'id' => $msg->product->id,
                     'name' => $msg->product->name,
-                    'price' => (float) $msg->product->price,
+                    'price' => \App\Services\CommissionService::buyerPrice($msg->product), // prix public
                     'primary_image' => $msg->product->primaryImage ?
                         asset('storage/' . $msg->product->primaryImage->image_path) : null,
                     'image' => $msg->product->primaryImage ?
@@ -452,7 +452,7 @@ class ConversationController extends Controller
                 'product' => $message->product ? [
                     'id' => $message->product->id,
                     'name' => $message->product->name,
-                    'price' => (float) $message->product->price,
+                    'price' => \App\Services\CommissionService::buyerPrice($message->product), // prix public
                     'image' => $message->product->primaryImage ?
                         asset('storage/' . $message->product->primaryImage->image_path) : null,
                 ] : null,

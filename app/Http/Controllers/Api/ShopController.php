@@ -395,7 +395,7 @@ class ShopController extends Controller
                 'name' => $product->name,
                 'slug' => $product->slug,
                 'description' => $product->description,
-                'price' => (float) $product->price,
+                'price' => \App\Services\CommissionService::buyerPrice($product), // prix public
                 'stock' => (int) $product->stock,
                 'primary_image' => $product->primaryImage ? asset('storage/' . $product->primaryImage->image_path) : null,
                 'images' => $images,

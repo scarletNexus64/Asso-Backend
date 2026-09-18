@@ -459,7 +459,7 @@ class ProductController extends Controller
                         'product_name' => $product->name,
                         'shop_id' => (string) $shop->id,
                         'shop_name' => $shop->name,
-                        'price' => (string) $product->price,
+                        'price' => (string) \App\Services\CommissionService::buyerPrice($product),
                         'category_id' => (string) $product->category_id,
                     ]
                 );
@@ -490,6 +490,9 @@ class ProductController extends Controller
      */
     private function formatProduct($product, $favoriteIds = [], $detailed = false): array
     {
+        // Prix PUBLICS : prix vendeur majoré de la commission ASSO (cf. CommissionService).
+        $pricing = \App\Services\CommissionService::buyerPricing($product);
+
         $data = [
             'id' => $product->id,
             'name' => $product->name,
@@ -497,19 +500,19 @@ class ProductController extends Controller
             'description' => $product->description,
             'characteristics' => $product->characteristics,
             'commercial_information' => $product->commercial_information,
-            'price' => (float) $product->price,
+            'price' => $pricing['price'],
             'currency' => $product->currency ?? 'XAF',
-            'price_xaf' => $product->price_xaf !== null ? (float) $product->price_xaf : (float) $product->price,
-            'min_price' => $product->min_price ? (float) $product->min_price : null,
-            'max_price' => $product->max_price ? (float) $product->max_price : null,
+            'price_xaf' => $pricing['price_xaf'],
+            'min_price' => $pricing['min_price'],
+            'max_price' => $pricing['max_price'],
             'price_type' => $product->price_type ?? 'fixed',
-            'formatted_price' => $product->formatted_price,
+            'formatted_price' => $pricing['formatted_price'],
             'type' => $product->type ?? 'article',
             'origin_country' => $product->origin_country, // CN/TR/AE… (produits importés), null = local
             'weight_category' => $product->weight_category ?? 'X-small',
             'sizes' => $product->sizes ?? [],
             'variants' => $product->variants->where('is_active', true)->values()
-                ->map(fn ($variant) => app(ProductVariantService::class)->presentVariant($variant, $product)),
+                ->map(fn ($variant) => app(ProductVariantService::class)->presentVariant($variant, $product, $pricing['rate'])),
             'variant_options' => app(ProductVariantService::class)->presentOptions($product),
             'stock' => $product->stock,
             'weight' => $product->weight,
@@ -557,6 +560,12 @@ class ProductController extends Controller
                 : ($product->user ? $product->user->address : null),
             'created_at' => $product->created_at->toIso8601String(),
         ];
+
+        // Le vendeur (et lui seul) voit en plus son propre prix et ce qu'il touchera.
+        if (auth('sanctum')->id() && auth('sanctum')->id() === $product->user_id) {
+            $data['seller_price'] = (float) $product->price;
+            $data['asso_commission_rate'] = $pricing['rate'];
+        }
 
         if ($detailed) {
             $data['reviews'] = $product->reviews->map(fn($review) => [

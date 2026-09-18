@@ -9,12 +9,16 @@ class OrderItem extends Model
 {
     protected $fillable = [
         'order_id', 'product_id', 'product_variant_id', 'variant_attributes', 'seller_id', 'quantity', 'unit_price', 'total_price',
+        'seller_unit_price', 'seller_total_price', 'commission_rate',
         'price_tier_id', 'tier_label',
     ];
 
     protected $casts = [
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
+        'seller_unit_price' => 'decimal:2',
+        'seller_total_price' => 'decimal:2',
+        'commission_rate' => 'decimal:2',
         'variant_attributes' => 'array',
     ];
 

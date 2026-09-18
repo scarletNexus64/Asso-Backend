@@ -45,6 +45,7 @@ class PackageSubscriptionService
         ?string $kpayProvider = null,
         ?string $kpayPhone = null
     ): PackageSubscription {
+        $this->assertSubscribable($user, $package);
         $amountXaf = (float) $package->price;
 
         $subscription = PackageSubscription::create([
@@ -62,7 +63,13 @@ class PackageSubscriptionService
         // Peut lancer une exception → la souscription reste 'pending' sans référence,
         // le contrôleur renvoie l'erreur (rien n'est crédité au vendeur).
         // Pour la carte native, renvoie ['client_secret','payment_intent_id','publishable_key'].
-        $stripeMeta = $this->initiatePayment($subscription, $amountXaf, $paymentMode, $kpayProvider, $kpayPhone);
+        try {
+            $stripeMeta = $this->initiatePayment($subscription, $amountXaf, $paymentMode, $kpayProvider, $kpayPhone);
+        } catch (\Throwable $e) {
+            // Rien n'a été encaissé : on clôt la tentative pour ne pas la laisser « en attente ».
+            $this->fail($subscription, 'init_failed');
+            throw $e;
+        }
 
         $subscription = $subscription->fresh();
 
@@ -213,9 +220,9 @@ class PackageSubscriptionService
      */
     public function confirm(PackageSubscription $subscription): void
     {
-        $applied = null;
+        $activated = false;
 
-        DB::transaction(function () use ($subscription, &$applied) {
+        DB::transaction(function () use ($subscription, &$activated) {
             $sub = PackageSubscription::whereKey($subscription->id)->lockForUpdate()->first();
             if (!$sub || $sub->status === 'paid') {
                 return; // déjà traité
@@ -224,132 +231,249 @@ class PackageSubscriptionService
             $package = Package::findOrFail($sub->package_id);
             $user = User::findOrFail($sub->user_id);
 
-            $vendorPackage = $this->applyPackage($user, $package, $sub->payment_reference);
+            $result = $this->applyPackage($user, $package, $sub->payment_reference);
 
             $sub->update([
                 'status' => 'paid',
-                'vendor_package_id' => $vendorPackage->id,
+                'vendor_package_id' => $result['vendor_package']?->id,
                 'paid_at' => now(),
+                'metadata' => array_merge($sub->metadata ?? [], [
+                    'package_type' => $package->type,
+                    'certification_expires_at' => $result['certification_expires_at'],
+                ]),
             ]);
 
             // Trace dans l'historique du client (solde NON modifié : encaissé chez le PSP).
-            $provider = $this->providerFor($sub->payment_method);
-            // Solde indicatif pour la trace (non modifié : encaissé chez le PSP en rail direct).
-            $balance = (float) (User::where('id', $sub->user_id)->value('kpay_wallet_balance') ?? 0);
+            $balance = $user->kpayBalanceFor('XAF');
             WalletTransaction::create([
                 'user_id' => $sub->user_id,
                 'type' => 'debit',
                 'amount' => (float) $sub->amount_xaf,
                 'balance_before' => $balance,
                 'balance_after' => $balance,
-                'description' => "Abonnement - {$package->name}",
-                'reference_type' => 'vendor_package',
-                'reference_id' => $vendorPackage->id,
+                'description' => ($package->type === 'certification' ? 'Certification' : 'Forfait') . " — {$package->name}",
+                'reference_type' => 'package_subscription',
+                'reference_id' => $sub->id,
                 'metadata' => [
                     'payment_method' => $sub->payment_method,
                     'payment_reference' => $sub->payment_reference,
                     'subscription_id' => $sub->id,
+                    'paid_outside_wallet' => true,
                 ],
                 'status' => 'completed',
-                'provider' => $provider,
+                'provider' => $this->providerFor($sub->payment_method),
             ]);
 
-            $applied = $vendorPackage;
+            $activated = true;
 
             Log::info('[PackageSubscription] Abonnement confirmé (payé)', [
                 'subscription_id' => $sub->id,
-                'vendor_package_id' => $vendorPackage->id,
+                'package_type' => $package->type,
+                'vendor_package_id' => $result['vendor_package']?->id,
             ]);
         });
 
-        if (!$applied) {
-            return; // déjà traité / rien à notifier
-        }
-
-        // Notification push (hors transaction).
-        try {
-            $subscription->refresh();
-            $package = Package::find($subscription->package_id);
-            $this->fcmService->sendPackagePurchaseNotification(
-                User::find($subscription->user_id),
-                [
-                    'name' => $applied->custom_name ?? ($package->name ?? 'Package'),
-                    'storage_total' => $applied->storage_total_mb . ' MB',
-                    'expires_at' => $applied->expires_at->format('d/m/Y'),
-                ]
-            );
-        } catch (\Exception $e) {
-            Log::warning('[PackageSubscription] FCM package confirmé échec: ' . $e->getMessage());
+        if ($activated) {
+            $this->notifyActivated($subscription->fresh());
         }
     }
 
     /**
      * Marque l'abonnement échoué (idempotent). Aucun espace n'a été crédité.
      */
-    public function fail(PackageSubscription $subscription): void
+    public function fail(PackageSubscription $subscription, string $reason = 'payment_failed'): void
     {
-        $sub = PackageSubscription::whereKey($subscription->id)->lockForUpdate()->first();
-        if (!$sub || $sub->status !== 'pending') {
-            return;
-        }
-        $sub->update(['status' => 'failed']);
-        Log::info('[PackageSubscription] Abonnement échoué', ['subscription_id' => $sub->id]);
+        DB::transaction(function () use ($subscription, $reason) {
+            $sub = PackageSubscription::whereKey($subscription->id)->lockForUpdate()->first();
+            if (!$sub || $sub->status !== 'pending') {
+                return;
+            }
+            $sub->update([
+                'status' => 'failed',
+                'metadata' => array_merge($sub->metadata ?? [], ['failure_reason' => $reason]),
+            ]);
+            Log::info('[PackageSubscription] Abonnement échoué', ['subscription_id' => $sub->id, 'reason' => $reason]);
+        });
     }
 
     /**
-     * Crée ou cumule le VendorPackage du vendeur + active la certification si besoin.
-     *
-     * Logique IDENTIQUE au flux wallet historique (PackageController::subscribe) :
-     * si un package actif existe, on cumule le stockage et on prolonge l'expiration ;
-     * sinon on crée un nouveau VendorPackage.
+     * Vérifie qu'un package peut être souscrit par cet utilisateur AVANT tout paiement.
+     * Lance une exception au message affichable sinon.
      */
-    public function applyPackage(User $user, Package $package, ?string $paymentReference = null): VendorPackage
+    public function assertSubscribable(User $user, Package $package): void
     {
-        $existingPackage = $user->activeVendorPackage;
+        if (!in_array($package->type, ['storage', 'certification'], true)) {
+            throw new \Exception('Type de forfait non supporté.');
+        }
+        if (!$package->is_active) {
+            throw new \Exception("Ce forfait n'est plus disponible.");
+        }
+        if ($package->type === 'storage' && (int) $package->storage_size_mb <= 0) {
+            throw new \Exception("Ce forfait de stockage est mal configuré. Contactez le support.");
+        }
+        if ($package->type === 'certification' && !$user->shops()->exists()) {
+            throw new \Exception('Créez votre boutique avant de souscrire à une certification.');
+        }
+    }
+
+    /**
+     * Souscription payée depuis le SOLDE du Wallet ASSO : débit + activation dans une
+     * seule transaction (tout ou rien). Renvoie la PackageSubscription 'paid'.
+     */
+    public function payWithWallet(User $user, Package $package): PackageSubscription
+    {
+        $this->assertSubscribable($user, $package);
+        $price = (float) $package->price;
+
+        $subscription = DB::transaction(function () use ($user, $package, $price) {
+            $walletService = app(WalletService::class);
+
+            // Débit sous verrou de ligne (lance une exception si solde insuffisant).
+            $walletTx = $walletService->debit(
+                user: $user,
+                amount: $price,
+                description: ($package->type === 'certification' ? 'Certification' : 'Forfait') . " — {$package->name}",
+                referenceType: 'package_subscription',
+                referenceId: null,
+                metadata: [
+                    'package_id' => $package->id,
+                    'package_name' => $package->name,
+                    'package_type' => $package->type,
+                ],
+                provider: 'kpay'
+            );
+
+            $reference = 'PKG-' . strtoupper(Str::random(10));
+            $result = $this->applyPackage($user, $package, $reference);
+
+            $sub = PackageSubscription::create([
+                'user_id' => $user->id,
+                'package_id' => $package->id,
+                'payment_method' => 'wallet',
+                'status' => 'paid',
+                'payment_reference' => $reference,
+                'payment_currency' => 'XAF',
+                'payment_amount' => $price,
+                'amount_xaf' => $price,
+                'vendor_package_id' => $result['vendor_package']?->id,
+                'paid_at' => now(),
+                'metadata' => [
+                    'package_name' => $package->name,
+                    'package_type' => $package->type,
+                    'wallet_transaction_id' => $walletTx->id,
+                    'certification_expires_at' => $result['certification_expires_at'],
+                ],
+            ]);
+
+            $walletTx->update(['reference_id' => $sub->id]);
+
+            return $sub;
+        });
+
+        $this->notifyActivated($subscription);
+
+        return $subscription;
+    }
+
+    /**
+     * Active le package payé :
+     *  - storage       : cumule sur le forfait de stockage actif (espace + durée) ou en crée un ;
+     *  - certification : certifie la boutique (prolonge une certification en cours).
+     *
+     * Une certification ne touche JAMAIS au forfait de stockage (ancien bug : elle était
+     * cumulée dessus, ou échouait faute de taille de stockage).
+     *
+     * @return array{vendor_package: ?VendorPackage, certification_expires_at: ?string}
+     */
+    public function applyPackage(User $user, Package $package, ?string $paymentReference = null): array
+    {
+        if ($package->type === 'certification') {
+            $shop = $user->shops()->first();
+            if (!$shop) {
+                throw new \Exception('Aucune boutique à certifier.');
+            }
+
+            // Renouvellement : on prolonge à partir de l'échéance en cours si encore valide.
+            $currentEnd = $shop->is_certified && $shop->certification_expires_at && $shop->certification_expires_at->isFuture()
+                ? $shop->certification_expires_at->copy()
+                : now();
+            $expiresAt = $currentEnd->addDays($package->duration_days);
+
+            $shop->update([
+                'is_certified' => true,
+                'certified_at' => $shop->is_certified ? $shop->certified_at : now(),
+                'certification_expires_at' => $expiresAt,
+                'certified_by' => $user->id,
+            ]);
+
+            return ['vendor_package' => null, 'certification_expires_at' => $expiresAt->toIso8601String()];
+        }
+
+        $existingPackage = VendorPackage::where('user_id', $user->id)
+            ->active()
+            ->latest('purchased_at')
+            ->lockForUpdate()
+            ->first();
 
         if ($existingPackage) {
-            $newStorageTotal = $existingPackage->storage_total_mb + $package->storage_size_mb;
-            $newStorageRemaining = $existingPackage->storage_remaining_mb + $package->storage_size_mb;
-            $newExpiresAt = $existingPackage->expires_at->addDays($package->duration_days);
-
             $existingPackage->update([
-                'storage_total_mb' => $newStorageTotal,
-                'storage_remaining_mb' => $newStorageRemaining,
-                'expires_at' => $newExpiresAt,
+                'storage_total_mb' => $existingPackage->storage_total_mb + $package->storage_size_mb,
+                'storage_remaining_mb' => $existingPackage->storage_remaining_mb + $package->storage_size_mb,
+                'expires_at' => $existingPackage->expires_at->copy()->addDays($package->duration_days),
                 'package_id' => null,
                 'custom_name' => 'Espace Cumulé',
             ]);
 
-            $vendorPackage = $existingPackage;
-        } else {
-            $vendorPackage = VendorPackage::create([
-                'user_id' => $user->id,
-                'package_id' => $package->id,
-                'storage_total_mb' => $package->storage_size_mb,
-                'storage_used_mb' => 0,
-                'storage_remaining_mb' => $package->storage_size_mb,
-                'purchased_at' => now(),
-                'expires_at' => now()->addDays($package->duration_days),
-                'status' => 'active',
-                'payment_reference' => $paymentReference ?? ('PKG-' . strtoupper(Str::random(10))),
-            ]);
+            return ['vendor_package' => $existingPackage->fresh(), 'certification_expires_at' => null];
         }
 
-        // Certification boutique si package de type certification.
-        if ($package->type === 'certification') {
-            $shop = $user->shops()->first();
-            if ($shop) {
-                $expiresAt = now()->addDays($package->duration_days);
-                $shop->update([
-                    'is_certified' => true,
-                    'certified_at' => now(),
-                    'certification_expires_at' => $expiresAt,
-                    'certified_by' => $user->id,
+        $vendorPackage = VendorPackage::create([
+            'user_id' => $user->id,
+            'package_id' => $package->id,
+            'storage_total_mb' => $package->storage_size_mb,
+            'storage_used_mb' => 0,
+            'storage_remaining_mb' => $package->storage_size_mb,
+            'purchased_at' => now(),
+            'expires_at' => now()->addDays($package->duration_days),
+            'status' => 'active',
+            'payment_reference' => $paymentReference ?? ('PKG-' . strtoupper(Str::random(10))),
+        ]);
+
+        return ['vendor_package' => $vendorPackage, 'certification_expires_at' => null];
+    }
+
+    /** Notification push d'activation (hors transaction, jamais bloquante). */
+    public function notifyActivated(PackageSubscription $subscription): void
+    {
+        try {
+            $package = Package::find($subscription->package_id);
+            $user = User::find($subscription->user_id);
+            if (!$package || !$user) {
+                return;
+            }
+
+            if ($package->type === 'certification') {
+                $until = $subscription->metadata['certification_expires_at'] ?? null;
+                $this->fcmService->sendToUser(
+                    $user,
+                    'Boutique certifiée ✅',
+                    "Votre {$package->name} est active" . ($until ? ' jusqu\'au ' . \Carbon\Carbon::parse($until)->format('d/m/Y') : '') . '.',
+                    ['type' => 'certification_activated', 'subscription_id' => (string) $subscription->id]
+                );
+                return;
+            }
+
+            $vendorPackage = $subscription->vendor_package_id ? VendorPackage::find($subscription->vendor_package_id) : null;
+            if ($vendorPackage) {
+                $this->fcmService->sendPackagePurchaseNotification($user, [
+                    'name' => $vendorPackage->custom_name ?? $package->name,
+                    'storage_total' => $vendorPackage->storage_total_mb . ' MB',
+                    'expires_at' => $vendorPackage->expires_at->format('d/m/Y'),
                 ]);
             }
+        } catch (\Throwable $e) {
+            Log::warning('[PackageSubscription] Notification d\'activation échouée: ' . $e->getMessage());
         }
-
-        return $vendorPackage;
     }
 
     private function providerFor(string $paymentMethod): string
@@ -357,6 +481,7 @@ class PackageSubscriptionService
         return match ($paymentMethod) {
             'paypal_direct' => 'paypal',
             'stripe_direct' => 'stripe',
+            'wallet' => 'kpay',
             default => 'kpay',
         };
     }

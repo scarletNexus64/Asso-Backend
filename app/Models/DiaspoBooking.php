@@ -216,9 +216,13 @@ class DiaspoBooking extends Model
             'buyer_user_id' => $this->buyer_user_id,
             'seller_user_id' => $this->seller_user_id,
             'kg_booked' => (float) $this->kg_booked,
-            'price_per_kg' => (float) $this->price_per_kg,
-            'subtotal' => (float) $this->subtotal,
-            'commission_amount' => (float) $this->commission_amount,
+            // L'acheteur voit uniquement le prix public (commission ASSO incluse) ;
+            // le voyageur voit son prix et ce qu'il touche (sous-total).
+            'price_per_kg' => $isBuyer && (float) $this->kg_booked > 0
+                ? round((float) $this->total_price / (float) $this->kg_booked, 2)
+                : (float) $this->price_per_kg,
+            'subtotal' => $isBuyer ? (float) $this->total_price : (float) $this->subtotal,
+            'commission_amount' => $isBuyer ? 0.0 : (float) $this->commission_amount,
             'total_price' => (float) $this->total_price,
             'currency' => $currency,
             'status' => $this->status,

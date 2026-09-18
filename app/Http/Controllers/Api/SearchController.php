@@ -273,15 +273,18 @@ class SearchController extends Controller
      */
     private function formatProduct($product, $favoriteIds = []): array
     {
+        // Prix PUBLICS : prix vendeur majoré de la commission ASSO.
+        $pricing = \App\Services\CommissionService::buyerPricing($product);
+
         $data = [
             'id' => $product->id,
             'name' => $product->name,
             'slug' => $product->slug,
-            'price' => (float) $product->price,
-            'min_price' => $product->min_price ? (float) $product->min_price : null,
-            'max_price' => $product->max_price ? (float) $product->max_price : null,
+            'price' => $pricing['price'],
+            'min_price' => $pricing['min_price'],
+            'max_price' => $pricing['max_price'],
             'price_type' => $product->price_type ?? 'fixed',
-            'formatted_price' => $product->formatted_price,
+            'formatted_price' => $pricing['formatted_price'],
             'type' => $product->type ?? 'article',
             'weight_category' => $product->weight_category ?? 'X-small',
             'stock' => $product->stock,

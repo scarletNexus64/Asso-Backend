@@ -382,70 +382,22 @@ class WalletController extends Controller
     }
 
     /**
-     * Paye avec le wallet (pour commandes)
+     * Ancien paiement « libre » par wallet — DÉSACTIVÉ.
+     *
+     * Il débitait le solde sans vérifier ni marquer la commande payée (l'argent sortait
+     * du Wallet sans contrepartie). Le paiement par solde passe désormais par les
+     * parcours qui gèrent le statut de paiement de bout en bout :
+     *   - commandes : POST /v1/orders (payment_mode=wallet, fonds réservés puis prélevés)
+     *   - forfaits  : POST /v1/packages/subscribe (payment_mode=wallet)
      *
      * POST /api/v1/wallet/pay
      */
     public function pay(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'amount' => 'required|numeric|min:0',
-            'description' => 'required|string|max:255',
-            'reference_type' => 'required|string|in:order',
-            'reference_id' => 'required|integer',
-            'payment_provider' => 'required|string|in:kpay',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Données invalides',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        try {
-            $user = $request->user();
-            $amount = $request->amount;
-            $description = $request->description;
-            $referenceType = $request->reference_type;
-            $referenceId = $request->reference_id;
-            $paymentProvider = $request->payment_provider;
-
-            Log::info("[WalletController] Payment with wallet requested", [
-                'user_id' => $user->id,
-                'amount' => $amount,
-                'provider' => $paymentProvider,
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-            ]);
-
-            // Effectuer le paiement
-            $transaction = $this->walletService->debit(
-                $user,
-                $amount,
-                $description,
-                $referenceType,
-                $referenceId,
-                ['paid_via_api' => true],
-                $paymentProvider
-            );
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Paiement effectué avec succès',
-                'data' => [
-                    'transaction_id' => $transaction->id,
-                    'amount_paid' => $amount,
-                    'new_balance' => $transaction->balance_after,
-                ],
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 400);
-        }
+        return response()->json([
+            'success' => false,
+            'message' => 'Ce mode de paiement n\'est plus disponible. Choisissez « Wallet ASSO » au moment de payer votre commande ou votre forfait.',
+        ], 410);
     }
 
     // ============================================

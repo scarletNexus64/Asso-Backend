@@ -115,6 +115,37 @@ class PaymentMethodService
         return $methods;
     }
 
+    /**
+     * Option « Wallet ASSO » (paiement depuis le solde) pour un utilisateur connecté.
+     *
+     * N'est ajoutée que par les parcours qui l'acceptent côté serveur (commandes,
+     * forfaits) via `include_wallet=1`. Toujours listée (jamais masquée) : grisée avec
+     * le motif `insufficient_balance` si le solde disponible ne couvre pas le montant.
+     */
+    public static function walletOption(\App\Models\User $user, float $amount, string $currency): array
+    {
+        $currency = strtoupper($currency ?: self::PIVOT);
+        $amountInPivot = self::toPivot($amount, $currency);
+        $available = $user->kpayAvailableFor(self::PIVOT);
+        $enough = $amountInPivot !== null && $available >= $amountInPivot;
+
+        return [
+            'code' => 'wallet',
+            'label' => 'Wallet ASSO',
+            'subtitle' => 'Payer avec mon solde',
+            'flow' => 'wallet',
+            'enabled' => true,
+            'available' => $enough,
+            'unavailable_reason' => $enough ? null : 'insufficient_balance',
+            'min_amount' => null,
+            'min_currency' => $currency,
+            'target_currency' => self::PIVOT,
+            'converted_amount' => $amountInPivot !== null ? round($amountInPivot, 2) : null,
+            'balance' => round($available, 2),
+            'missing_amount' => $enough || $amountInPivot === null ? 0 : round($amountInPivot - $available, 2),
+        ];
+    }
+
     /** Minimum (pivot XAF) d'un rail, pour la validation serveur d'un paiement. */
     public static function minPivotFor(string $code): float
     {

@@ -106,7 +106,7 @@ class Package extends Model
      */
     public function getFormattedPriceAttribute(): string
     {
-        return number_format($this->price, 0, ',', ' ') . ' XOF';
+        return number_format($this->price, 0, ',', ' ') . ' FCFA';
     }
 
     /**

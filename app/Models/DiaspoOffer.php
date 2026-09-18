@@ -180,6 +180,41 @@ class DiaspoOffer extends Model
         }
     }
 
+    /** Majoration ASSO Diaspo (%), réglée dans l'admin (onglet Commissions). */
+    public static function commissionRate(): float
+    {
+        return max(0.0, (float) Setting::get('diaspo_commission_rate', 5));
+    }
+
+    /** Prix au kilo payé par le client : prix du voyageur majoré de la commission ASSO. */
+    public function publicPricePerKg(): float
+    {
+        return round((float) $this->price_per_kg * (1 + self::commissionRate() / 100), 2);
+    }
+
+    /**
+     * Prix exposé au lecteur courant : le voyageur voit SON prix (édition de l'offre),
+     * tous les autres voient le prix public majoré, sans détail de commission.
+     */
+    private function pricePerKgForViewer(): float
+    {
+        $viewerId = auth('sanctum')->id();
+
+        return $viewerId && (int) $viewerId === (int) $this->user_id
+            ? (float) $this->price_per_kg
+            : $this->publicPricePerKg();
+    }
+
+    public function toArray()
+    {
+        $data = parent::toArray();
+        if (array_key_exists('price_per_kg', $data)) {
+            $data['price_per_kg'] = $this->pricePerKgForViewer();
+        }
+
+        return $data;
+    }
+
     /**
      * Sérialisation API (contrat mobile) — utilisée par le flux réservations
      * (DiaspoController, paiement KPay direct).
@@ -200,7 +235,7 @@ class DiaspoOffer extends Model
             'arrival_country' => $this->arrival_country,
             'arrival_city' => $this->arrival_city,
             'arrival_datetime' => $this->arrival_datetime?->toIso8601String(),
-            'price_per_kg' => (float) $this->price_per_kg,
+            'price_per_kg' => $this->pricePerKgForViewer(),
             'available_kg' => (float) $this->available_kg,
             'remaining_kg' => (float) $this->remaining_kg,
             'currency' => $this->currency,
@@ -209,7 +244,7 @@ class DiaspoOffer extends Model
             // Suppression interdite dès qu'une réservation est payée/confirmée
             // (même règle que DiaspoController::destroyOffer) → masque le bouton côté app.
             'can_delete' => !$this->bookings()->whereIn('status', ['paid', 'confirmed'])->exists(),
-            'formatted_price' => number_format((float) $this->price_per_kg, 0) . ' ' . $this->currency . '/kg',
+            'formatted_price' => number_format($this->pricePerKgForViewer(), 0) . ' ' . $this->currency . '/kg',
             'is_available' => $this->is_available,
             'trip_duration_hours' => $this->trip_duration_hours,
             'user' => $this->relationLoaded('user') && $this->user ? [

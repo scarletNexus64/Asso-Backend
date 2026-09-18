@@ -215,38 +215,21 @@ class OrderController extends Controller
             ->findOrFail($id);
 
         try {
-            DB::transaction(function () use ($request, $order) {
-                $wallet = app(\App\Services\WalletService::class);
-
-                // Rembourser le client selon le mode de paiement
-                if ($order->payment_method === 'kpay_direct') {
-                    // Paiement Mobile Money direct : rien de bloqué dans le wallet.
-                    // Si déjà payé, rembourser en créditant le solde ; sinon rien à faire.
-                    if ($order->payment_status === 'paid') {
-                        $wallet->credit(
-                            $request->user(),
-                            (float) $order->total,
-                            null,
-                            "Remboursement commande #{$order->order_number} — annulée",
-                            ['order_id' => $order->id, 'refund' => true, 'cancel_reason' => $request->reason],
-                            'kpay'
-                        );
-                    }
-                } else {
-                    // Mode wallet : débloquer les fonds escrow.
-                    $walletProvider = str_replace('wallet_', '', $order->payment_method);
-                    if (in_array($walletProvider, ['kpay', 'paypal'])) {
-                        $wallet->unlockFunds(
-                            $request->user(),
-                            (float) $order->total,
-                            "Annulation commande #{$order->order_number}",
-                            'order',
-                            $order->id,
-                            ['cancel_reason' => $request->reason],
-                            $walletProvider
-                        );
-                    }
+            $refunded = 0.0;
+            DB::transaction(function () use ($request, $order, &$refunded) {
+                // Verrou + re-contrôle : le vendeur a pu valider entre-temps.
+                $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+                if (!$locked || $locked->status !== 'pending') {
+                    throw new \Exception('Cette commande a déjà été prise en charge par le vendeur et ne peut plus être annulée.');
                 }
+
+                // Remboursement : déblocage de l'escrow (wallet) ou crédit du Wallet ASSO
+                // (Mobile Money / carte déjà encaissés). Idempotent.
+                $refunded = app(\App\Services\OrderService::class)->refundBuyer(
+                    $order,
+                    "Remboursement commande #{$order->order_number} — annulée",
+                    ['cancel_reason' => $request->reason]
+                );
 
                 // Restaurer le stock décrémenté à la création
                 foreach ($order->items as $item) {
@@ -268,7 +251,10 @@ class OrderController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Commande annulée, fonds débloqués.',
+                'message' => $refunded > 0
+                    ? 'Commande annulée. ' . number_format($refunded, 0, ',', ' ') . ' FCFA sont disponibles sur votre Wallet ASSO.'
+                    : 'Commande annulée.',
+                'refunded_amount' => $refunded,
                 'order' => $this->formatOrder($order->fresh()),
             ]);
         } catch (\Exception $e) {

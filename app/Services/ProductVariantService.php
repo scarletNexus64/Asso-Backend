@@ -214,13 +214,29 @@ class ProductVariantService
         return $result === [] ? null : $result;
     }
 
-    /** Représentation API d'une variante (prix dans la devise du produit + en XAF). */
-    public function presentVariant(ProductVariant $variant, Product $product): array
+    /**
+     * Représentation API d'une variante (prix dans la devise du produit + en XAF).
+     *
+     * $commissionRate (%) : prix PUBLICS majorés de la commission ASSO (vues acheteur).
+     * null = prix vendeur bruts (espace vendeur, catalogue import ASSO).
+     */
+    public function presentVariant(ProductVariant $variant, Product $product, ?float $commissionRate = null): array
     {
         $adjustment = (float) $variant->price_adjustment;
         $basePrice = (float) $product->price;
         $baseXaf = $product->price_xaf !== null ? (float) $product->price_xaf : $basePrice;
         $rate = $basePrice > 0 ? $baseXaf / $basePrice : 1.0;
+
+        $price = $basePrice + $adjustment;
+        $priceXaf = round($baseXaf + $adjustment * $rate, 2);
+        if ($commissionRate !== null) {
+            $currency = (string) ($product->currency ?? 'XAF');
+            $publicBase = CommissionService::markup($basePrice, $commissionRate, $currency);
+            $price = CommissionService::markup($basePrice + $adjustment, $commissionRate, $currency);
+            $priceXaf = CommissionService::markup($priceXaf, $commissionRate, 'XAF');
+            // Ajustement exprimé par rapport au prix public de base.
+            $adjustment = round($price - $publicBase, 2);
+        }
 
         return [
             'id' => $variant->id,
@@ -228,8 +244,8 @@ class ProductVariantService
             'attributes' => $variant->attributes,
             'price_adjustment' => $adjustment,
             'price_adjustment_xaf' => round($adjustment * $rate, 2),
-            'price' => $basePrice + $adjustment,
-            'price_xaf' => round($baseXaf + $adjustment * $rate, 2),
+            'price' => $price,
+            'price_xaf' => $priceXaf,
             'stock' => $variant->stock,
             'is_active' => (bool) $variant->is_active,
         ];

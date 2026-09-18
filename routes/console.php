@@ -80,3 +80,15 @@ Schedule::command('stripe:reconcile-payouts')
 Schedule::command('packages:notify-expiring')
     ->dailyAt('09:00')
     ->withoutOverlapping(300);
+
+/**
+ * =====================================================
+ * FORFAITS VENDEURS — SOUSCRIPTIONS EN ATTENTE
+ * =====================================================
+ *
+ * Active les forfaits payés (Mobile Money / carte) dont la confirmation n'a pas été
+ * suivie par l'application, et clôt les tentatives abandonnées depuis plus de 24 h.
+ */
+Schedule::command('packages:reconcile-pending')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(300);

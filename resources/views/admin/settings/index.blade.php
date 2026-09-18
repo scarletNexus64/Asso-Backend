@@ -232,108 +232,179 @@
         @php
             $rangesData = $commissionRanges->map(fn($r) => [
                 'id' => $r->id,
-                'min_amount' => $r->min_amount,
-                'max_amount' => $r->max_amount,
-                'percentage' => $r->percentage,
-                'is_active' => $r->is_active,
+                'min_amount' => (float) $r->min_amount,
+                'max_amount' => (float) $r->max_amount,
+                'percentage' => (float) $r->percentage,
+                'is_active' => (bool) $r->is_active,
             ])->values()->toArray();
-            if (empty($rangesData)) {
-                $rangesData = [['id' => null, 'min_amount' => '', 'max_amount' => '', 'percentage' => '', 'is_active' => true]];
-            }
         @endphp
         <div x-show="activeTab === 'commissions'" x-cloak
-             x-data="commissionRanges()">
+             x-data="commissionSettings()">
             <form action="{{ route('admin.settings.commissions.update') }}" method="POST" class="p-6">
                 @csrf
                 @method('PUT')
 
-                <div class="space-y-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 class="text-lg font-semibold text-white">Commissions par plage de montant</h3>
-                            <p class="text-sm text-gray-400 mt-1">Configurez le pourcentage de commission qu'Asso prélève sur chaque transaction en fonction du montant.</p>
+                <div class="space-y-8">
+                    <!-- Principe -->
+                    <div class="bg-blue-900/20 border border-blue-800/30 rounded-lg p-4 flex items-start">
+                        <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
+                        <div class="text-sm text-blue-300">
+                            <p class="font-medium mb-1">Toutes les commissions ASSO sont ajoutées au prix payé par le client.</p>
+                            <p class="text-blue-400">Le vendeur, le livreur et le voyageur reçoivent exactement le prix qu'ils ont fixé. Le client voit et paie ce prix majoré de la commission, sans ligne supplémentaire. Un changement de taux s'applique aux prochaines commandes, jamais aux commandes déjà passées.</p>
                         </div>
-                        <button type="button" @click="addRange()"
-                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
-                            <i class="fas fa-plus mr-1"></i> Ajouter une plage
-                        </button>
                     </div>
 
-                    <!-- Table Header -->
-                    <div class="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-sm font-medium text-gray-400 border-b border-dark-200">
-                        <div class="col-span-3">Montant minimum (F)</div>
-                        <div class="col-span-3">Montant maximum (F)</div>
-                        <div class="col-span-2">Commission (%)</div>
-                        <div class="col-span-2 text-center">Actif</div>
-                        <div class="col-span-2 text-center">Actions</div>
-                    </div>
+                    <!-- 1. Vente de produits -->
+                    <section class="space-y-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white"><i class="fas fa-shopping-bag mr-2 text-primary-500"></i>Vente de produits</h3>
+                            <p class="text-sm text-gray-400 mt-1">Pourcentage ajouté au prix fixé par le vendeur.</p>
+                        </div>
 
-                    <!-- Ranges -->
-                    <template x-for="(range, index) in ranges" :key="index">
-                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 px-4 py-3 bg-dark-50 rounded-lg border border-dark-300 items-center">
-                            <!-- Min Amount -->
-                            <div class="col-span-1 md:col-span-3">
-                                <label class="md:hidden block text-xs text-gray-400 mb-1">Montant minimum (F)</label>
-                                <input type="number" :name="'ranges[' + index + '][min_amount]'" x-model="range.min_amount"
-                                       placeholder="1000" min="0" step="1"
-                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                                       required>
-                            </div>
-
-                            <!-- Max Amount -->
-                            <div class="col-span-1 md:col-span-3">
-                                <label class="md:hidden block text-xs text-gray-400 mb-1">Montant maximum (F)</label>
-                                <input type="number" :name="'ranges[' + index + '][max_amount]'" x-model="range.max_amount"
-                                       placeholder="100000" min="0" step="1"
-                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                                       required>
-                            </div>
-
-                            <!-- Percentage -->
-                            <div class="col-span-1 md:col-span-2">
-                                <label class="md:hidden block text-xs text-gray-400 mb-1">Commission (%)</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">Taux par défaut</label>
                                 <div class="relative">
-                                    <input type="number" :name="'ranges[' + index + '][percentage]'" x-model="range.percentage"
-                                           placeholder="5" min="0" max="100" step="0.01"
-                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm pr-8"
-                                           required>
+                                    <input type="number" name="default_sale_commission_rate" x-model.number="defaultRate"
+                                           min="0" max="100" step="0.01" required
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 pr-8">
                                     <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
                                 </div>
+                                <p class="text-xs text-gray-500 mt-1">Appliqué aux prix qui ne tombent dans aucune plage ci-dessous.</p>
                             </div>
 
-                            <!-- Active Toggle -->
-                            <div class="col-span-1 md:col-span-2 flex items-center md:justify-center">
-                                <label class="md:hidden text-xs text-gray-400 mr-2">Actif</label>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" :name="'ranges[' + index + '][is_active]'" x-model="range.is_active"
-                                           value="1" class="sr-only peer">
-                                    <div class="w-11 h-6 bg-dark-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-500 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                                </label>
-                            </div>
-
-                            <!-- Remove Button -->
-                            <div class="col-span-1 md:col-span-2 flex items-center md:justify-center">
-                                <button type="button" @click="removeRange(index)" x-show="ranges.length > 1"
-                                        class="px-3 py-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/40 transition-colors text-sm">
-                                    <i class="fas fa-trash-alt mr-1"></i> Supprimer
-                                </button>
-                            </div>
-                        </div>
-                    </template>
-
-                    <!-- Info -->
-                    <div class="bg-blue-900/20 border border-blue-800/30 rounded-lg p-4">
-                        <div class="flex items-start">
-                            <i class="fas fa-info-circle text-blue-400 mt-0.5 mr-3"></i>
-                            <div class="text-sm text-blue-300">
-                                <p class="font-medium mb-1">Comment fonctionnent les plages de commission ?</p>
-                                <p class="text-blue-400">Pour chaque transaction, le système vérifie dans quelle plage de montant se situe le prix du produit et applique le pourcentage de commission correspondant. Assurez-vous que les plages ne se chevauchent pas.</p>
+                            <!-- Simulateur -->
+                            <div class="bg-dark-50 border border-dark-300 rounded-lg p-4">
+                                <label class="block text-sm font-medium text-gray-300 mb-2">Simulateur</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" x-model.number="simPrice" min="0" step="1" placeholder="Prix vendeur"
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white text-sm">
+                                    <span class="text-gray-400 text-sm">F</span>
+                                </div>
+                                <div class="mt-3 text-sm space-y-1" x-show="simPrice > 0">
+                                    <p class="text-gray-400">Taux appliqué : <span class="text-white font-medium" x-text="fmtRate(rateFor(simPrice))"></span></p>
+                                    <p class="text-gray-400">Le client paie : <span class="text-green-400 font-semibold" x-text="fmt(buyerPrice(simPrice))"></span></p>
+                                    <p class="text-gray-400">Le vendeur reçoit : <span class="text-white font-medium" x-text="fmt(simPrice)"></span></p>
+                                    <p class="text-gray-400">ASSO perçoit : <span class="text-primary-400 font-medium" x-text="fmt(buyerPrice(simPrice) - simPrice)"></span></p>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Submit Button -->
-                    <div class="flex justify-end pt-4">
+                        <div class="flex items-center justify-between pt-2">
+                            <div>
+                                <p class="text-sm font-medium text-gray-300">Taux par tranche de prix <span class="text-gray-500 font-normal">(facultatif)</span></p>
+                                <p class="text-xs text-gray-500">La tranche est choisie selon le prix vendeur du produit.</p>
+                            </div>
+                            <button type="button" @click="addRange()"
+                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                                <i class="fas fa-plus mr-1"></i> Ajouter une tranche
+                            </button>
+                        </div>
+
+                        <p x-show="ranges.length === 0" class="text-sm text-gray-500 italic px-1">Aucune tranche : le taux par défaut s'applique à tous les produits.</p>
+
+                        <div x-show="ranges.length > 0" class="hidden md:grid md:grid-cols-12 gap-4 px-4 py-2 text-sm font-medium text-gray-400 border-b border-dark-200">
+                            <div class="col-span-3">Prix vendeur min. (F)</div>
+                            <div class="col-span-3">Prix vendeur max. (F)</div>
+                            <div class="col-span-2">Commission (%)</div>
+                            <div class="col-span-2 text-center">Active</div>
+                            <div class="col-span-2 text-center">Actions</div>
+                        </div>
+
+                        <template x-for="(range, index) in ranges" :key="index">
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 px-4 py-3 bg-dark-50 rounded-lg border border-dark-300 items-center">
+                                <div class="md:col-span-3">
+                                    <label class="md:hidden block text-xs text-gray-400 mb-1">Prix vendeur min. (F)</label>
+                                    <input type="number" :name="'ranges[' + index + '][min_amount]'" x-model.number="range.min_amount"
+                                           placeholder="0" min="0" step="1" required
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500">
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="md:hidden block text-xs text-gray-400 mb-1">Prix vendeur max. (F)</label>
+                                    <input type="number" :name="'ranges[' + index + '][max_amount]'" x-model.number="range.max_amount"
+                                           placeholder="100000" min="0" step="1" required
+                                           class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500">
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="md:hidden block text-xs text-gray-400 mb-1">Commission (%)</label>
+                                    <div class="relative">
+                                        <input type="number" :name="'ranges[' + index + '][percentage]'" x-model.number="range.percentage"
+                                               placeholder="5" min="0" max="100" step="0.01" required
+                                               class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white text-sm pr-8 focus:ring-2 focus:ring-primary-500">
+                                        <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                    </div>
+                                </div>
+                                <div class="md:col-span-2 flex items-center md:justify-center">
+                                    <label class="md:hidden text-xs text-gray-400 mr-2">Active</label>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" :name="'ranges[' + index + '][is_active]'" x-model="range.is_active" value="1" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-dark-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                                    </label>
+                                </div>
+                                <div class="md:col-span-2 flex items-center md:justify-center">
+                                    <button type="button" @click="removeRange(index)"
+                                            class="px-3 py-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/40 transition-colors text-sm">
+                                        <i class="fas fa-trash-alt mr-1"></i> Supprimer
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </section>
+
+                    <!-- 2. Diaspo -->
+                    <section class="space-y-4 border-t border-dark-200 pt-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white"><i class="fas fa-suitcase-rolling mr-2 text-primary-500"></i>Diaspo (échange de kilos)</h3>
+                            <p class="text-sm text-gray-400 mt-1">Pourcentage ajouté au prix fixé par le voyageur pour chaque réservation.</p>
+                        </div>
+                        <div class="max-w-xs">
+                            <div class="relative">
+                                <input type="number" name="diaspo_commission_rate"
+                                       value="{{ old('diaspo_commission_rate', $commissionSettings['diaspo_commission_rate']) }}"
+                                       min="0" max="100" step="0.01" required
+                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 pr-8">
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 3. Livraison -->
+                    <section class="space-y-4 border-t border-dark-200 pt-6">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white"><i class="fas fa-truck mr-2 text-primary-500"></i>Livraison</h3>
+                            <p class="text-sm text-gray-400 mt-1">Montant fixe ajouté aux frais de chaque course. Il se règle sur la fiche de chaque entreprise de livraison.</p>
+                        </div>
+                        @if($deliveryCommissions->isEmpty())
+                            <p class="text-sm text-gray-500 italic">Aucune entreprise de livraison enregistrée.</p>
+                        @else
+                            <div class="divide-y divide-dark-200 border border-dark-300 rounded-lg">
+                                @foreach($deliveryCommissions as $dc)
+                                    <div class="flex items-center justify-between px-4 py-3">
+                                        <div>
+                                            <p class="text-white text-sm font-medium">{{ $dc['name'] }}</p>
+                                            <p class="text-xs text-gray-500">{{ $dc['zones'] }} zone(s)</p>
+                                        </div>
+                                        <div class="flex items-center gap-4">
+                                            <span class="text-sm text-gray-300">
+                                                @if($dc['min'] === null)
+                                                    —
+                                                @elseif($dc['min'] == $dc['max'])
+                                                    + {{ number_format($dc['min'], 0, ',', ' ') }} F / course
+                                                @else
+                                                    + {{ number_format($dc['min'], 0, ',', ' ') }} à {{ number_format($dc['max'], 0, ',', ' ') }} F / course
+                                                @endif
+                                            </span>
+                                            <a href="{{ route('admin.deliverers.edit', $dc['id']) }}" class="text-primary-400 hover:text-primary-300 text-sm">
+                                                <i class="fas fa-pen mr-1"></i>Modifier
+                                            </a>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </section>
+
+                    <div class="flex justify-end pt-4 border-t border-dark-200">
                         <button type="submit"
                                 class="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-md">
                             <i class="fas fa-save mr-2"></i> Enregistrer les commissions
@@ -348,17 +419,34 @@
 
 @push('scripts')
 <script>
-    function commissionRanges() {
+    function commissionSettings() {
         return {
+            defaultRate: {{ (float) old('default_sale_commission_rate', $commissionSettings['default_sale_commission_rate']) }},
             ranges: @json($rangesData),
+            simPrice: 10000,
             addRange() {
-                this.ranges.push({ id: null, min_amount: '', max_amount: '', percentage: '', is_active: true });
+                const last = this.ranges[this.ranges.length - 1];
+                const min = last && last.max_amount !== '' ? Number(last.max_amount) + 1 : 0;
+                this.ranges.push({ id: null, min_amount: min, max_amount: '', percentage: '', is_active: true });
             },
             removeRange(index) {
-                if (this.ranges.length > 1) {
-                    this.ranges.splice(index, 1);
-                }
-            }
+                this.ranges.splice(index, 1);
+            },
+            // Même règle que CommissionService::rateFor (plage active couvrant le prix, sinon défaut).
+            rateFor(price) {
+                const r = this.ranges.find(r => r.is_active && r.min_amount !== '' && r.max_amount !== ''
+                    && Number(r.min_amount) <= price && Number(r.max_amount) >= price);
+                return r ? Number(r.percentage || 0) : Number(this.defaultRate || 0);
+            },
+            buyerPrice(price) {
+                return Math.round(price * (1 + this.rateFor(price) / 100));
+            },
+            fmt(v) {
+                return Math.round(v).toLocaleString('fr-FR') + ' F';
+            },
+            fmtRate(v) {
+                return v.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' %';
+            },
         }
     }
 </script>
