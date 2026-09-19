@@ -40,10 +40,6 @@
             <label class="block text-xs text-gray-400 mb-1">Délai de route</label>
             <input type="text" name="lead_time" value="{{ $route?->lead_time }}" placeholder="24 h" class="{{ $input }}">
         </div>
-        <div>
-            <label class="block text-xs text-gray-400 mb-1">Commission ASSO (FCFA)</label>
-            <input type="number" name="asso_commission" min="0" step="1" value="{{ $route?->asso_commission ?? 0 }}" class="{{ $input }}">
-        </div>
     </div>
 
     <div class="mt-3">

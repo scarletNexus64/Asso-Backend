@@ -372,36 +372,17 @@
                     <section class="space-y-4 border-t border-dark-200 pt-6">
                         <div>
                             <h3 class="text-lg font-semibold text-white"><i class="fas fa-truck mr-2 text-primary-500"></i>Livraison</h3>
-                            <p class="text-sm text-gray-400 mt-1">Montant fixe ajouté aux frais de chaque course. Il se règle sur la fiche de chaque entreprise de livraison.</p>
+                            <p class="text-sm text-gray-400 mt-1">Pourcentage du prix hors taxe du partenaire (SOLEX, livreurs…), ajouté aux frais de livraison payés par l'acheteur. Ex. 10 % sur une course à 1 500 F HT = 150 F.</p>
                         </div>
-                        @if($deliveryCommissions->isEmpty())
-                            <p class="text-sm text-gray-500 italic">Aucune entreprise de livraison enregistrée.</p>
-                        @else
-                            <div class="divide-y divide-dark-200 border border-dark-300 rounded-lg">
-                                @foreach($deliveryCommissions as $dc)
-                                    <div class="flex items-center justify-between px-4 py-3">
-                                        <div>
-                                            <p class="text-white text-sm font-medium">{{ $dc['name'] }}</p>
-                                            <p class="text-xs text-gray-500">{{ $dc['zones'] }} zone(s)</p>
-                                        </div>
-                                        <div class="flex items-center gap-4">
-                                            <span class="text-sm text-gray-300">
-                                                @if($dc['min'] === null)
-                                                    —
-                                                @elseif($dc['min'] == $dc['max'])
-                                                    + {{ number_format($dc['min'], 0, ',', ' ') }} F / course
-                                                @else
-                                                    + {{ number_format($dc['min'], 0, ',', ' ') }} à {{ number_format($dc['max'], 0, ',', ' ') }} F / course
-                                                @endif
-                                            </span>
-                                            <a href="{{ route('admin.deliverers.edit', $dc['id']) }}" class="text-primary-400 hover:text-primary-300 text-sm">
-                                                <i class="fas fa-pen mr-1"></i>Modifier
-                                            </a>
-                                        </div>
-                                    </div>
-                                @endforeach
+                        <div class="max-w-xs">
+                            <div class="relative">
+                                <input type="number" name="delivery_commission_rate"
+                                       value="{{ old('delivery_commission_rate', $commissionSettings['delivery_commission_rate']) }}"
+                                       min="0" max="100" step="0.01" required
+                                       class="w-full px-3 py-2 bg-dark-100 border border-dark-300 rounded-lg text-white focus:ring-2 focus:ring-primary-500 pr-8">
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
                             </div>
-                        @endif
+                        </div>
                     </section>
 
                     <!-- 4. Commerciaux (P6) -->

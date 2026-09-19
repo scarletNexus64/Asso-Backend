@@ -51,6 +51,12 @@ class DeliveryQuoteService
         return (float) Setting::get('delivery_default_weight_kg', self::DEFAULT_PRODUCT_WEIGHT_KG);
     }
 
+    /** Commission ASSO sur la livraison (%), appliquée au prix hors taxe du partenaire. */
+    public static function commissionRate(): float
+    {
+        return (float) Setting::get('delivery_commission_rate', 0);
+    }
+
     public static function vatRate(): float
     {
         return (float) Setting::get('delivery_vat_rate', self::DEFAULT_VAT_RATE);
@@ -103,16 +109,16 @@ class DeliveryQuoteService
     }
 
     /**
-     * Couverture de livraison autour d'un point (carte « Choisir la position » de l'acheteur) :
-     * quartiers et zones à afficher, partenaires qui livrent à domicile à ce point exact,
-     * et agences de la ville pour l'interurbain.
+     * Couverture de livraison (carte « Choisir la position » de l'acheteur) : toutes les zones
+     * de livraison (surface de chaque zone urbaine, zones des livreurs), partenaires qui livrent
+     * à domicile au point choisi, et agences de sa ville pour l'interurbain.
      */
     public function coverage(float $lat, float $lng): array
     {
-        $displayKm = 20;
         $radius = self::radiusKm();
         $quarters = [];
         $zones = [];
+        $zoneAreas = [];
         $servedBy = [];
         $servedCity = null;
 
@@ -123,10 +129,12 @@ class DeliveryQuoteService
             ->get();
         foreach ($grids as $grid) {
             foreach ($grid->zones as $zone) {
+                $points = [];
                 foreach (DeliveryCityGrid::quartersOf($zone) as $quarter) {
-                    if ($quarter['lat'] === null || $this->distanceKm($lat, $lng, $quarter['lat'], $quarter['lng']) > $displayKm) {
+                    if ($quarter['lat'] === null || $quarter['lng'] === null) {
                         continue;
                     }
+                    $points[] = [$quarter['lat'], $quarter['lng']];
                     $quarters[] = [
                         'name' => $quarter['name'],
                         'latitude' => $quarter['lat'],
@@ -134,6 +142,18 @@ class DeliveryQuoteService
                         'zone' => (int) $zone['code'],
                         'zone_label' => $zone['label'],
                         'company_name' => $grid->company->name,
+                    ];
+                }
+                // Surface de la zone : enveloppe de ses quartiers (dessinée sur la carte).
+                if ($points) {
+                    $zoneAreas[] = [
+                        'company_name' => $grid->company->name,
+                        'city' => $grid->city,
+                        'zone' => (int) $zone['code'],
+                        'label' => $zone['label'],
+                        'latitude' => array_sum(array_column($points, 0)) / count($points),
+                        'longitude' => array_sum(array_column($points, 1)) / count($points),
+                        'polygon' => array_map(fn ($p) => ['latitude' => $p[0], 'longitude' => $p[1]], self::convexHull($points)),
                     ];
                 }
             }
@@ -145,7 +165,7 @@ class DeliveryQuoteService
                     'type' => 'city_grid',
                     'city' => $grid->city,
                     'zone' => $nearest['zone'],
-                    'zone_label' => $grid->zoneLabel($nearest['zone'], 99),
+                    'zone_label' => $grid->zoneLabel($nearest['zone'], 0),
                     'quarter' => $nearest['name'],
                     'distance_km' => $nearest['distance_km'],
                     'vehicles' => collect($grid->vehicles)->pluck('label')->values()->all(),
@@ -163,9 +183,6 @@ class DeliveryQuoteService
                     continue;
                 }
                 $distance = $this->distanceKm($lat, $lng, (float) $zone->center_latitude, (float) $zone->center_longitude);
-                if ($distance > $displayKm + $radius) {
-                    continue;
-                }
                 $zones[] = [
                     'name' => $zone->name,
                     'latitude' => (float) $zone->center_latitude,
@@ -221,9 +238,44 @@ class DeliveryQuoteService
             'served' => $servedBy !== [],
             'served_by' => $servedBy,
             'agencies' => array_values($agencies),
+            'zone_areas' => $zoneAreas,
             'quarters' => $quarters,
             'zones' => $zones,
         ];
+    }
+
+    /**
+     * Enveloppe convexe de points [lat, lng] (chaîne monotone), dans l'ordre du contour.
+     *
+     * @return array<int, array{0: float, 1: float}>
+     */
+    private static function convexHull(array $points): array
+    {
+        $points = array_values(array_unique($points, SORT_REGULAR));
+        if (count($points) < 3) {
+            return $points;
+        }
+        usort($points, fn ($a, $b) => [$a[1], $a[0]] <=> [$b[1], $b[0]]);
+        $cross = fn ($o, $a, $b) => ($a[1] - $o[1]) * ($b[0] - $o[0]) - ($a[0] - $o[0]) * ($b[1] - $o[1]);
+
+        $lower = [];
+        foreach ($points as $p) {
+            while (count($lower) >= 2 && $cross($lower[count($lower) - 2], $lower[count($lower) - 1], $p) <= 0) {
+                array_pop($lower);
+            }
+            $lower[] = $p;
+        }
+        $upper = [];
+        foreach (array_reverse($points) as $p) {
+            while (count($upper) >= 2 && $cross($upper[count($upper) - 2], $upper[count($upper) - 1], $p) <= 0) {
+                array_pop($upper);
+            }
+            $upper[] = $p;
+        }
+        array_pop($lower);
+        array_pop($upper);
+
+        return array_merge($lower, $upper);
     }
 
     /**
@@ -422,7 +474,6 @@ class DeliveryQuoteService
         return $this->offer(
             company: $company,
             carrierPrice: $zonePrice['price'],
-            assoCommission: (float) $pricelist->asso_commission,
             grid: $zonePrice['grid'],
             rangeLabel: $zonePrice['range_label'],
             weightKg: $cart['weight_kg'],
@@ -557,7 +608,7 @@ class DeliveryQuoteService
                 // Quartier déduit de la position de l'acheteur (pré-sélection dans l'app).
                 'detected_quarter' => $quarter ? null : ($detected[$first->id] ?? null),
                 'destination_zone' => $destZone,
-                'destination_zone_label' => $destZone ? $first->zoneLabel($destZone, 99) : null,
+                'destination_zone_label' => $destZone ? $first->zoneLabel($destZone, 0) : null,
                 // L'acheteur doit indiquer son quartier pour être chiffré.
                 'quarter_required' => $destZone === null,
                 'quarter_options' => $first->quarterOptions(),
@@ -565,7 +616,7 @@ class DeliveryQuoteService
         ];
     }
 
-    /** Une offre par véhicule capable de porter le colis, avec son délai estimé. */
+    /** Une offre par partenaire, véhicule choisi d'après le poids du colis, avec son délai estimé. */
     private function cityGridQuotes(array $cart, ?string $destCity, ?string $destCountry, array $gridContext): array
     {
         [$originCity, $originCountry] = $cart['origin'];
@@ -589,15 +640,12 @@ class DeliveryQuoteService
                 continue;
             }
 
-            foreach ($grid->vehiclesFor($cart['weight_kg']) as $vehicle) {
-                $price = $grid->price($vehicle['code'], $originZone, $destZone);
-                if ($price === null) {
-                    continue;
-                }
+            // Une offre par partenaire : véhicule choisi d'après le poids du colis.
+            if ($chosen = $grid->vehicleFor($cart['weight_kg'], $originZone, $destZone)) {
+                ['vehicle' => $vehicle, 'price' => $price] = $chosen;
                 $quotes[] = $this->offer(
                     company: $grid->company,
                     carrierPrice: $price,
-                    assoCommission: (float) $grid->asso_commission,
                     grid: null,
                     rangeLabel: $vehicle['label'] . ' — ' . $grid->zoneLabel($originZone, 0) . ' → ' . $grid->zoneLabel($destZone, 0),
                     weightKg: $cart['weight_kg'],
@@ -605,9 +653,10 @@ class DeliveryQuoteService
                         'delivery_mode' => 'local',
                         'service_type' => DelivererCompany::SERVICE_LOCAL,
                         'zone_id' => null,
-                        'zone_name' => $grid->zoneLabel($destZone, 99),
+                        // L'acheteur a choisi sa position sur la carte : pas de détail des quartiers.
+                        'zone_name' => $grid->zoneLabel($destZone, 0),
                         'route_id' => null,
-                        'route_label' => 'De ' . $grid->zoneLabel($originZone) . ' à ' . $grid->zoneLabel($destZone),
+                        'route_label' => "Livraison à domicile à {$grid->city} · " . $grid->zoneLabel($originZone, 0) . ' → ' . $grid->zoneLabel($destZone, 0),
                         'city' => $grid->city,
                         'distance_km' => null,
                         'lead_time' => $vehicle['lead_time'] ?? null,
@@ -648,15 +697,9 @@ class DeliveryQuoteService
             if ($grid->deliverer_company_id !== $company->id || !$grid->agency_zone || !$destZone) {
                 continue;
             }
-            $best = null;
-            foreach ($grid->vehiclesFor($cart['weight_kg']) as $vehicle) {
-                $price = $grid->price($vehicle['code'], $grid->agency_zone, $destZone);
-                if ($price !== null && (!$best || $price < $best['price'])) {
-                    $best = ['grid' => $grid, 'vehicle' => $vehicle, 'price' => $price, 'zone' => $destZone];
-                }
-            }
-            if ($best) {
-                return $best;
+            // Véhicule choisi d'après le poids du colis, comme en urbain.
+            if ($chosen = $grid->vehicleFor($cart['weight_kg'], $grid->agency_zone, $destZone)) {
+                return ['grid' => $grid, 'vehicle' => $chosen['vehicle'], 'price' => $chosen['price'], 'zone' => $destZone];
             }
         }
 
@@ -721,7 +764,6 @@ class DeliveryQuoteService
             $quotes[] = $this->offer(
                 company: $company,
                 carrierPrice: $grid['price'],
-                assoCommission: (float) $route->asso_commission,
                 grid: $grid,
                 rangeLabel: $grid['range_label'],
                 weightKg: $cart['weight_kg'],
@@ -741,7 +783,6 @@ class DeliveryQuoteService
                     $quotes[] = $this->offer(
                         company: $company,
                         carrierPrice: $routeLeg['price'] + $gridLeg['price'],
-                        assoCommission: (float) $route->asso_commission + (float) $cityGrid->asso_commission,
                         grid: $grid,
                         rangeLabel: $grid['range_label'],
                         weightKg: $cart['weight_kg'],
@@ -771,7 +812,6 @@ class DeliveryQuoteService
             $quotes[] = $this->offer(
                 company: $company,
                 carrierPrice: $grid['price'] + $lastMile['price']['price'],
-                assoCommission: (float) $route->asso_commission + (float) $lastMile['pricelist']->asso_commission,
                 grid: $grid,
                 rangeLabel: $grid['range_label'],
                 weightKg: $cart['weight_kg'],
@@ -796,13 +836,15 @@ class DeliveryQuoteService
     }
 
     /** Offre complète : tout ce que l'acheteur doit voir avant de valider. */
-    private function offer(DelivererCompany $company, float $carrierPrice, float $assoCommission, ?array $grid, string $rangeLabel, float $weightKg, array $extra): array
+    private function offer(DelivererCompany $company, float $carrierPrice, ?array $grid, string $rangeLabel, float $weightKg, array $extra): array
     {
         $carrierPrice = round($carrierPrice);
         $vatRate = $company->prices_exclude_vat ? self::vatRate() : 0.0;
         $vatAmount = round($carrierPrice * $vatRate / 100);
         $carrierTotal = $carrierPrice + $vatAmount;
-        $total = $carrierTotal + round($assoCommission);
+        // Commission ASSO : taux global (Paramètres → Commissions) sur le prix HT du partenaire.
+        $assoCommission = round($carrierPrice * self::commissionRate() / 100);
+        $total = $carrierTotal + $assoCommission;
 
         return $extra + [
             'company_id' => $company->id,

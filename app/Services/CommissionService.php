@@ -22,7 +22,7 @@ use Illuminate\Support\Collection;
  * changement de taux ultérieur ne modifie jamais une commande passée.
  *
  * Les autres commissions restent des majorations configurées dans l'admin :
- *  - livraison : montant fixe `asso_commission` de chaque grille tarifaire livreur ;
+ *  - livraison : Setting `delivery_commission_rate` (%) du prix HT du partenaire ;
  *  - Diaspo    : Setting `diaspo_commission_rate` (%) ajouté au prix du voyageur.
  */
 class CommissionService

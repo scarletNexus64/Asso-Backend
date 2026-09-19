@@ -173,13 +173,32 @@ class DeliveryCityGrid extends Model
         return isset($prices[$key]) && $prices[$key] !== '' ? (float) $prices[$key] : null;
     }
 
-    /** Véhicules capables de porter ce poids, du plus léger au plus lourd. */
+    /** Véhicules capables de porter ce poids, du plus petit au plus gros (sans limite en dernier). */
     public function vehiclesFor(float $weightKg): array
     {
         return collect($this->vehicles)
             ->filter(fn ($v) => empty($v['max_weight_kg']) || $weightKg <= (float) $v['max_weight_kg'])
+            ->sortBy(fn ($v) => empty($v['max_weight_kg']) ? PHP_FLOAT_MAX : (float) $v['max_weight_kg'])
             ->values()
             ->all();
+    }
+
+    /**
+     * Véhicule choisi pour un colis : le plus petit dont le poids max. couvre le colis et qui a
+     * un prix entre ces deux zones (ex. 2 kg → moto, 45 kg → tricycle, 450 kg → camionnette).
+     *
+     * @return array{vehicle: array, price: float}|null
+     */
+    public function vehicleFor(float $weightKg, int $fromZone, int $toZone): ?array
+    {
+        foreach ($this->vehiclesFor($weightKg) as $vehicle) {
+            $price = $this->price($vehicle['code'], $fromZone, $toZone);
+            if ($price !== null) {
+                return ['vehicle' => $vehicle, 'price' => $price];
+            }
+        }
+
+        return null;
     }
 
     /** Quartiers proposés à l'acheteur, par zone. */

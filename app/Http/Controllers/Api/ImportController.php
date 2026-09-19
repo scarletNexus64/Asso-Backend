@@ -32,11 +32,8 @@ class ImportController extends Controller
         $targetCurrency = $this->targetCurrency($request);
         $country = ImportCountry::where('code', $code)->where('is_active', true)->firstOrFail();
 
-        $products = Product::query()
-            ->where('is_wholesale', true)
+        $products = $this->catalogQuery($request->input('q'))
             ->where('origin_country', $code)
-            ->where('status', 'active')
-            ->whereHas('shop', fn ($query) => $query->where('status', 'active'))
             ->with(['priceTiers', 'primaryImage', 'images', 'variants'])
             ->latest()
             ->get()
@@ -53,6 +50,42 @@ class ImportController extends Controller
             'currency' => $targetCurrency,
             'shipping_options' => $shippingOptions,
         ]);
+    }
+
+    /**
+     * Nombre de produits importés correspondant à une recherche, pour chaque pays actif
+     * (l'app affiche « Turquie · 3 » sur les onglets pays).
+     * GET /v1/import/search?q=chargeur
+     */
+    public function searchCounts(Request $request)
+    {
+        $request->validate(['q' => 'required|string|max:100']);
+        $counts = $this->catalogQuery($request->input('q'))
+            ->whereIn('origin_country', ImportCountry::where('is_active', true)->pluck('code'))
+            ->selectRaw('origin_country, count(*) as total')
+            ->groupBy('origin_country')
+            ->pluck('total', 'origin_country')
+            ->map(fn ($n) => (int) $n);
+
+        return response()->json(['success' => true, 'q' => $request->input('q'), 'counts' => $counts]);
+    }
+
+    /** Produits gros actifs, filtrés par la recherche (nom, description, caractéristiques). */
+    private function catalogQuery(?string $search)
+    {
+        $query = Product::query()
+            ->where('is_wholesale', true)
+            ->where('status', 'active')
+            ->whereHas('shop', fn ($q) => $q->where('status', 'active'));
+
+        foreach (preg_split('/\s+/', trim((string) $search), -1, PREG_SPLIT_NO_EMPTY) as $word) {
+            $like = '%' . mb_strtolower(addcslashes($word, '%_\\')) . '%';
+            $query->where(fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(description) LIKE ?', [$like])
+                ->orWhereRaw('LOWER(characteristics) LIKE ?', [$like]));
+        }
+
+        return $query;
     }
 
     /**

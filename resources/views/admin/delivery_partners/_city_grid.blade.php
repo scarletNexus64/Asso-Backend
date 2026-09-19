@@ -129,10 +129,6 @@
             </select>
             <p class="mt-1 text-xs text-gray-500">Départ de la livraison à domicile après un trajet interurbain arrivant à {{ $grid->city }}.</p>
         </div>
-        <div>
-            <label class="block text-xs text-gray-400 mb-1">Commission ASSO (FCFA)</label>
-            <input type="number" step="1" min="0" name="asso_commission" value="{{ $grid->asso_commission }}" class="{{ $input }}">
-        </div>
         <div class="flex items-center justify-between gap-3">
             <label class="flex items-center gap-2 text-sm text-gray-300">
                 <input type="checkbox" name="is_active" value="1" @checked($grid->is_active) class="w-4 h-4 rounded bg-dark-50">

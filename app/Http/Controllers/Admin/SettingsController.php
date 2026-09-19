@@ -27,30 +27,12 @@ class SettingsController extends Controller
         $commissionSettings = [
             'default_sale_commission_rate' => (float) Setting::get('default_sale_commission_rate', 0),
             'diaspo_commission_rate' => (float) Setting::get('diaspo_commission_rate', 5),
+            'delivery_commission_rate' => \App\Services\DeliveryQuoteService::commissionRate(),
             // P6 : commission des commerciaux (payée par ASSO, pas une majoration).
             'sales_commission_rate' => app(\App\Services\SalesCommissionService::class)->defaultRate(),
         ];
-        // Livraison : montant fixe par grille tarifaire, réglé sur chaque entreprise.
-        $deliveryCommissions = \App\Models\DelivererCompany::with('deliveryZones.pricelist')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($company) {
-                $amounts = $company->deliveryZones
-                    ->map(fn ($z) => $z->pricelist?->asso_commission)
-                    ->filter(fn ($v) => $v !== null)
-                    ->map(fn ($v) => (float) $v);
-
-                return [
-                    'id' => $company->id,
-                    'name' => $company->name,
-                    'zones' => $company->deliveryZones->count(),
-                    'min' => $amounts->min(),
-                    'max' => $amounts->max(),
-                ];
-            });
-
         return view('admin.settings.index', compact(
-            'generalSettings', 'systemSettings', 'commissionRanges', 'commissionSettings', 'deliveryCommissions'
+            'generalSettings', 'systemSettings', 'commissionRanges', 'commissionSettings'
         ));
     }
 
@@ -469,6 +451,7 @@ class SettingsController extends Controller
             $validated = $request->validate([
                 'default_sale_commission_rate' => 'required|numeric|min:0|max:100',
                 'diaspo_commission_rate' => 'required|numeric|min:0|max:100',
+                'delivery_commission_rate' => 'nullable|numeric|min:0|max:100',
                 'sales_commission_rate' => 'nullable|numeric|min:0|max:100',
                 // Plages facultatives : sans plage, le taux par défaut s'applique partout.
                 'ranges' => 'nullable|array',
@@ -492,6 +475,9 @@ class SettingsController extends Controller
             DB::transaction(function () use ($validated, $ranges) {
                 Setting::set('default_sale_commission_rate', $validated['default_sale_commission_rate'], 'string', 'commissions', 'Majoration ASSO par défaut sur le prix des produits (%)');
                 Setting::set('diaspo_commission_rate', $validated['diaspo_commission_rate'], 'string', 'commissions', 'Majoration ASSO sur les réservations Diaspo (%)');
+                if (isset($validated['delivery_commission_rate'])) {
+                    Setting::set('delivery_commission_rate', $validated['delivery_commission_rate'], 'string', 'commissions', 'Commission ASSO sur la livraison (% du prix hors taxe du partenaire)');
+                }
                 if (isset($validated['sales_commission_rate'])) {
                     Setting::set('sales_commission_rate', $validated['sales_commission_rate'], 'string', 'commissions', 'Commission des commerciaux sur les forfaits souscrits avec leur code (%)');
                 }

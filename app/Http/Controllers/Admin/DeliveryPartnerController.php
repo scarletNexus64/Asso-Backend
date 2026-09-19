@@ -33,6 +33,7 @@ class DeliveryPartnerController extends Controller
             'radiusKm' => DeliveryQuoteService::radiusKm(),
             'vatRate' => DeliveryQuoteService::vatRate(),
             'defaultWeightKg' => DeliveryQuoteService::defaultProductWeightKg(),
+            'commissionRate' => DeliveryQuoteService::commissionRate(),
         ]);
     }
 
@@ -142,7 +143,6 @@ class DeliveryPartnerController extends Controller
             'zones' => collect(range(1, $count))
                 ->map(fn ($code) => ['code' => $code, 'label' => "Zone {$code}", 'quarters' => []])->all(),
             'vehicles' => $vehicles,
-            'asso_commission' => $template ? (float) $template->asso_commission : 0,
             'is_active' => false,
         ]);
 
@@ -170,7 +170,6 @@ class DeliveryPartnerController extends Controller
             'vehicles.*.prices' => 'nullable|array',
             'vehicles.*.prices.*' => 'nullable|numeric|min:0',
             'agency_zone' => 'nullable|integer|min:1',
-            'asso_commission' => 'nullable|numeric|min:0',
         ]);
 
         $zones = collect($grid->zones)->map(function ($zone) use ($validated) {
@@ -216,7 +215,6 @@ class DeliveryPartnerController extends Controller
             'zones' => $zones,
             'vehicles' => $vehicles,
             'agency_zone' => $validated['agency_zone'] ?? null,
-            'asso_commission' => (float) ($validated['asso_commission'] ?? 0),
             'is_active' => $request->boolean('is_active'),
         ]);
 
@@ -298,7 +296,6 @@ class DeliveryPartnerController extends Controller
             'destination_country' => ['required', Rule::in($countries)],
             'destination_city' => 'nullable|string|max:120',
             'lead_time' => 'nullable|string|max:60',
-            'asso_commission' => 'nullable|numeric|min:0',
             'extra_per_kg' => 'nullable|numeric|min:0',
             'ranges' => 'required|array|min:1',
             'ranges.*.label' => 'nullable|string|max:60',
@@ -338,7 +335,6 @@ class DeliveryPartnerController extends Controller
             // « Et vice versa » uniquement à l'intérieur du Cameroun.
             'bidirectional' => !$international && $request->boolean('bidirectional'),
             'lead_time' => $validated['lead_time'] ?? null,
-            'asso_commission' => (float) ($validated['asso_commission'] ?? 0),
             'pricing_data' => [
                 'ranges' => $ranges,
                 'extra_per_kg' => (float) ($validated['extra_per_kg'] ?? 0),

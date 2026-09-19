@@ -41,4 +41,31 @@ class ImportCountriesTest extends TestCase
         $this->assertSame(3, ImportCountry::count());
         $this->assertNotNull(ImportCountry::where('code', 'TR')->first());
     }
+
+    public function test_search_filters_import_catalog_and_counts_results_per_country(): void
+    {
+        foreach ([['CN', 'Chine'], ['TR', 'Turquie'], ['AE', 'Dubaï']] as $i => [$code, $name]) {
+            ImportCountry::create(['code' => $code, 'name' => $name, 'flag' => '', 'sort_order' => $i, 'is_active' => true]);
+        }
+        $seller = \App\Models\User::factory()->create();
+        $shop = \App\Models\Shop::create(['user_id' => $seller->id, 'name' => 'Import', 'slug' => 'imp-' . uniqid(), 'status' => 'active']);
+        $category = \App\Models\Category::create(['name' => 'Tech', 'slug' => 'tech-' . uniqid()]);
+        foreach ([['CN', 'Chargeur rapide USB-C'], ['CN', 'Écouteurs Bluetooth'], ['TR', 'Chargeur sans fil'], ['AE', 'Parfum oud']] as [$country, $name]) {
+            \App\Models\Product::create([
+                'user_id' => $seller->id, 'shop_id' => $shop->id, 'category_id' => $category->id,
+                'name' => $name, 'slug' => \Illuminate\Support\Str::slug($name) . uniqid(), 'price' => 1000, 'currency' => 'XAF',
+                'stock' => 10, 'status' => 'active', 'is_wholesale' => true, 'origin_country' => $country,
+            ]);
+        }
+
+        $names = collect($this->getJson('/api/v1/import/CN/products?q=CHARGEUR')->assertOk()->json('products'))->pluck('name')->all();
+        $this->assertSame(['Chargeur rapide USB-C'], $names);
+        $this->assertCount(2, $this->getJson('/api/v1/import/CN/products')->json('products'));
+
+        $this->getJson('/api/v1/import/search?q=chargeur')->assertOk()
+            ->assertJsonPath('counts.CN', 1)
+            ->assertJsonPath('counts.TR', 1)
+            ->assertJsonMissingPath('counts.AE');
+        $this->getJson('/api/v1/import/search')->assertStatus(422);
+    }
 }

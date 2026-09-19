@@ -115,6 +115,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/import/products/{id}/image', [\App\Http\Controllers\Api\ImportController::class, 'image']);
     Route::get('/import/product-images/{image}', [\App\Http\Controllers\Api\ImportController::class, 'productImage']);
     Route::get('/import/products/{id}', [\App\Http\Controllers\Api\ImportController::class, 'show']);
+    Route::get('/import/search', [\App\Http\Controllers\Api\ImportController::class, 'searchCounts'])->middleware('throttle:60,1');
     Route::get('/import/{code}/products', [\App\Http\Controllers\Api\ImportController::class, 'products']);
     Route::get('/import/{code}/shipping', [\App\Http\Controllers\Api\ImportController::class, 'shipping']);
 

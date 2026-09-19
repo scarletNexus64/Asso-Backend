@@ -70,6 +70,11 @@
                 </button>
             </div>
         </form>
+        <p class="mt-4 text-sm text-gray-400">
+            <i class="fas fa-percent mr-1 text-primary-400"></i>
+            Commission ASSO sur la livraison : <span class="text-white font-medium">{{ rtrim(rtrim(number_format($commissionRate, 2, ',', ''), '0'), ',') }} %</span> du prix hors taxe du partenaire, ajoutée au prix payé par l'acheteur.
+            <a href="{{ route('admin.settings.index') }}#commissions" class="text-primary-400 hover:text-primary-300 ml-1">Modifier dans Commissions</a>
+        </p>
     </div>
 
     <!-- Liste -->

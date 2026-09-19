@@ -343,6 +343,8 @@ class PaymentsWalletMonetizationTest extends TestCase
     public function test_order_charges_marked_up_price_and_seller_receives_exactly_his_price(): void
     {
         \App\Models\Setting::set('default_sale_commission_rate', '5', 'string', 'commissions');
+        // Commission livraison : 25 % du prix HT du livreur (400) = 100.
+        \App\Models\Setting::set('delivery_commission_rate', '25', 'string', 'commissions');
         $c = $this->catalog(10000);
         $client = User::factory()->create();
         $asso = User::factory()->create(['email' => 'admin@asso.com']);
