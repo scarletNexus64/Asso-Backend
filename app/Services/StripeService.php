@@ -827,18 +827,21 @@ class StripeService
      * Crée un PaymentIntent pour ENCAISSER un paiement carte (réservation / achat).
      *
      * Montant exprimé dans l'unité principale de la devise (ex. dollars) et converti
-     * ici en plus petite unité (centimes) — valable pour USD/EUR/GBP (2 décimales).
-     * `automatic_payment_methods` est activé : la carte est confirmée côté client avec
-     * le `client_secret` (SDK Stripe mobile). La confirmation du paiement côté serveur
-     * se fait ensuite via retrievePaymentIntent() (polling) et/ou le webhook Stripe
-     * (payment_intent.succeeded).
+     * ici en plus petite unité : centimes pour USD/EUR/GBP, unité entière pour les
+     * devises sans décimales de Stripe (XAF, XOF, JPY…).
+     * Moyen de paiement explicite `card` : la Payment Sheet mobile ne propose que la
+     * carte (Apple Pay / Google Pay compris), et le paiement ne dépend pas des moyens
+     * de paiement activés dans le tableau de bord Stripe (sinon : « No valid payment
+     * method types for this Payment Intent »). La carte est confirmée côté client avec
+     * le `client_secret` ; la confirmation serveur passe par retrievePaymentIntent()
+     * (polling) et/ou le webhook payment_intent.succeeded.
      *
      * @return array { id, client_secret, amount_minor, currency, publishable_key }
      */
     public function createPaymentIntent(float $amount, string $currency, array $metadata = []): array
     {
         $currency = strtolower($currency);
-        $minor = (int) round($amount * 100);
+        $minor = self::toMinorUnits($amount, $currency);
 
         if ($minor <= 0) {
             throw new \InvalidArgumentException('Montant de paiement invalide.');
@@ -848,7 +851,7 @@ class StripeService
             'amount' => $minor,
             'currency' => $currency,
             'metadata' => $metadata,
-            'automatic_payment_methods' => ['enabled' => true],
+            'payment_method_types' => ['card'],
         ]);
 
         return [
@@ -858,6 +861,17 @@ class StripeService
             'currency' => $currency,
             'publishable_key' => $this->publishableKey,
         ];
+    }
+
+    /** Devises sans décimales pour Stripe : le montant s'exprime en unités entières. */
+    private const ZERO_DECIMAL_CURRENCIES = ['bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'ugx', 'vnd', 'vuv', 'xaf', 'xof', 'xpf'];
+
+    /** Montant en plus petite unité Stripe (centimes, ou unités pour XAF/XOF…). */
+    public static function toMinorUnits(float $amount, string $currency): int
+    {
+        return in_array(strtolower($currency), self::ZERO_DECIMAL_CURRENCIES, true)
+            ? (int) round($amount)
+            : (int) round($amount * 100);
     }
 
     /**
