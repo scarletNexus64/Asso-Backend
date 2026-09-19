@@ -32,6 +32,7 @@ class DeliveryPartnerController extends Controller
             'partners' => $partners,
             'radiusKm' => DeliveryQuoteService::radiusKm(),
             'vatRate' => DeliveryQuoteService::vatRate(),
+            'defaultWeightKg' => DeliveryQuoteService::defaultProductWeightKg(),
         ]);
     }
 
@@ -40,10 +41,12 @@ class DeliveryPartnerController extends Controller
         $validated = $request->validate([
             'delivery_zone_radius_km' => 'required|numeric|min:0.5|max:500',
             'delivery_vat_rate' => 'required|numeric|min:0|max:100',
+            'delivery_default_weight_kg' => 'required|numeric|min:0.001|max:100000',
         ]);
 
         Setting::set('delivery_zone_radius_km', $validated['delivery_zone_radius_km'], 'string', 'delivery', "Rayon de couverture autour du centre d'une zone de livraison (km)");
         Setting::set('delivery_vat_rate', $validated['delivery_vat_rate'], 'string', 'delivery', 'TVA ajoutée aux grilles de livraison hors taxe (%)');
+        Setting::set('delivery_default_weight_kg', $validated['delivery_default_weight_kg'], 'string', 'delivery', "Poids retenu pour un article sans poids renseigné (kg)");
 
         return back()->with('success', 'Réglages de livraison enregistrés.');
     }

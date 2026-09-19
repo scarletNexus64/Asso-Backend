@@ -146,7 +146,8 @@ class ProductController extends Controller
         $validated['origin_country'] = $request->filled('origin_country')
             ? strtoupper($request->input('origin_country'))
             : null;
-        if (!in_array($validated['origin_country'], ['CN', 'TR', 'AE'], true)) {
+        // P4 : le poids compte pour tout article, local ou importé ; seul un service n'en a pas.
+        if ($validated['type'] === 'service') {
             $validated['weight'] = null;
         }
 
@@ -254,7 +255,8 @@ class ProductController extends Controller
         $validated['origin_country'] = $request->filled('origin_country')
             ? strtoupper($request->input('origin_country'))
             : null;
-        if (!in_array($validated['origin_country'], ['CN', 'TR', 'AE'], true)) {
+        // P4 : le poids compte pour tout article, local ou importé ; seul un service n'en a pas.
+        if ($validated['type'] === 'service') {
             $validated['weight'] = null;
         }
 

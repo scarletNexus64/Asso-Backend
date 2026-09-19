@@ -120,15 +120,22 @@ class DeliveryPartnersTest extends TestCase
             ->assertJsonPath('partners.0.delivery_price', 2500 + 481);
     }
 
-    public function test_product_without_weight_blocks_delivery_and_order(): void
+    public function test_product_without_weight_uses_default_weight_of_2_kg(): void
     {
         $route = $this->solex();
         $product = $this->product(null);
 
+        // Sans poids : chiffré comme 2 kg (plis & paquets 2 500 HT + TVA 481), signalé dans le devis.
+        $response = $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&city=Yaoundé")->assertOk();
+        $this->assertNull($response->json('quote.reason'));
+        $this->assertEquals(2, $response->json('quote.default_weight_kg'));
+        $this->assertSame(['« ' . $product->name . ' »'], $response->json('quote.missing_weight_products'));
+        $this->assertEquals(2500 + 481, $response->json('partners.0.delivery_price'));
+
+        // Poids par défaut réglable dans l'admin.
+        \App\Models\Setting::set('delivery_default_weight_kg', 6, 'string', 'delivery');
         $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&city=Yaoundé")
-            ->assertOk()
-            ->assertJsonPath('quote.reason', 'missing_weight')
-            ->assertJsonCount(0, 'partners');
+            ->assertJsonPath('partners.0.breakdown.weight_kg', 6);
 
         $client = User::factory()->create();
         WalletBalance::create(['user_id' => $client->id, 'currency' => 'XAF', 'balance' => 100000, 'locked_balance' => 0]);
@@ -139,9 +146,21 @@ class DeliveryPartnersTest extends TestCase
             'delivery_city' => 'Yaoundé',
             'payment_mode' => 'wallet', 'wallet_provider' => 'kpay',
             'customer_phone' => '237670000001',
-        ])->assertStatus(422);
+        ])->assertSuccessful();
+    }
 
-        $this->assertSame(20, $product->fresh()->stock, 'Le stock ne doit pas bouger');
+    public function test_admin_product_form_saves_weight_of_local_article(): void
+    {
+        $product = $this->product(null);
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)->put(route('admin.products.update', $product), [
+            'shop_id' => $product->shop_id, 'category_id' => $product->category_id,
+            'name' => $product->name, 'price_type' => 'fixed', 'price' => 320000,
+            'type' => 'article', 'origin_country' => '', 'weight' => '0.4', 'stock' => 20, 'status' => 'active',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertEquals(0.4, (float) $product->fresh()->weight);
     }
 
     public function test_local_zone_radius_is_configurable(): void

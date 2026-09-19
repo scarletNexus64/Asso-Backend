@@ -18,7 +18,7 @@ use App\Support\WeightGrid;
  * validation (GET /v1/delivery/partners) et pour la commande (OrderService::createOrder).
  *
  * - Le poids réel compte partout : poids total = Σ poids fiche × quantité.
- *   Un article sans poids bloque la livraison (décision propriétaire P4).
+ *   Un article sans poids compte pour le poids par défaut réglé dans l'admin (2 kg).
  * - Urbain : zones d'un partenaire (ville ou rayon réglable autour du centre), même
  *   ville que la boutique.
  * - Interurbain / international : trajets d'un partenaire (SOLEX Douala ↔ Yaoundé,
@@ -36,11 +36,18 @@ use App\Support\WeightGrid;
 class DeliveryQuoteService
 {
     public const DEFAULT_RADIUS_KM = 10;
+    public const DEFAULT_PRODUCT_WEIGHT_KG = 2;
     public const DEFAULT_VAT_RATE = 19.25;
 
     public static function radiusKm(): float
     {
         return (float) Setting::get('delivery_zone_radius_km', self::DEFAULT_RADIUS_KM);
+    }
+
+    /** Poids retenu pour un article dont le vendeur n'a pas renseigné le poids (kg). */
+    public static function defaultProductWeightKg(): float
+    {
+        return (float) Setting::get('delivery_default_weight_kg', self::DEFAULT_PRODUCT_WEIGHT_KG);
     }
 
     public static function vatRate(): float
@@ -66,6 +73,7 @@ class DeliveryQuoteService
             'message' => null,
             'weight_kg' => $cart['weight_kg'],
             'missing_weight_products' => $cart['missing_weight'],
+            'default_weight_kg' => $cart['missing_weight'] !== [] ? self::defaultProductWeightKg() : null,
             'origin' => ['city' => $originCity, 'country' => $originCountry, 'country_name' => CountryCode::name($originCountry)],
             'destination' => ['city' => $destCity, 'country' => $destCountry, 'country_name' => CountryCode::name($destCountry)],
             'vat_rate' => self::vatRate(),
@@ -73,13 +81,6 @@ class DeliveryQuoteService
             'city_grid' => $gridContext['public'],
             'partners' => [],
         ];
-
-        if ($cart['missing_weight'] !== []) {
-            $result['reason'] = 'missing_weight';
-            $result['message'] = 'Livraison impossible à chiffrer : le vendeur doit renseigner le poids de '
-                . implode(', ', $cart['missing_weight']) . '.';
-            return $result;
-        }
 
         $partners = array_merge(
             $this->localQuotes($cart, $lat, $lng, $destCity, $destCountry),
@@ -108,10 +109,6 @@ class DeliveryQuoteService
     public function quoteFor(array $items, int $companyId, ?int $zoneId, ?int $routeId, ?float $lat, ?float $lng, ?string $city, ?string $country = null, ?int $gridId = null, ?string $vehicle = null, ?string $quarter = null, ?string $address = null): array
     {
         $result = $this->quotes($items, $lat, $lng, $city, $country, $quarter, $address);
-
-        if ($result['reason'] === 'missing_weight') {
-            throw new \Exception($result['message']);
-        }
 
         foreach ($result['partners'] as $partner) {
             if ($partner['company_id'] !== $companyId
@@ -178,6 +175,8 @@ class DeliveryQuoteService
             } elseif (($unit = $product->weightKg()) !== null) {
                 $weight += $unit * $quantity;
             } else {
+                // Poids non renseigné : poids par défaut, signalé dans le devis.
+                $weight += self::defaultProductWeightKg() * $quantity;
                 $missing[] = "« {$product->name} »";
             }
 

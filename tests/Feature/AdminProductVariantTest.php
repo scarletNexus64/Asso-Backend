@@ -50,7 +50,7 @@ class AdminProductVariantTest extends TestCase
         $product = Product::where('name', 'Basket importée')->firstOrFail();
         $this->assertSame(11, $product->stock);
         $this->assertSame('Semelle antidérapante', $product->characteristics);
-        $this->assertNull($product->weight, 'Un produit local ne doit pas conserver un poids d’importation.');
+        $this->assertEquals(0.8, (float) $product->weight, 'Le poids d’un article local est conservé (calcul de la livraison).');
         $this->assertCount(2, $product->variants);
         $this->assertSame(['Couleur' => 'Rouge', 'Pointure' => '40'], $product->variants->first()->attributes);
 

@@ -26,7 +26,7 @@
     <!-- Réglages globaux -->
     <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
         <h2 class="text-lg font-semibold text-white mb-4"><i class="fas fa-sliders-h mr-2 text-primary-400"></i>Réglages de livraison</h2>
-        <form action="{{ route('admin.delivery-partners.settings') }}" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <form action="{{ route('admin.delivery-partners.settings') }}" method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             @csrf
             @method('PUT')
             <div>
@@ -42,6 +42,13 @@
                        value="{{ old('delivery_vat_rate', $vatRate) }}"
                        class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white focus:border-primary-500 focus:outline-none">
                 <p class="mt-1 text-xs text-gray-500">Ajoutée au prix des partenaires dont la grille est « hors taxe » (ex. SOLEX).</p>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Poids par défaut d'un article (kg)</label>
+                <input type="number" name="delivery_default_weight_kg" step="0.1" min="0.001" required
+                       value="{{ old('delivery_default_weight_kg', $defaultWeightKg) }}"
+                       class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white focus:border-primary-500 focus:outline-none">
+                <p class="mt-1 text-xs text-gray-500">Utilisé pour chiffrer la livraison quand le vendeur n'a pas renseigné le poids du produit.</p>
             </div>
             <div>
                 <button type="submit" class="w-full px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600">
