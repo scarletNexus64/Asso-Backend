@@ -415,4 +415,32 @@ class DeliveryPartnersTest extends TestCase
         $moto = collect($response->json('partners'))->firstWhere('vehicle', 'moto');
         $this->assertEquals(1789, $moto['delivery_price']); // Zone 2 → Zone 3 : 1 500 HT
     }
+
+    public function test_admin_can_delete_urban_delivery_unless_orders_are_in_progress(): void
+    {
+        $grid = $this->solexDouala();
+        $admin = User::factory()->create(['role' => 'admin']);
+        $product = $this->product('2');
+        $product->shop->update(['latitude' => 4.0642, 'longitude' => 9.7198]);
+        $this->assertSame('Akwa-Nord', $product->shop->fresh()->quarter);
+
+        // Commande en cours sur la grille : suppression refusée.
+        $order = Order::create([
+            'user_id' => User::factory()->create()->id, 'status' => 'confirmed',
+            'subtotal' => 1000, 'total' => 1000, 'delivery_fee' => 0,
+            'payment_method' => 'wallet_kpay', 'payment_status' => 'paid',
+            'delivery_city_grid_id' => $grid->id,
+        ]);
+        $this->actingAs($admin)->delete(route('admin.delivery-partners.city-grids.destroy', [$grid->deliverer_company_id, $grid]))
+            ->assertSessionHasErrors('grid');
+        $this->assertModelExists($grid);
+
+        // Commande livrée : la ville peut être supprimée, la boutique perd son quartier.
+        $order->update(['status' => 'delivered']);
+        $this->actingAs($admin)->delete(route('admin.delivery-partners.city-grids.destroy', [$grid->deliverer_company_id, $grid]))
+            ->assertSessionHasNoErrors()->assertSessionHas('success');
+        $this->assertModelMissing($grid);
+        $this->assertNull($product->shop->fresh()->quarter);
+        $this->assertNull($order->fresh()->delivery_city_grid_id);
+    }
 }

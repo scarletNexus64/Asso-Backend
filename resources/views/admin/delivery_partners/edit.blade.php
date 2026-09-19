@@ -84,7 +84,15 @@
     <!-- Grilles urbaines zone à zone -->
     @foreach($partner->cityGrids as $grid)
         <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
-            <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-city mr-2 text-primary-400"></i>Livraison urbaine à {{ $grid->city }} (zone à zone)</h2>
+            <div class="flex items-start justify-between gap-3">
+                <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-city mr-2 text-primary-400"></i>Livraison urbaine à {{ $grid->city }} (zone à zone)@unless($grid->is_active) <span class="ml-2 px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-400 align-middle">Inactive</span>@endunless</h2>
+                <form action="{{ route('admin.delivery-partners.city-grids.destroy', [$partner, $grid]) }}" method="POST"
+                      data-confirm="Supprimer la livraison urbaine à {{ $grid->city }} ? Ses zones, quartiers, véhicules et prix seront effacés.">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="px-3 py-1.5 text-sm text-red-400 border border-red-500/40 rounded-lg hover:bg-red-900/30 whitespace-nowrap"><i class="fas fa-trash mr-1"></i> Supprimer cette ville</button>
+                </form>
+            </div>
             <p class="text-sm text-gray-400 mb-4">Une offre par véhicule capable de porter le colis, avec son délai estimé. Livrée à domicile par un coursier {{ $partner->name }} synchronisé.</p>
             @include('admin.delivery_partners._city_grid', ['grid' => $grid])
         </div>

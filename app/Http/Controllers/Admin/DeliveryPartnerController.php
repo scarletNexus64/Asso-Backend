@@ -234,6 +234,37 @@ class DeliveryPartnerController extends Controller
         return back()->with('success', "Grille {$grid->city} enregistrée. {$linked} boutique(s) rattachée(s) à un quartier.");
     }
 
+    /**
+     * Supprime la livraison urbaine d'une ville. Refusé tant qu'une commande en cours en dépend
+     * (sa livraison à domicile perdrait sa grille) : désactiver la grille en attendant.
+     */
+    public function destroyCityGrid(DelivererCompany $partner, DeliveryCityGrid $grid)
+    {
+        abort_unless($grid->deliverer_company_id === $partner->id, 404);
+
+        $pending = \App\Models\Order::where('delivery_city_grid_id', $grid->id)
+            ->whereNotIn('status', ['delivered', 'cancelled'])
+            ->count();
+        if ($pending > 0) {
+            return back()->withErrors(['grid' => "Impossible de supprimer la livraison urbaine à {$grid->city} : {$pending} commande(s) en cours l'utilisent. Décochez « Grille active » pour ne plus la proposer, puis supprimez-la une fois ces commandes livrées."]);
+        }
+
+        $city = $grid->city;
+        $grid->delete();
+
+        // Boutiques de la ville : quartier retiré, puis recalculé si une autre grille couvre la ville.
+        \App\Models\Shop::whereNotNull('quarter')->each(function (\App\Models\Shop $shop) use ($city) {
+            if (!\App\Support\CountryCode::sameCity($city, $shop->city ?: \App\Support\LocationFormatter::parse($shop->address)[0])) {
+                return;
+            }
+            $shop->quarter = null;
+            $shop->assignDeliveryQuarter();
+            $shop->saveQuietly();
+        });
+
+        return back()->with('success', "Livraison urbaine à {$city} supprimée.");
+    }
+
     private function validatePartner(Request $request, ?DelivererCompany $partner = null): array
     {
         $validated = $request->validate([
