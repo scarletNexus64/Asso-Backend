@@ -34,7 +34,7 @@ class Order extends Model
         'delivery_longitude',
         'tracking_number', 'confirmation_code',
         'delivery_person_id', 'delivery_company_id', 'delivery_zone_id',
-        'delivery_mode', 'delivery_route_id', 'shipping_weight_kg', 'delivery_vat_amount', 'delivery_breakdown',
+        'delivery_mode', 'delivery_route_id', 'delivery_city_grid_id', 'delivery_vehicle', 'shipping_weight_kg', 'delivery_vat_amount', 'delivery_breakdown',
         'carrier_tracking_number', 'tracking_status',
         'payment_method', 'payment_reference', 'payment_currency', 'payment_amount', 'payment_status',
         'notes', 'cancel_reason',
@@ -80,7 +80,8 @@ class Order extends Model
      */
     public function hasLastMileDelivery(): bool
     {
-        return $this->isCarrierDelivery() && $this->delivery_zone_id !== null;
+        return $this->isCarrierDelivery()
+            && ($this->delivery_zone_id !== null || $this->delivery_city_grid_id !== null);
     }
 
     protected static function boot()

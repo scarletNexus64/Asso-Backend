@@ -15,21 +15,22 @@
         <input type="email" name="email" value="{{ old('email', $partner?->email) }}" class="{{ $input }}">
     </div>
     <div>
-        <label class="block text-sm text-gray-400 mb-1">Catégorie principale <span class="text-red-500">*</span></label>
+        <label class="block text-sm text-gray-400 mb-1">Catégorie (tri de la liste) <span class="text-red-500">*</span></label>
         <select name="service_type" class="{{ $input }}">
             @foreach(\App\Models\DelivererCompany::SERVICE_TYPES as $value => $label)
                 <option value="{{ $value }}" @selected(old('service_type', $partner?->service_type ?? 'intercity') === $value)>{{ $label }}</option>
             @endforeach
         </select>
-        <p class="mt-1 text-xs text-gray-500">Un partenaire peut avoir à la fois des zones urbaines et des trajets : l'acheteur voit la catégorie de chaque offre.</p>
+        <p class="mt-1 text-xs text-gray-500">L'acheteur voit la catégorie de chaque offre : Urbain pour la grille de ville ou les zones, Interurbain / International pour les trajets.</p>
     </div>
     <div>
-        <label class="block text-sm text-gray-400 mb-1">Mode de remise <span class="text-red-500">*</span></label>
+        <label class="block text-sm text-gray-400 mb-1">Mode des trajets interurbains <span class="text-red-500">*</span></label>
         <select name="service_mode" class="{{ $input }}">
             @foreach(\App\Models\DelivererCompany::SERVICE_MODES as $value => $label)
                 <option value="{{ $value }}" @selected(old('service_mode', $partner?->service_mode ?? 'agency_to_agency') === $value)>{{ $label }}</option>
             @endforeach
         </select>
+        <p class="mt-1 text-xs text-gray-500">« D'agence en agence » : l'acheteur choisit le retrait en agence ou la livraison à domicile depuis l'agence d'arrivée. L'urbain est toujours livré à domicile.</p>
     </div>
     <div>
         <label class="block text-sm text-gray-400 mb-1">Poids max. accepté (kg)</label>
@@ -38,7 +39,7 @@
     <div class="md:col-span-2">
         <label class="block text-sm text-gray-400 mb-1">Lien de suivi du transporteur</label>
         <input type="text" name="tracking_url_template" value="{{ old('tracking_url_template', $partner?->tracking_url_template) }}"
-               placeholder="https://www.dhl.com/…?tracking-id={number}" class="{{ $input }}">
+               placeholder="https://site-du-transporteur/suivi?numero={number}" class="{{ $input }}">
         <p class="mt-1 text-xs text-gray-500"><code>{number}</code> est remplacé par le numéro de suivi saisi par le vendeur.</p>
     </div>
     <div class="flex items-center gap-2 pt-6">

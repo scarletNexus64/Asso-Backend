@@ -67,6 +67,12 @@ class DelivererCompany extends Model
         return $this->hasMany(DeliveryRoute::class);
     }
 
+    /** Grilles urbaines zone à zone (ex. SOLEX Douala : moto, tricycle, 600 kg, 1 t). */
+    public function cityGrids(): HasMany
+    {
+        return $this->hasMany(DeliveryCityGrid::class);
+    }
+
     /**
      * Get the user/deliverer that owns this company
      */

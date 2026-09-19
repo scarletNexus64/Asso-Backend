@@ -34,6 +34,8 @@ class DeliveryPresenter
             'service_mode_label' => $snapshot['service_mode_label']
                 ?? ($company ? (DelivererCompany::SERVICE_MODES[$company->service_mode] ?? null) : null),
             'route_label' => $snapshot['route_label'] ?? null,
+            'vehicle' => $order->delivery_vehicle,
+            'vehicle_label' => $snapshot['vehicle_label'] ?? null,
             'delivery_option' => $snapshot['delivery_option'] ?? ($isCarrier && !$order->hasLastMileDelivery() ? 'agency_pickup' : 'home_delivery'),
             'delivery_option_label' => $snapshot['delivery_option_label'] ?? null,
             'last_mile' => $order->hasLastMileDelivery(),

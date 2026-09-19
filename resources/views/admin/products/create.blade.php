@@ -262,8 +262,8 @@
                         </div>
                     </div>
 
-                    <div id="import_weight_section">
-                    <!-- Weight Category -->
+                    <!-- Poids réel (obligatoire pour un article) -->
+                    <div id="product_weight_field">
                     <div class="mb-4">
                         <label for="weight" class="block text-sm font-medium text-white mb-2">
                             <i class="fas fa-weight-scale text-primary-500 mr-1"></i>
@@ -275,56 +275,15 @@
                                class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 @error('weight') border-red-500 @enderror"
                                placeholder="Ex : 2.5">
                         <p class="mt-1 text-xs text-gray-400">
-                            Poids d'une seule unité. Le poids total sera calculé automatiquement : poids unitaire × quantité commandée.
+                            Poids réel d'une unité, obligatoire pour tout article (local ou importé) : il sert à calculer la livraison (poids × quantité).
                         </p>
                         @error('weight')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
                     </div>
 
-                    <!-- Weight Category -->
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-white mb-2">
-                            <i class="fas fa-weight-hanging text-primary-500 mr-1"></i>
-                            Catégorie de poids
-                        </label>
-                        <select name="weight_category" class="w-full px-4 py-2 bg-dark-50 border border-dark-300 rounded-lg focus:ring-2 focus:ring-primary-500 @error('weight_category') border-red-500 @enderror">
-                            @foreach(\App\Models\DeliveryPricelist::WEIGHT_CATEGORIES as $key => $label)
-                                <option value="{{ $key }}" {{ old('weight_category', 'X-small') == $key ? 'selected' : '' }}>{{ $key }} — {{ $label }}</option>
-                            @endforeach
-                        </select>
-                        <p class="mt-1 text-xs text-gray-400">Détermine le prix de livraison chez les partenaires</p>
-                        @error('weight_category')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
-                    </div>
+
                     </div>
 
-                    <!-- Sizes -->
-                    @php($selectedSizes = array_map('strval', old('sizes', [])))
-                    <div class="mb-4 hidden" id="product_sizes_section">
-                        <label class="block text-sm font-medium text-white mb-2">
-                            <i class="fas fa-ruler-combined text-primary-500 mr-1"></i>
-                            Tailles disponibles
-                        </label>
-                        <p class="mb-3 text-xs text-gray-400">Sélectionnez une ou plusieurs tailles proposées pour ce produit.</p>
-                        <div class="space-y-3">
-                            @foreach(\App\Models\Product::SIZE_GROUPS as $group => $sizes)
-                                @php($sizeGroupKey = match($group) { 'Vêtements' => 'clothing', 'Tailles numériques' => 'numeric', 'Pointures' => 'shoes', 'Tailles bébé' => 'baby', 'Dimensions' => 'dimensions', default => 'other' })
-                                <div data-size-group="{{ $sizeGroupKey }}">
-                                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{{ $group }}</p>
-                                    <div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                                        @foreach($sizes as $size)
-                                            <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-dark-300 bg-dark-50 px-2 py-2 text-sm text-white hover:border-primary-500">
-                                                <input type="checkbox" name="sizes[]" value="{{ $size }}"
-                                                       class="h-4 w-4 rounded text-primary-500 focus:ring-primary-500"
-                                                       {{ in_array($size, $selectedSizes, true) ? 'checked' : '' }}>
-                                                <span>{{ $size }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                        @error('sizes')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
-                        @error('sizes.*')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
-                    </div>
+
 
                     <!-- Pays d'origine (produits importés) -->
                     <div class="mb-4">
@@ -518,15 +477,16 @@ function toggleWholesaleSection() {
 }
 
 function syncImportWeightSection() {
-    const section = document.getElementById('import_weight_section');
-    const country = document.querySelector('select[name="origin_country"]')?.value?.toUpperCase() ?? '';
-    const type = document.querySelector('input[name="type"]:checked')?.value;
-    const visible = type === 'article' && ['CN', 'TR', 'AE'].includes(country);
-    if (!section) return;
-    section.classList.toggle('hidden', !visible);
-    section.querySelectorAll('input, select').forEach(input => input.disabled = !visible);
+    // P4 : poids réel obligatoire pour tout article (local ou importé), masqué pour un service.
+    const field = document.getElementById('product_weight_field');
+    const isArticle = document.querySelector('input[name="type"]:checked')?.value === 'article';
+    if (!field) return;
+    field.classList.toggle('hidden', !isArticle);
     const weight = document.getElementById('weight');
-    if (weight) weight.required = visible;
+    if (weight) {
+        weight.disabled = !isArticle;
+        weight.required = isArticle;
+    }
 }
 
 function loadShippingOptions(countryCode) {
@@ -562,45 +522,6 @@ function loadShippingOptions(countryCode) {
         });
 }
 
-function normalizeCategoryName(categoryName) {
-    return (categoryName || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[&/]/g, ' ')
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function getAllowedSizeGroupsForCategory(categoryName, subcategoryName = '') {
-    const combined = normalizeCategoryName(`${categoryName} ${subcategoryName}`);
-
-    if (combined.includes('chauss') || combined.includes('shoe')) return ['shoes'];
-    if (combined.includes('bebe') || combined.includes('baby') || combined.includes('enfant')) return ['baby'];
-    if (combined.includes('maison') || combined.includes('meuble') || combined.includes('mobilier') || combined.includes('furniture') || combined.includes('literie') || combined.includes('linge')) return ['dimensions'];
-    if (combined.includes('mode') || combined.includes('vetement') || combined.includes('fashion')) return ['clothing', 'numeric'];
-
-    return [];
-}
-
-function syncSizeGroups() {
-    const select = document.getElementById('category_id');
-    const subSelect = document.getElementById('subcategory_id');
-    const section = document.getElementById('product_sizes_section');
-    if (!select || !section) return;
-
-    const categoryName = select.options[select.selectedIndex]?.text || '';
-    const subcategoryName = subSelect && subSelect.value ? subSelect.options[subSelect.selectedIndex]?.text || '' : '';
-    const allowed = getAllowedSizeGroupsForCategory(categoryName, subcategoryName);
-
-    section.classList.toggle('hidden', allowed.length === 0);
-    section.querySelectorAll('[data-size-group]').forEach(group => {
-        const visible = allowed.includes(group.dataset.sizeGroup);
-        group.classList.toggle('hidden', !visible);
-        if (!visible) group.querySelectorAll('input[name="sizes[]"]').forEach(input => input.checked = false);
-    });
-}
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', function() {
@@ -626,14 +547,11 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleWholesaleSection();
         syncImportWeightSection();
     });
-    document.getElementById('category_id')?.addEventListener('change', syncSizeGroups);
-    document.getElementById('subcategory_id')?.addEventListener('change', syncSizeGroups);
     document.getElementById('is_wholesale')?.addEventListener('change', toggleTiersContainer);
 
     toggleWholesaleSection();
     syncImportWeightSection();
     toggleTiersContainer();
-    syncSizeGroups();
 
 });
 </script>

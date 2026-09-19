@@ -56,7 +56,7 @@ class DeliveryController extends Controller
                     ->where(fn ($l) => $l->where('delivery_mode', Order::DELIVERY_LOCAL)->where('status', 'confirmed'))
                     // Transporteur : dernier kilomètre une fois le colis arrivé à l'agence.
                     ->orWhere(fn ($c) => $c->where('delivery_mode', Order::DELIVERY_CARRIER)
-                        ->whereNotNull('delivery_zone_id')
+                        ->where(fn ($z) => $z->whereNotNull('delivery_zone_id')->orWhereNotNull('delivery_city_grid_id'))
                         ->where('status', 'shipped')
                         ->whereIn('tracking_status', ['arrived', 'ready_for_pickup'])))
                 ->orderBy('created_at', 'desc')
@@ -98,7 +98,7 @@ class DeliveryController extends Controller
                     ->where(fn ($q) => $q
                         ->where(fn ($l) => $l->where('delivery_mode', Order::DELIVERY_LOCAL)->whereIn('status', ['confirmed', 'preparing']))
                         ->orWhere(fn ($c) => $c->where('delivery_mode', Order::DELIVERY_CARRIER)
-                            ->whereNotNull('delivery_zone_id')
+                            ->where(fn ($z) => $z->whereNotNull('delivery_zone_id')->orWhereNotNull('delivery_city_grid_id'))
                             ->where('status', 'shipped')
                             ->whereIn('tracking_status', ['arrived', 'ready_for_pickup'])))
                     ->findOrFail($id);
@@ -530,6 +530,9 @@ class DeliveryController extends Controller
                     $longitude ? (float) $longitude : null,
                     $city,
                     $request->input('country'),
+                    // Quartier de l'acheteur (grille zone à zone, ex. SOLEX Douala).
+                    $request->input('quarter'),
+                    $request->input('address'),
                 );
 
                 return response()->json([

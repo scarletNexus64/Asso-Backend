@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\DelivererCompany;
+use App\Models\DeliveryCityGrid;
 use App\Models\DeliveryRoute;
 use App\Models\Setting;
 use App\Services\DeliveryQuoteService;
@@ -56,7 +57,7 @@ class DeliveryPartnerController extends Controller
 
     public function edit(DelivererCompany $partner)
     {
-        $partner->load(['deliveryRoutes' => fn ($q) => $q->orderBy('origin_city')->orderBy('destination_city')]);
+        $partner->load(['deliveryRoutes' => fn ($q) => $q->orderBy('origin_city')->orderBy('destination_city'), 'cityGrids']);
 
         return view('admin.delivery_partners.edit', [
             'partner' => $partner,
@@ -95,6 +96,65 @@ class DeliveryPartnerController extends Controller
         $route->delete();
 
         return back()->with('success', 'Trajet supprimé.');
+    }
+
+    /**
+     * Grille urbaine zone à zone (ex. SOLEX Douala) : quartiers par zone, véhicules
+     * (poids max., délai) et prix zone de départ → zone d'arrivée.
+     */
+    public function updateCityGrid(Request $request, DelivererCompany $partner, DeliveryCityGrid $grid)
+    {
+        abort_unless($grid->deliverer_company_id === $partner->id, 404);
+
+        $validated = $request->validate([
+            'zones' => 'required|array|min:1',
+            'zones.*.quarters' => 'nullable|string|max:2000',
+            'vehicles' => 'required|array|min:1',
+            'vehicles.*.label' => 'required|string|max:60',
+            'vehicles.*.max_weight_kg' => 'nullable|numeric|min:0.1',
+            'vehicles.*.lead_time' => 'nullable|string|max:60',
+            'vehicles.*.prices' => 'nullable|array',
+            'vehicles.*.prices.*' => 'nullable|numeric|min:0',
+            'agency_zone' => 'nullable|integer|min:1',
+            'asso_commission' => 'nullable|numeric|min:0',
+        ]);
+
+        $zones = collect($grid->zones)->map(function ($zone) use ($validated) {
+            $raw = $validated['zones'][$zone['code']]['quarters'] ?? null;
+            if ($raw !== null) {
+                $zone['quarters'] = array_values(array_filter(array_map('trim', preg_split('/[,\n]+/', $raw))));
+            }
+
+            return $zone;
+        })->all();
+
+        $vehicles = collect($grid->vehicles)->map(function ($vehicle) use ($validated) {
+            $input = $validated['vehicles'][$vehicle['code']] ?? null;
+            if (!$input) {
+                return $vehicle;
+            }
+
+            return [
+                'code' => $vehicle['code'],
+                'label' => $input['label'],
+                'max_weight_kg' => isset($input['max_weight_kg']) && $input['max_weight_kg'] !== '' ? (float) $input['max_weight_kg'] : null,
+                'lead_time' => $input['lead_time'] ?? null,
+                'prices' => collect($input['prices'] ?? [])
+                    ->filter(fn ($price) => $price !== null && $price !== '')
+                    ->map(fn ($price) => (float) $price)
+                    ->all(),
+            ];
+        })->all();
+
+        $grid->update([
+            'zones' => $zones,
+            'vehicles' => $vehicles,
+            'agency_zone' => $validated['agency_zone'] ?? null,
+            'asso_commission' => (float) ($validated['asso_commission'] ?? 0),
+            'is_active' => $request->boolean('is_active'),
+        ]);
+
+        return back()->with('success', "Grille {$grid->city} enregistrée.");
     }
 
     private function validatePartner(Request $request, ?DelivererCompany $partner = null): array

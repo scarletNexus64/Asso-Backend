@@ -83,6 +83,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('/{partner}/routes', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'storeRoute'])->name('routes.store');
             Route::put('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateRoute'])->name('routes.update');
             Route::delete('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'destroyRoute'])->name('routes.destroy');
+            Route::put('/{partner}/city-grids/{grid}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateCityGrid'])->name('city-grids.update');
         });
         Route::get('/shipments', [\App\Http\Controllers\Admin\ShipmentController::class, 'index'])->name('shipments.index');
         Route::get('/shipments/{order}', [\App\Http\Controllers\Admin\ShipmentController::class, 'show'])->name('shipments.show');

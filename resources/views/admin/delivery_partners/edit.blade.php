@@ -6,8 +6,31 @@
         <a href="{{ route('admin.delivery-partners.index') }}" class="text-gray-400 hover:text-primary-500"><i class="fas fa-arrow-left"></i></a>
         <div>
             <h1 class="text-2xl font-bold text-white">{{ $partner->name }}</h1>
-            <p class="text-gray-400">Conditions et grilles au poids affichées à l'acheteur avant la commande.</p>
+            <p class="text-gray-400">Conditions et grilles affichées à l'acheteur avant la commande.</p>
         </div>
+    </div>
+
+    <!-- Services proposés -->
+    <div class="mb-6 flex flex-wrap gap-2 text-sm">
+        <span class="text-gray-400 mr-1">Services proposés :</span>
+        @foreach($partner->cityGrids as $grid)
+            <span class="px-3 py-1 rounded-full bg-blue-900/30 text-blue-300 border border-blue-500/40">
+                <i class="fas fa-city mr-1"></i> Urbain {{ $grid->city }} — zone à zone, {{ count($grid->vehicles) }} véhicules{{ $grid->is_active ? '' : ' (inactif)' }}
+            </span>
+        @endforeach
+        @if($partner->deliveryZones()->exists())
+            <span class="px-3 py-1 rounded-full bg-blue-900/30 text-blue-300 border border-blue-500/40">
+                <i class="fas fa-map-marked-alt mr-1"></i> Urbain — {{ $partner->deliveryZones()->count() }} zone(s) sur carte
+            </span>
+        @endif
+        @if($partner->deliveryRoutes->isNotEmpty())
+            <span class="px-3 py-1 rounded-full bg-purple-900/30 text-purple-300 border border-purple-500/40">
+                <i class="fas fa-route mr-1"></i> {{ $partner->deliveryRoutes->where('origin_country', '!=', 'CM')->isNotEmpty() ? 'International' : 'Interurbain' }} — {{ $partner->deliveryRoutes->count() }} trajet(s)
+            </span>
+        @endif
+        @if($partner->cityGrids->isEmpty() && !$partner->deliveryZones()->exists() && $partner->deliveryRoutes->isEmpty())
+            <span class="text-yellow-400">Aucun service configuré : ajoutez des trajets ci-dessous.</span>
+        @endif
     </div>
 
     @if($errors->any())
@@ -39,6 +62,15 @@
         </form>
     </div>
 
+    <!-- Grilles urbaines zone à zone -->
+    @foreach($partner->cityGrids as $grid)
+        <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
+            <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-city mr-2 text-primary-400"></i>Livraison urbaine à {{ $grid->city }} (zone à zone)</h2>
+            <p class="text-sm text-gray-400 mb-4">Une offre par véhicule capable de porter le colis, avec son délai estimé. Livrée à domicile par un coursier {{ $partner->name }} synchronisé.</p>
+            @include('admin.delivery_partners._city_grid', ['grid' => $grid])
+        </div>
+    @endforeach
+
     <!-- Trajets -->
     <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
         <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-route mr-2 text-primary-400"></i>Trajets interurbains et internationaux</h2>
@@ -47,7 +79,9 @@
             @if($partner->prices_exclude_vat)
                 Grille hors taxe : l'acheteur paie en plus {{ rtrim(rtrim(number_format($vatRate, 2, ',', ''), '0'), ',') }} % de TVA.
             @endif
-            Les zones urbaines de ce partenaire se gèrent dans <a href="{{ route('admin.deliverers.edit', $partner) }}" class="text-primary-400 underline">Livreurs</a>.
+            @if($partner->service_mode === 'agency_to_agency')
+                L'acheteur choisit le retrait en agence, ou la livraison à domicile depuis l'agence d'arrivée (prix de la grille urbaine ajouté).
+            @endif
         </p>
 
         @forelse($partner->deliveryRoutes as $route)

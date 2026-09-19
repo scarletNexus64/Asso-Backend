@@ -35,9 +35,9 @@ class OrderService
      * Offres de livraison chiffrées pour un panier (poids réel, zones, trajets, TVA).
      * Cf. DeliveryQuoteService — même calcul qu'à la création de la commande.
      */
-    public function deliveryQuotes(array $items, ?float $latitude = null, ?float $longitude = null, ?string $city = null, ?string $country = null): array
+    public function deliveryQuotes(array $items, ?float $latitude = null, ?float $longitude = null, ?string $city = null, ?string $country = null, ?string $quarter = null, ?string $address = null): array
     {
-        return app(DeliveryQuoteService::class)->quotes($items, $latitude, $longitude, $city, $country);
+        return app(DeliveryQuoteService::class)->quotes($items, $latitude, $longitude, $city, $country, $quarter, $address);
     }
 
     /**
@@ -67,11 +67,14 @@ class OrderService
         ?string $kpayPhone = null,      // numéro Mobile Money (mode kpay_direct)
         ?int $deliveryRouteId = null,   // trajet transporteur (SOLEX interurbain, DHL…)
         ?string $deliveryCity = null,   // ville de livraison (choix du partenaire)
-        ?string $deliveryCountry = null
+        ?string $deliveryCountry = null,
+        ?int $deliveryGridId = null,    // grille urbaine zone à zone (ex. SOLEX Douala)
+        ?string $deliveryVehicle = null, // moto, tricycle, 600kg, 1t
+        ?string $deliveryQuarter = null  // quartier de l'acheteur (zone d'arrivée)
     ): Order {
         return DB::transaction(function () use (
             $client, $items, $deliveryCompanyId, $deliveryZoneId, $walletProvider,
-            $deliveryRouteId, $deliveryCity, $deliveryCountry,
+            $deliveryRouteId, $deliveryCity, $deliveryCountry, $deliveryGridId, $deliveryVehicle, $deliveryQuarter,
             $deliveryAddress,
             $deliveryAddressDetails,
             $customerPhone,
@@ -187,6 +190,10 @@ class OrderService
                 $deliveryLongitude,
                 $deliveryCity ?? $deliveryAddress,
                 $deliveryCountry,
+                $deliveryGridId,
+                $deliveryVehicle,
+                $deliveryQuarter,
+                $deliveryAddress,
             );
             $baseDeliveryPrice = (float) $quote['base_price'];   // part transporteur, TVA comprise
             $assoCommission = (float) $quote['asso_commission'];
@@ -249,6 +256,8 @@ class OrderService
                 'delivery_zone_id' => $quote['zone_id'],
                 'delivery_mode' => $quote['delivery_mode'],
                 'delivery_route_id' => $quote['route_id'],
+                'delivery_city_grid_id' => $quote['grid_id'],
+                'delivery_vehicle' => $quote['vehicle'],
                 'shipping_weight_kg' => $quote['weight_kg'],
                 'delivery_vat_amount' => $quote['breakdown']['vat_amount'],
                 'delivery_breakdown' => $this->deliverySnapshot($quote),
@@ -1044,6 +1053,7 @@ class OrderService
             'service_mode' => $quote['service_mode'],
             'service_mode_label' => $quote['service_mode_label'],
             'route_label' => $quote['route_label'],
+            'vehicle_label' => $quote['vehicle_label'],
             'delivery_option' => $quote['delivery_option'],
             'delivery_option_label' => $quote['delivery_option_label'],
             'lead_time' => $quote['lead_time'],

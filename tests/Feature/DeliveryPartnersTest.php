@@ -342,4 +342,60 @@ class DeliveryPartnersTest extends TestCase
             Order::find($orderId)->trackingEvents->pluck('step')->all()
         );
     }
+
+    /** SOLEX Douala : grille zone à zone du seeder (moto, tricycle, 600 kg, 1 t). */
+    private function solexDouala(): \App\Models\DeliveryCityGrid
+    {
+        (new \Database\Seeders\DeliveryPartnersSeeder())->run();
+
+        return \App\Models\DeliveryCityGrid::where('city', 'Douala')->firstOrFail();
+    }
+
+    public function test_solex_douala_offers_one_price_per_vehicle_between_zones(): void
+    {
+        $grid = $this->solexDouala();
+        $product = $this->product('5'); // boutique « Douala » sans quartier
+        $product->shop->update(['address' => 'Rue 1.234, Akwa-Nord, Douala']); // Zone 2
+
+        // Sans quartier : l'app doit demander le quartier, avec la liste par zone.
+        $quote = $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&city=Douala")->assertOk()->json('quote');
+        $this->assertTrue($quote['city_grid']['quarter_required']);
+        $this->assertCount(7, $quote['city_grid']['quarter_options']);
+
+        // Makèpè (Zone 3), 2 × 5 kg = 10 kg : moto 1 500 HT → 1 789 TTC, tricycle 3 000 → 3 578…
+        $partners = collect($this->getJson("/api/v1/delivery/partners?product_id={$product->id}&quantity=2&city=Douala&quarter=" . urlencode('Makèpè'))
+            ->assertOk()->json('partners'))->where('grid_id', $grid->id)->keyBy('vehicle');
+        $this->assertSame(['moto', 'tricycle', '600kg', '1t'], $partners->keys()->all());
+        $this->assertEquals(1789, $partners['moto']['delivery_price']);
+        $this->assertEquals(3578, $partners['tricycle']['delivery_price']);
+        $this->assertSame('1 h à 3 h', $partners['moto']['lead_time']);
+        $this->assertSame('door_to_door', $partners['moto']['service_mode']);
+        $this->assertStringContainsString('Zone 2', $partners['moto']['route_label']);
+        $this->assertStringContainsString('Zone 3', $partners['moto']['route_label']);
+
+        // 40 kg : la moto (30 kg max.) n'est plus proposée.
+        $heavy = collect($this->getJson("/api/v1/delivery/partners?product_id={$product->id}&quantity=8&city=Douala&quarter=Makepe")
+            ->json('partners'))->where('grid_id', $grid->id)->pluck('vehicle')->all();
+        $this->assertSame(['tricycle', '600kg', '1t'], $heavy);
+
+        // Commande en tricycle : prix recalculé côté serveur, livrée par un coursier SOLEX.
+        $client = User::factory()->create();
+        WalletBalance::create(['user_id' => $client->id, 'currency' => 'XAF', 'balance' => 100000, 'locked_balance' => 0]);
+        $orderId = $this->actingAs($client, 'sanctum')->postJson('/api/v1/orders', [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+            'delivery_company_id' => $grid->deliverer_company_id,
+            'delivery_grid_id' => $grid->id,
+            'delivery_vehicle' => 'tricycle',
+            'delivery_quarter' => 'Makèpè',
+            'delivery_city' => 'Douala',
+            'payment_mode' => 'wallet', 'wallet_provider' => 'kpay',
+            'customer_phone' => '237670000001',
+        ])->assertCreated()->json('order_id');
+
+        $order = Order::find($orderId);
+        $this->assertEquals(3578, (float) $order->delivery_fee);
+        $this->assertSame('tricycle', $order->delivery_vehicle);
+        $this->assertSame(Order::DELIVERY_LOCAL, $order->delivery_mode);
+        $this->assertSame('Tricycle', $this->actingAs($client, 'sanctum')->getJson("/api/v1/orders/{$orderId}")->json('order.delivery.vehicle_label'));
+    }
 }

@@ -87,8 +87,12 @@ class OrderController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'delivery_company_id' => 'required|exists:deliverer_companies,id',
             // Livraison urbaine : zone ; interurbain / international : trajet transporteur.
-            'delivery_zone_id' => 'required_without:delivery_route_id|nullable|exists:delivery_zones,id',
+            'delivery_zone_id' => 'required_without_all:delivery_route_id,delivery_grid_id|nullable|exists:delivery_zones,id',
             'delivery_route_id' => 'nullable|exists:delivery_routes,id',
+            // Grille urbaine zone à zone : véhicule et quartier choisis par l'acheteur.
+            'delivery_grid_id' => 'nullable|exists:delivery_city_grids,id',
+            'delivery_vehicle' => 'nullable|string|max:30',
+            'delivery_quarter' => 'nullable|string|max:120',
             'delivery_city' => 'nullable|string|max:120',
             'delivery_country' => 'nullable|string|max:60',
             // Mode de paiement : 'wallet' (escrow solde) | 'kpay_direct' (PayIn KPay)
@@ -138,6 +142,9 @@ class OrderController extends Controller
                 deliveryRouteId: $request->delivery_route_id ? (int) $request->delivery_route_id : null,
                 deliveryCity: $request->input('delivery_city'),
                 deliveryCountry: $request->input('delivery_country'),
+                deliveryGridId: $request->delivery_grid_id ? (int) $request->delivery_grid_id : null,
+                deliveryVehicle: $request->input('delivery_vehicle'),
+                deliveryQuarter: $request->input('delivery_quarter'),
             );
 
             return response()->json([
@@ -287,6 +294,7 @@ class OrderController extends Controller
         $order = Order::where('user_id', $request->user()->id)
             ->where('delivery_mode', Order::DELIVERY_CARRIER)
             ->whereNull('delivery_zone_id') // à domicile : clôture par le code du coursier
+            ->whereNull('delivery_city_grid_id')
             ->where('status', 'shipped')
             ->findOrFail($id);
 
