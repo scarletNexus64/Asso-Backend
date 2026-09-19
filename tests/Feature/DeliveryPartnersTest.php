@@ -462,4 +462,32 @@ class DeliveryPartnersTest extends TestCase
         $this->assertNull($product->shop->fresh()->quarter);
         $this->assertNull($order->fresh()->delivery_city_grid_id);
     }
+
+    public function test_coverage_shows_who_delivers_at_a_map_position(): void
+    {
+        $this->solexDouala();
+
+        // Makèpè (Douala) : SOLEX livre à domicile, Zone 3 ; quartiers colorés et agence SOLEX.
+        $coverage = $this->getJson('/api/v1/delivery/coverage?latitude=4.0829&longitude=9.7561')->assertOk()->json('coverage');
+        $this->assertTrue($coverage['served']);
+        $this->assertSame('SOLEX', $coverage['served_by'][0]['company_name']);
+        $this->assertSame(3, $coverage['served_by'][0]['zone']);
+        $this->assertSame('Makèpè', $coverage['served_by'][0]['quarter']);
+        $this->assertNotEmpty($coverage['quarters']);
+        $this->assertSame('Douala', $coverage['agencies'][0]['city']);
+
+        // Yaoundé : pas de livraison à domicile, retrait à l'agence SOLEX (trajet vers Douala).
+        $coverage = $this->getJson('/api/v1/delivery/coverage?latitude=3.87&longitude=11.51')->json('coverage');
+        $this->assertFalse($coverage['served']);
+        $this->assertSame('Yaoundé', $coverage['city']);
+        $this->assertSame('SOLEX', $coverage['agencies'][0]['company_name']);
+        $this->assertSame('Douala', $coverage['agencies'][0]['destinations'][0]['city']);
+
+        // Loin de tout : rien.
+        $coverage = $this->getJson('/api/v1/delivery/coverage?latitude=6.5&longitude=12.0')->json('coverage');
+        $this->assertFalse($coverage['served']);
+        $this->assertSame([], $coverage['agencies']);
+
+        $this->getJson('/api/v1/delivery/coverage')->assertStatus(422);
+    }
 }

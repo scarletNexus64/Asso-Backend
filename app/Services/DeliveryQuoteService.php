@@ -9,6 +9,7 @@ use App\Models\DeliveryRoute;
 use App\Models\DeliveryZone;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Support\CityCoordinates;
 use App\Support\CountryCode;
 use App\Support\LocationFormatter;
 use App\Support\WeightGrid;
@@ -99,6 +100,130 @@ class DeliveryQuoteService
         }
 
         return $result;
+    }
+
+    /**
+     * Couverture de livraison autour d'un point (carte « Choisir la position » de l'acheteur) :
+     * quartiers et zones à afficher, partenaires qui livrent à domicile à ce point exact,
+     * et agences de la ville pour l'interurbain.
+     */
+    public function coverage(float $lat, float $lng): array
+    {
+        $displayKm = 20;
+        $radius = self::radiusKm();
+        $quarters = [];
+        $zones = [];
+        $servedBy = [];
+        $servedCity = null;
+
+        // Grilles zone à zone (ex. SOLEX Douala) : quartiers placés, colorés par zone.
+        $grids = DeliveryCityGrid::where('is_active', true)
+            ->whereHas('company', fn ($q) => $q->where('is_active', true))
+            ->with('company')
+            ->get();
+        foreach ($grids as $grid) {
+            foreach ($grid->zones as $zone) {
+                foreach (DeliveryCityGrid::quartersOf($zone) as $quarter) {
+                    if ($quarter['lat'] === null || $this->distanceKm($lat, $lng, $quarter['lat'], $quarter['lng']) > $displayKm) {
+                        continue;
+                    }
+                    $quarters[] = [
+                        'name' => $quarter['name'],
+                        'latitude' => $quarter['lat'],
+                        'longitude' => $quarter['lng'],
+                        'zone' => (int) $zone['code'],
+                        'zone_label' => $zone['label'],
+                        'company_name' => $grid->company->name,
+                    ];
+                }
+            }
+            if ($nearest = $grid->nearestQuarter($lat, $lng)) {
+                $servedCity ??= $grid->city;
+                $servedBy[] = [
+                    'company_id' => $grid->company->id,
+                    'company_name' => $grid->company->name,
+                    'type' => 'city_grid',
+                    'city' => $grid->city,
+                    'zone' => $nearest['zone'],
+                    'zone_label' => $grid->zoneLabel($nearest['zone'], 99),
+                    'quarter' => $nearest['name'],
+                    'distance_km' => $nearest['distance_km'],
+                    'vehicles' => collect($grid->vehicles)->pluck('label')->values()->all(),
+                ];
+            }
+        }
+
+        // Zones dessinées des livreurs (rayon réglé dans l'admin autour du centre).
+        $companies = DelivererCompany::where('is_active', true)
+            ->with(['deliveryZones' => fn ($q) => $q->where('is_active', true)])
+            ->get();
+        foreach ($companies as $company) {
+            foreach ($company->deliveryZones as $zone) {
+                if (!$zone->center_latitude || !$zone->center_longitude) {
+                    continue;
+                }
+                $distance = $this->distanceKm($lat, $lng, (float) $zone->center_latitude, (float) $zone->center_longitude);
+                if ($distance > $displayKm + $radius) {
+                    continue;
+                }
+                $zones[] = [
+                    'name' => $zone->name,
+                    'latitude' => (float) $zone->center_latitude,
+                    'longitude' => (float) $zone->center_longitude,
+                    'radius_km' => $radius,
+                    'company_name' => $company->name,
+                ];
+                if ($distance <= $radius) {
+                    $servedBy[] = [
+                        'company_id' => $company->id,
+                        'company_name' => $company->name,
+                        'type' => 'zone',
+                        'city' => $zone->city,
+                        'zone' => null,
+                        'zone_label' => $zone->name,
+                        'quarter' => null,
+                        'distance_km' => round($distance, 2),
+                        'vehicles' => [],
+                    ];
+                }
+            }
+        }
+
+        // Interurbain : agences des partenaires dans la ville du point.
+        $city = $servedCity ?? CityCoordinates::nearest($lat, $lng)['name'] ?? null;
+        $agencies = [];
+        if ($city) {
+            $routes = DeliveryRoute::where('is_active', true)
+                ->whereHas('company', fn ($q) => $q->where('is_active', true))
+                ->with('company')
+                ->get();
+            foreach ($routes as $route) {
+                $isOrigin = CountryCode::sameCity($route->origin_city, $city);
+                $isDestination = CountryCode::sameCity($route->destination_city, $city);
+                if (!$isOrigin && !$isDestination) {
+                    continue;
+                }
+                $other = $isOrigin ? ($route->destination_city ?: CountryCode::name($route->destination_country)) : ($route->origin_city ?: CountryCode::name($route->origin_country));
+                $key = $route->company->id;
+                $agencies[$key] ??= [
+                    'company_id' => $route->company->id,
+                    'company_name' => $route->company->name,
+                    'city' => $city,
+                    'agency_pickup' => $route->company->service_mode === DelivererCompany::MODE_AGENCY,
+                    'destinations' => [],
+                ];
+                $agencies[$key]['destinations'][] = ['city' => $other, 'lead_time' => $route->lead_time];
+            }
+        }
+
+        return [
+            'city' => $city,
+            'served' => $servedBy !== [],
+            'served_by' => $servedBy,
+            'agencies' => array_values($agencies),
+            'quarters' => $quarters,
+            'zones' => $zones,
+        ];
     }
 
     /**

@@ -48,6 +48,30 @@ class CityCoordinates
         'mamfe' => [5.7667, 9.2833],
     ];
 
+    /**
+     * Ville connue la plus proche d'un point, dans un rayon donné.
+     *
+     * @return array{name: string, distance_km: float}|null
+     */
+    public static function nearest(float $lat, float $lng, float $maxKm = 25): ?array
+    {
+        $best = null;
+        foreach (self::CITIES as $key => [$cLat, $cLng]) {
+            $d = \App\Models\DeliveryCityGrid::distanceKm($lat, $lng, $cLat, $cLng);
+            if ($d <= $maxKm && (!$best || $d < $best['distance_km'])) {
+                $best = ['name' => self::NAMES[$key] ?? ucfirst($key), 'distance_km' => round($d, 1)];
+            }
+        }
+
+        return $best;
+    }
+
+    private const NAMES = [
+        'yaounde' => 'Yaoundé', 'ngaoundere' => 'Ngaoundéré', 'limbe' => 'Limbé', 'buea' => 'Buéa',
+        'edea' => 'Édéa', 'abongmbang' => 'Abong-Mbang', 'eseka' => 'Éséka', 'sangmelima' => 'Sangmélima',
+        'kousseri' => 'Kousséri', 'bangangte' => 'Bangangté', 'mamfe' => 'Mamfé',
+    ];
+
     /** @return array{0: float, 1: float}|null */
     public static function of(?string $city): ?array
     {

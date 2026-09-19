@@ -146,6 +146,9 @@ Route::prefix('v1')->group(function () {
 
     // Get all delivery partners with their positions (public - for vendor map)
     Route::get('/delivery/partners', [DeliveryController::class, 'getDeliveryPartners']);
+
+    // Couverture autour d'un point : carte « Choisir la position » de l'acheteur (public).
+    Route::get('/delivery/coverage', [DeliveryController::class, 'coverage'])->middleware('throttle:60,1');
 });
 
 // Payment webhooks (no auth — protégé par vérification de signature HMAC + re-poll KPay)

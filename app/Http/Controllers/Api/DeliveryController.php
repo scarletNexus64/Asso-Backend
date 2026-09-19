@@ -499,6 +499,26 @@ class DeliveryController extends Controller
     }
 
     /**
+     * Qui livre à ce point : quartiers et zones desservis autour, partenaires qui livrent
+     * à domicile ici, agences de la ville pour l'interurbain.
+     *
+     * GET /v1/delivery/coverage?latitude=Y&longitude=Z
+     */
+    public function coverage(Request $request)
+    {
+        $validated = $request->validate([
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'coverage' => app(\App\Services\DeliveryQuoteService::class)
+                ->coverage((float) $validated['latitude'], (float) $validated['longitude']),
+        ]);
+    }
+
+    /**
      * Get all delivery partners with calculated delivery prices.
      * If product_id is provided, calculates price based on the company's pricing type
      * (fixed, weight_category, or volumetric_weight).
