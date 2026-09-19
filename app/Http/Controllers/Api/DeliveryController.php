@@ -36,7 +36,7 @@ class DeliveryController extends Controller
         $user = $request->user();
 
         // Commandes assignées directement à ce livreur
-        $directOrders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
+        $directOrders = Order::with(['items.product.primaryImage', 'items.product.shop', 'user', 'deliveryCompany'])
             ->where('delivery_person_id', $user->id)
             ->whereIn('status', ['preparing', 'confirmed'])
             ->orderBy('created_at', 'desc')
@@ -49,7 +49,7 @@ class DeliveryController extends Controller
 
         $companyOrders = collect();
         if ($companyIds->isNotEmpty()) {
-            $companyOrders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
+            $companyOrders = Order::with(['items.product.primaryImage', 'items.product.shop', 'user', 'deliveryCompany'])
                 ->whereIn('delivery_company_id', $companyIds)
                 ->whereNull('delivery_person_id')
                 ->where(fn ($q) => $q
@@ -646,7 +646,24 @@ class DeliveryController extends Controller
 
     private function formatDeliveryRequest($order): array
     {
+        $delivery = \App\Support\DeliveryPresenter::forOrder($order);
+        $shop = $order->items->first()?->product?->shop;
+
         return [
+            // Où récupérer le colis : boutique (quartier, ville) ou agence du partenaire.
+            'pickup_address' => $order->hasLastMileDelivery()
+                ? "Agence {$delivery['company_name']}"
+                : trim(implode(' — ', array_filter([$shop?->name, $shop?->location_label, $shop?->address]))),
+            'pickup_latitude' => $shop?->latitude,
+            'pickup_longitude' => $shop?->longitude,
+            // Véhicule, trajet et délai annoncés à l'acheteur.
+            'notes' => trim(implode(' · ', array_filter([
+                $delivery['vehicle_label'],
+                $delivery['route_label'],
+                $delivery['lead_time'] ? 'Délai annoncé : ' . $delivery['lead_time'] : null,
+                $order->notes,
+            ]))),
+            'delivery' => $delivery,
             'id' => $order->id,
             'order_number' => $order->order_number,
             'status' => $order->status,

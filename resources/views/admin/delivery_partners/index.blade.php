@@ -1,7 +1,7 @@
 @extends('admin.layouts.app')
 
 @section('content')
-<div class="p-6" x-data="{ showCreate: {{ $errors->any() ? 'true' : 'false' }} }">
+<div class="p-6" x-data="{ showCreate: {{ $errors->any() || request('create') ? 'true' : 'false' }} }">
     <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
             <h1 class="text-2xl font-bold text-white">Partenaires logistiques</h1>
@@ -73,7 +73,7 @@
                     <th class="px-4 py-3">Partenaire</th>
                     <th class="px-4 py-3">Catégorie</th>
                     <th class="px-4 py-3">Mode</th>
-                    <th class="px-4 py-3 text-center">Zones urbaines</th>
+                    <th class="px-4 py-3 text-center">Grilles / zones urbaines</th>
                     <th class="px-4 py-3 text-center">Trajets</th>
                     <th class="px-4 py-3">TVA</th>
                     <th class="px-4 py-3">Statut</th>
@@ -86,7 +86,7 @@
                         <td class="px-4 py-3 text-white font-medium">{{ $partner->name }}</td>
                         <td class="px-4 py-3">{{ \App\Models\DelivererCompany::SERVICE_TYPES[$partner->service_type] ?? $partner->service_type }}</td>
                         <td class="px-4 py-3">{{ $partner->service_mode === 'agency_to_agency' ? "Agence → agence" : 'À domicile' }}</td>
-                        <td class="px-4 py-3 text-center">{{ $partner->delivery_zones_count }}</td>
+                        <td class="px-4 py-3 text-center">{{ $partner->city_grids_count }} / {{ $partner->delivery_zones_count }}</td>
                         <td class="px-4 py-3 text-center">{{ $partner->delivery_routes_count }}</td>
                         <td class="px-4 py-3">{{ $partner->prices_exclude_vat ? 'Grille HT + TVA' : 'TTC' }}</td>
                         <td class="px-4 py-3">
@@ -100,8 +100,8 @@
                             <a href="{{ route('admin.delivery-partners.edit', $partner) }}" class="text-primary-400 hover:text-primary-300 mr-3">
                                 <i class="fas fa-route mr-1"></i> Conditions & trajets
                             </a>
-                            <a href="{{ route('admin.deliverers.edit', $partner) }}" class="text-gray-400 hover:text-white">
-                                <i class="fas fa-map-marked-alt mr-1"></i> Zones
+                            <a href="{{ route('admin.deliverers.show', $partner) }}" class="text-gray-400 hover:text-white">
+                                <i class="fas fa-motorcycle mr-1"></i> Coursiers
                             </a>
                         </td>
                     </tr>

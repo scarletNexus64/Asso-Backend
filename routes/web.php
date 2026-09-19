@@ -84,13 +84,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::put('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateRoute'])->name('routes.update');
             Route::delete('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'destroyRoute'])->name('routes.destroy');
             Route::put('/{partner}/city-grids/{grid}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateCityGrid'])->name('city-grids.update');
+            Route::post('/{partner}/city-grids', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'storeCityGrid'])->name('city-grids.store');
         });
         Route::get('/shipments', [\App\Http\Controllers\Admin\ShipmentController::class, 'index'])->name('shipments.index');
         Route::get('/shipments/{order}', [\App\Http\Controllers\Admin\ShipmentController::class, 'show'])->name('shipments.show');
         Route::post('/shipments/{order}/steps', [\App\Http\Controllers\Admin\ShipmentController::class, 'addStep'])->name('shipments.step');
 
         // Deliverers (Livreurs partenaires)
-        Route::resource('deliverers', DelivererController::class);
+        Route::resource('deliverers', DelivererController::class)->except(['store']);
         Route::post('deliverers/{deliverer}/sync-code', [DelivererController::class, 'generateSyncCode'])->name('deliverers.sync-code');
 
         // Deliverer Sync Management

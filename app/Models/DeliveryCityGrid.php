@@ -38,6 +38,72 @@ class DeliveryCityGrid extends Model
         return $this->belongsTo(DelivererCompany::class, 'deliverer_company_id');
     }
 
+    /**
+     * Quartiers d'une zone, normalisés : [['name' => 'Akwa-Nord', 'lat' => 4.06, 'lng' => 9.71], …].
+     * (Anciennes données : simple liste de noms, sans position.)
+     */
+    public static function quartersOf(array $zone): array
+    {
+        return collect($zone['quarters'] ?? [])->map(fn ($q) => is_array($q)
+            ? ['name' => (string) ($q['name'] ?? ''), 'lat' => isset($q['lat']) && $q['lat'] !== '' ? (float) $q['lat'] : null, 'lng' => isset($q['lng']) && $q['lng'] !== '' ? (float) $q['lng'] : null]
+            : ['name' => (string) $q, 'lat' => null, 'lng' => null])
+            ->filter(fn ($q) => $q['name'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Quartier géolocalisé le plus proche d'un point (boutique sur sa carte, position de
+     * l'acheteur), dans le rayon réglé dans l'admin. Null si aucun quartier n'est placé.
+     *
+     * @return array{zone: int, name: string, distance_km: float}|null
+     */
+    public function nearestQuarter(?float $lat, ?float $lng): ?array
+    {
+        if ($lat === null || $lng === null || ($lat == 0 && $lng == 0)) {
+            return null;
+        }
+
+        $best = null;
+        foreach ($this->zones as $zone) {
+            foreach (self::quartersOf($zone) as $quarter) {
+                if ($quarter['lat'] === null || $quarter['lng'] === null) {
+                    continue;
+                }
+                $d = self::distanceKm($lat, $lng, $quarter['lat'], $quarter['lng']);
+                if (!$best || $d < $best['distance_km']) {
+                    $best = ['zone' => (int) $zone['code'], 'name' => $quarter['name'], 'distance_km' => round($d, 2)];
+                }
+            }
+        }
+
+        $radius = \App\Services\DeliveryQuoteService::radiusKm();
+
+        return $best && $best['distance_km'] <= $radius ? $best : null;
+    }
+
+    public static function distanceKm(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
+
+        return 6371 * 2 * atan2(sqrt($a), sqrt(1 - $a));
+    }
+
+    /** Grille active d'un partenaire actif qui couvre une ville. */
+    public static function forCity(?string $city): ?self
+    {
+        if (!$city) {
+            return null;
+        }
+
+        return self::where('is_active', true)
+            ->whereHas('company', fn ($q) => $q->where('is_active', true))
+            ->get()
+            ->first(fn (self $grid) => $grid->coversCity($city));
+    }
+
     public function coversCity(?string $city): bool
     {
         return CountryCode::sameCity($this->city, $city);
@@ -56,7 +122,7 @@ class DeliveryCityGrid extends Model
         if (!$zone) {
             return "Zone {$code}";
         }
-        $quarters = $zone['quarters'] ?? [];
+        $quarters = array_column(self::quartersOf($zone), 'name');
         $shown = implode(', ', array_slice($quarters, 0, $maxQuarters)) . (count($quarters) > $maxQuarters ? '…' : '');
 
         return $zone['label'] . ($shown !== '' ? " ({$shown})" : '');
@@ -80,7 +146,7 @@ class DeliveryCityGrid extends Model
         $best = null;
         $bestLength = 0;
         foreach ($this->zones as $zone) {
-            foreach ($zone['quarters'] ?? [] as $quarter) {
+            foreach (array_column(self::quartersOf($zone), 'name') as $quarter) {
                 $needle = trim(preg_replace('/[^a-z0-9]+/', ' ', self::normalize($quarter)));
                 if ($needle !== '' && str_contains($haystack, " {$needle} ") && strlen($needle) > $bestLength) {
                     $best = (int) $zone['code'];
@@ -122,8 +188,22 @@ class DeliveryCityGrid extends Model
         return collect($this->zones)->map(fn ($z) => [
             'zone' => (int) $z['code'],
             'label' => $z['label'],
-            'quarters' => array_values($z['quarters'] ?? []),
+            'quarters' => array_column(self::quartersOf($z), 'name'),
         ])->values()->all();
+    }
+
+    /** Zone d'un quartier par son nom exact (liste de l'app). */
+    public function zoneOfQuarter(?string $name): ?int
+    {
+        foreach ($this->zones as $zone) {
+            foreach (self::quartersOf($zone) as $quarter) {
+                if ($name !== null && self::normalize($quarter['name']) === self::normalize($name)) {
+                    return (int) $zone['code'];
+                }
+            }
+        }
+
+        return null;
     }
 
     private static function normalize(string $value): string

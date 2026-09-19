@@ -58,7 +58,7 @@ class DeliveryQuoteService
         $cart = $this->cart($items);
         [$destCity, $destCountry] = $this->destination($city, $country);
         [$originCity, $originCountry] = $cart['origin'];
-        $gridContext = $this->gridContext($destCity, $quarter, $address ?? $city);
+        $gridContext = $this->gridContext($destCity, $quarter, $address ?? $city, $lat, $lng);
 
         $result = [
             'available' => false,
@@ -160,6 +160,9 @@ class DeliveryQuoteService
         $missing = [];
         $origin = [null, null];
         $originAddress = null;
+        $originQuarter = null;
+        $originLat = null;
+        $originLng = null;
         $category = null;
         $products = Product::with('shop')->whereIn('id', collect($items)->pluck('product_id'))->get()->keyBy('id');
 
@@ -181,6 +184,9 @@ class DeliveryQuoteService
             if ($origin === [null, null]) {
                 $origin = $this->productOrigin($product);
                 $originAddress = trim(implode(', ', array_filter([$product->shop?->address, $product->shop?->city])));
+                $originQuarter = $product->shop?->quarter;
+                $originLat = $product->shop?->latitude !== null ? (float) $product->shop->latitude : null;
+                $originLng = $product->shop?->longitude !== null ? (float) $product->shop->longitude : null;
             }
             $category ??= $product->weight_category;
         }
@@ -190,6 +196,9 @@ class DeliveryQuoteService
             'missing_weight' => array_values(array_unique($missing)),
             'origin' => $origin,
             'origin_address' => $originAddress,
+            'origin_quarter' => $originQuarter,
+            'origin_lat' => $originLat,
+            'origin_lng' => $originLng,
             'weight_category' => $category ?? 'X-small',
         ];
     }
@@ -386,7 +395,7 @@ class DeliveryQuoteService
      * Grilles zone à zone qui couvrent la ville de l'acheteur, et sa zone : quartier
      * choisi dans l'app, sinon quartier reconnu dans l'adresse.
      */
-    private function gridContext(?string $destCity, ?string $quarter, ?string $address): array
+    private function gridContext(?string $destCity, ?string $quarter, ?string $address, ?float $lat = null, ?float $lng = null): array
     {
         $grids = $destCity
             ? DeliveryCityGrid::where('is_active', true)
@@ -402,8 +411,15 @@ class DeliveryQuoteService
         }
 
         $zones = [];
+        $detected = [];
         foreach ($grids as $grid) {
-            $zones[$grid->id] = $grid->zoneFor($quarter) ?? $grid->zoneFor($address);
+            // Quartier choisi, sinon quartier géolocalisé le plus proche de l'acheteur, sinon adresse.
+            $nearest = $grid->nearestQuarter($lat, $lng);
+            $detected[$grid->id] = $nearest['name'] ?? null;
+            $zones[$grid->id] = $grid->zoneOfQuarter($quarter)
+                ?? $grid->zoneFor($quarter)
+                ?? $nearest['zone'] ?? null
+                ?? $grid->zoneFor($address);
         }
         $first = $grids->first();
         $destZone = $zones[$first->id];
@@ -414,6 +430,8 @@ class DeliveryQuoteService
             'public' => [
                 'city' => $first->city,
                 'quarter' => $quarter,
+                // Quartier déduit de la position de l'acheteur (pré-sélection dans l'app).
+                'detected_quarter' => $quarter ? null : ($detected[$first->id] ?? null),
                 'destination_zone' => $destZone,
                 'destination_zone_label' => $destZone ? $first->zoneLabel($destZone, 99) : null,
                 // L'acheteur doit indiquer son quartier pour être chiffré.
@@ -438,7 +456,10 @@ class DeliveryQuoteService
             if (!$destZone || !$grid->coversCity($originCity)) {
                 continue;
             }
-            $originZone = $grid->zoneFor($cart['origin_address']);
+            // Quartier de la boutique (position sur sa carte), sinon son adresse.
+            $originZone = $grid->zoneOfQuarter($cart['origin_quarter'])
+                ?? $grid->nearestQuarter($cart['origin_lat'], $cart['origin_lng'])['zone'] ?? null
+                ?? $grid->zoneFor($cart['origin_address']);
             if (!$originZone) {
                 \Illuminate\Support\Facades\Log::info('[DeliveryQuote] Quartier de la boutique non reconnu pour la grille ' . $grid->id, ['address' => $cart['origin_address']]);
                 continue;

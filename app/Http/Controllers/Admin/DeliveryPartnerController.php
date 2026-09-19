@@ -22,7 +22,7 @@ class DeliveryPartnerController extends Controller
 {
     public function index()
     {
-        $partners = DelivererCompany::withCount(['deliveryZones', 'deliveryRoutes'])
+        $partners = DelivererCompany::withCount(['deliveryZones', 'deliveryRoutes', 'cityGrids'])
             ->orderByRaw("CASE service_type WHEN 'intercity' THEN 0 WHEN 'international' THEN 1 ELSE 2 END")
             ->orderBy('name')
             ->get();
@@ -57,7 +57,7 @@ class DeliveryPartnerController extends Controller
 
     public function edit(DelivererCompany $partner)
     {
-        $partner->load(['deliveryRoutes' => fn ($q) => $q->orderBy('origin_city')->orderBy('destination_city'), 'cityGrids']);
+        $partner->load(['deliveryRoutes' => fn ($q) => $q->orderBy('origin_city')->orderBy('destination_city'), 'cityGrids', 'deliveryZones']);
 
         return view('admin.delivery_partners.edit', [
             'partner' => $partner,
@@ -98,6 +98,35 @@ class DeliveryPartnerController extends Controller
         return back()->with('success', 'Trajet supprimé.');
     }
 
+    /** Nouvelle ville couverte en zone à zone : zones vides + véhicules standards à tarifer. */
+    public function storeCityGrid(Request $request, DelivererCompany $partner)
+    {
+        $validated = $request->validate([
+            'city' => 'required|string|max:120',
+            'zones_count' => 'required|integer|min:1|max:30',
+        ]);
+
+        if ($partner->cityGrids()->get()->contains(fn ($g) => $g->coversCity($validated['city']))) {
+            return back()->withErrors(['city' => "{$partner->name} a déjà une grille pour {$validated['city']}."]);
+        }
+
+        $partner->cityGrids()->create([
+            'city' => trim($validated['city']),
+            'country' => 'CM',
+            'zones' => collect(range(1, $validated['zones_count']))
+                ->map(fn ($code) => ['code' => $code, 'label' => "Zone {$code}", 'quarters' => []])->all(),
+            'vehicles' => [
+                ['code' => 'moto', 'label' => 'Moto', 'max_weight_kg' => 30, 'lead_time' => null, 'prices' => []],
+                ['code' => 'tricycle', 'label' => 'Tricycle', 'max_weight_kg' => 300, 'lead_time' => null, 'prices' => []],
+                ['code' => '600kg', 'label' => 'Camionnette 600 kg', 'max_weight_kg' => 600, 'lead_time' => null, 'prices' => []],
+                ['code' => '1t', 'label' => 'Camion 1 tonne', 'max_weight_kg' => 1000, 'lead_time' => null, 'prices' => []],
+            ],
+            'is_active' => false,
+        ]);
+
+        return back()->with('success', "Grille {$validated['city']} créée (inactive) : ajoutez et placez les quartiers, saisissez les prix, puis activez-la.");
+    }
+
     /**
      * Grille urbaine zone à zone (ex. SOLEX Douala) : quartiers par zone, véhicules
      * (poids max., délai) et prix zone de départ → zone d'arrivée.
@@ -108,7 +137,10 @@ class DeliveryPartnerController extends Controller
 
         $validated = $request->validate([
             'zones' => 'required|array|min:1',
-            'zones.*.quarters' => 'nullable|string|max:2000',
+            'zones.*.quarters' => 'nullable|array',
+            'zones.*.quarters.*.name' => 'nullable|string|max:120',
+            'zones.*.quarters.*.lat' => 'nullable|numeric|between:-90,90',
+            'zones.*.quarters.*.lng' => 'nullable|numeric|between:-180,180',
             'vehicles' => 'required|array|min:1',
             'vehicles.*.label' => 'required|string|max:60',
             'vehicles.*.max_weight_kg' => 'nullable|numeric|min:0.1',
@@ -120,10 +152,16 @@ class DeliveryPartnerController extends Controller
         ]);
 
         $zones = collect($grid->zones)->map(function ($zone) use ($validated) {
-            $raw = $validated['zones'][$zone['code']]['quarters'] ?? null;
-            if ($raw !== null) {
-                $zone['quarters'] = array_values(array_filter(array_map('trim', preg_split('/[,\n]+/', $raw))));
-            }
+            // Quartiers géolocalisés : nom + position sur la carte.
+            $zone['quarters'] = collect($validated['zones'][$zone['code']]['quarters'] ?? [])
+                ->filter(fn ($q) => trim((string) ($q['name'] ?? '')) !== '')
+                ->map(fn ($q) => [
+                    'name' => trim($q['name']),
+                    'lat' => isset($q['lat']) && $q['lat'] !== '' ? round((float) $q['lat'], 6) : null,
+                    'lng' => isset($q['lng']) && $q['lng'] !== '' ? round((float) $q['lng'], 6) : null,
+                ])
+                ->values()
+                ->all();
 
             return $zone;
         })->all();
@@ -146,6 +184,12 @@ class DeliveryPartnerController extends Controller
             ];
         })->all();
 
+        // Ville → zones → quartiers : nouvelle zone vide à la suite.
+        if ($request->boolean('add_zone')) {
+            $next = (int) collect($zones)->max('code') + 1;
+            $zones[] = ['code' => $next, 'label' => "Zone {$next}", 'quarters' => []];
+        }
+
         $grid->update([
             'zones' => $zones,
             'vehicles' => $vehicles,
@@ -154,7 +198,21 @@ class DeliveryPartnerController extends Controller
             'is_active' => $request->boolean('is_active'),
         ]);
 
-        return back()->with('success', "Grille {$grid->city} enregistrée.");
+        // Lien avec les vendeurs : quartier de chaque boutique de la ville recalculé.
+        $linked = 0;
+        \App\Models\Shop::whereNotNull('latitude')->each(function (\App\Models\Shop $shop) use ($grid, &$linked) {
+            if (!$grid->coversCity($shop->city ?: \App\Support\LocationFormatter::parse($shop->address)[0])) {
+                return;
+            }
+            $before = $shop->quarter;
+            $shop->assignDeliveryQuarter();
+            if ($shop->isDirty('quarter')) {
+                $shop->saveQuietly();
+            }
+            $linked += $shop->quarter ? 1 : 0;
+        });
+
+        return back()->with('success', "Grille {$grid->city} enregistrée. {$linked} boutique(s) rattachée(s) à un quartier.");
     }
 
     private function validatePartner(Request $request, ?DelivererCompany $partner = null): array

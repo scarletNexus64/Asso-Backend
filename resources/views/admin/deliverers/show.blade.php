@@ -76,8 +76,8 @@
 
                 <div class="border-t border-dark-200 pt-4 space-y-3">
                     <div class="flex items-center justify-between">
-                        <span class="text-gray-400"><i class="fas fa-map-marked-alt text-primary-500 mr-2"></i> Zones</span>
-                        <span class="font-medium text-white">{{ $deliverer->deliveryZones->count() }}</span>
+                        <span class="text-gray-400"><i class="fas fa-users text-primary-500 mr-2"></i> Coursiers synchronisés</span>
+                        <span class="font-medium text-white">{{ $deliverer->activeCodeSyncs()->count() }}</span>
                     </div>
                     <div class="flex items-center justify-between">
                         <span class="text-gray-400"><i class="fas fa-calendar text-primary-500 mr-2"></i> Créé</span>
@@ -191,11 +191,20 @@
                 @endif
             </div>
 
+            <!-- Services et tarifs (même résumé que « Partenaires logistiques ») -->
+            <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                <h3 class="text-xl font-bold text-white mb-4 flex items-center">
+                    <i class="fas fa-truck-loading text-primary-500 mr-2"></i>
+                    Services et tarifs proposés aux acheteurs
+                </h3>
+                @include('admin.delivery_partners._services_summary', ['partner' => $deliverer])
+            </div>
+
             <!-- Delivery Zones -->
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
                 <h3 class="text-xl font-bold text-white mb-4 flex items-center">
                     <i class="fas fa-map-marked-alt text-primary-500 mr-2"></i>
-                    Zones de Livraison ({{ $deliverer->deliveryZones->count() }})
+                    Zones sur carte ({{ $deliverer->deliveryZones->count() }})
                 </h3>
 
                 @forelse($deliverer->deliveryZones as $zone)
@@ -254,7 +263,10 @@
                 @empty
                     <div class="text-center py-8">
                         <i class="fas fa-map text-gray-600 text-4xl mb-3"></i>
-                        <p class="text-gray-500">Aucune zone de livraison configurée</p>
+                        <p class="text-gray-500">Aucune zone dessinée sur la carte.</p>
+                        @if($deliverer->cityGrids->isNotEmpty() || $deliverer->deliveryRoutes->isNotEmpty())
+                            <p class="text-gray-500 text-sm mt-1">Ce partenaire est chiffré par sa grille de ville et/ou ses trajets (voir ci-dessus) : aucune zone sur carte n'est nécessaire.</p>
+                        @endif
                     </div>
                 @endforelse
             </div>

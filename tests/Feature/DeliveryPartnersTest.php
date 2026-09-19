@@ -398,4 +398,21 @@ class DeliveryPartnersTest extends TestCase
         $this->assertSame(Order::DELIVERY_LOCAL, $order->delivery_mode);
         $this->assertSame('Tricycle', $this->actingAs($client, 'sanctum')->getJson("/api/v1/orders/{$orderId}")->json('order.delivery.vehicle_label'));
     }
+
+    public function test_shop_and_buyer_are_placed_in_their_zone_from_map_position(): void
+    {
+        $grid = $this->solexDouala();
+        $product = $this->product('2');
+
+        // Boutique placée sur sa carte à Akwa-Nord (Zone 2) : quartier déduit et affiché.
+        $product->shop->update(['latitude' => 4.0642, 'longitude' => 9.7198]);
+        $this->assertSame('Akwa-Nord', $product->shop->fresh()->quarter);
+        $this->assertSame('Akwa-Nord, Douala, Cameroun', $product->shop->fresh()->location_label);
+
+        // Acheteur géolocalisé à Makèpè (Zone 3), sans choisir de quartier.
+        $response = $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&city=Douala&latitude=4.0829&longitude=9.7561")->assertOk();
+        $this->assertSame('Makèpè', $response->json('quote.city_grid.detected_quarter'));
+        $moto = collect($response->json('partners'))->firstWhere('vehicle', 'moto');
+        $this->assertEquals(1789, $moto['delivery_price']); // Zone 2 → Zone 3 : 1 500 HT
+    }
 }

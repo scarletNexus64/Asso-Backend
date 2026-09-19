@@ -18,6 +18,7 @@ class Shop extends Model
         'logo',
         'shop_link',
         'address',
+        'quarter',
         'city',
         'country',
         'phone',
@@ -48,15 +49,64 @@ class Shop extends Model
     /**
      * Attributes to append to model's array form
      */
+    protected static function booted(): void
+    {
+        // Position ou adresse modifiée : on recalcule le quartier de livraison.
+        static::saving(function (Shop $shop) {
+            if ($shop->isDirty(['latitude', 'longitude', 'address', 'city']) || blank($shop->quarter)) {
+                $shop->assignDeliveryQuarter();
+            }
+        });
+    }
+
     protected $appends = [
         'logo_url',
         'location_label',
     ];
 
-    /** « Ville, Pays » (ex. « Douala, Cameroun »), déduit de l'adresse pour les anciennes boutiques. */
+    /**
+     * « Quartier, Ville, Pays » (ex. « Akwa-Nord, Douala, Cameroun ») ; ville et pays
+     * déduits de l'adresse pour les anciennes boutiques.
+     */
     public function getLocationLabelAttribute(): ?string
     {
-        return LocationFormatter::label($this->city, $this->country, $this->address);
+        $label = LocationFormatter::label($this->city, $this->country, $this->address);
+
+        return $this->quarter && $label && !str_contains($label, $this->quarter)
+            ? "{$this->quarter}, {$label}"
+            : ($label ?? $this->quarter);
+    }
+
+    /**
+     * Quartier de livraison : le quartier géolocalisé le plus proche de la position de la
+     * boutique sur sa carte, sinon un quartier cité dans son adresse.
+     */
+    public function assignDeliveryQuarter(): void
+    {
+        $city = $this->city ?: LocationFormatter::parse($this->address)[0];
+        $grid = \App\Models\DeliveryCityGrid::forCity($city);
+        if (!$grid) {
+            return;
+        }
+
+        $nearest = $grid->nearestQuarter(
+            $this->latitude !== null ? (float) $this->latitude : null,
+            $this->longitude !== null ? (float) $this->longitude : null,
+        );
+        if ($nearest) {
+            $this->quarter = $nearest['name'];
+            return;
+        }
+
+        $zone = $grid->zoneFor($this->address);
+        if ($zone) {
+            foreach (\App\Models\DeliveryCityGrid::quartersOf($grid->zone($zone)) as $quarter) {
+                if (str_contains(mb_strtolower((string) $this->address), mb_strtolower($quarter['name']))) {
+                    $this->quarter = $quarter['name'];
+                    return;
+                }
+            }
+        }
     }
 
     /**

@@ -32,15 +32,23 @@ class DeliveryPartnersSeeder extends Seeder
         'Limbé' => [2500, 3500, 100, '24 h'],
     ];
 
-    /** SOLEX Douala — zones de couverture urbaine (légende de la grille). */
+    /**
+     * SOLEX Douala — zones de couverture urbaine (légende de la grille) et position
+     * APPROXIMATIVE de chaque quartier [lat, lng], à ajuster sur la carte de l'admin.
+     */
     private const SOLEX_DOUALA_ZONES = [
-        1 => ['Bali', 'Bonapriso', 'Bonanjo', 'Aéroport', 'Deido', 'New-Bell'],
-        2 => ['Akwa-Nord', 'Mboppi'],
-        3 => ['Bonamoussadi', 'Kotto', 'Makèpè', 'Bonabéri', 'Ndobo'],
-        4 => ['Zone Portuaire', 'Essengué', 'Bois des Singes'],
-        5 => ['Elf axe lourd', 'Borne 10', 'Nyassa', 'Nyalla', 'Logbaba', 'PK8', 'Cité des Palmiers', 'Ndogbong', 'Béedi'],
-        6 => ['Dakar', 'Ndokoti', 'BP Cité', 'Ange Raphaël'],
-        7 => ['Logpom', 'Lendi', 'Logbessou', 'PK14', 'Mbanguè'],
+        1 => ['Bali' => [4.0440, 9.6960], 'Bonapriso' => [4.0310, 9.6930], 'Bonanjo' => [4.0450, 9.6880],
+              'Aéroport' => [4.0100, 9.7180], 'Deido' => [4.0640, 9.7080], 'New-Bell' => [4.0380, 9.7120]],
+        2 => ['Akwa-Nord' => [4.0640, 9.7200], 'Mboppi' => [4.0530, 9.7130]],
+        3 => ['Bonamoussadi' => [4.0940, 9.7420], 'Kotto' => [4.0790, 9.7490], 'Makèpè' => [4.0830, 9.7560],
+              'Bonabéri' => [4.0770, 9.6630], 'Ndobo' => [4.0890, 9.6490]],
+        4 => ['Zone Portuaire' => [4.0550, 9.6880], 'Essengué' => [4.0560, 9.7010], 'Bois des Singes' => [4.0200, 9.7060]],
+        5 => ['Elf axe lourd' => [4.0330, 9.7440], 'Borne 10' => [4.0220, 9.7760], 'Nyassa' => [4.0410, 9.7560],
+              'Nyalla' => [4.0100, 9.7700], 'Logbaba' => [4.0340, 9.7650], 'PK8' => [4.0300, 9.7800],
+              'Cité des Palmiers' => [4.0500, 9.7400], 'Ndogbong' => [4.0610, 9.7450], 'Béedi' => [4.0450, 9.7690]],
+        6 => ['Dakar' => [4.0340, 9.7250], 'Ndokoti' => [4.0450, 9.7350], 'BP Cité' => [4.0560, 9.7600], 'Ange Raphaël' => [4.0280, 9.7300]],
+        7 => ['Logpom' => [4.0860, 9.7750], 'Lendi' => [4.0950, 9.7950], 'Logbessou' => [4.1000, 9.7850],
+              'PK14' => [4.0700, 9.8150], 'Mbanguè' => [4.0750, 9.8000]],
     ];
 
     /**
@@ -133,13 +141,21 @@ class DeliveryPartnersSeeder extends Seeder
             );
         }
 
-        DeliveryCityGrid::updateOrCreate(
-            ['deliverer_company_id' => $solex->id, 'city' => 'Douala'],
-            [
+        // Grille créée une seule fois : ensuite les prix, quartiers et positions se gèrent
+        // dans l'admin (on ne complète que les positions manquantes).
+        $zones = collect(self::SOLEX_DOUALA_ZONES)->map(fn ($quarters, $code) => [
+            'code' => $code,
+            'label' => "Zone {$code}",
+            'quarters' => collect($quarters)->map(fn ($point, $name) => ['name' => $name, 'lat' => $point[0], 'lng' => $point[1]])->values()->all(),
+        ])->values()->all();
+
+        $grid = DeliveryCityGrid::where('deliverer_company_id', $solex->id)->where('city', 'Douala')->first();
+        if (!$grid) {
+            DeliveryCityGrid::create([
+                'deliverer_company_id' => $solex->id,
+                'city' => 'Douala',
                 'country' => 'CM',
-                'zones' => collect(self::SOLEX_DOUALA_ZONES)
-                    ->map(fn ($quarters, $code) => ['code' => $code, 'label' => "Zone {$code}", 'quarters' => $quarters])
-                    ->values()->all(),
+                'zones' => $zones,
                 'vehicles' => collect(self::SOLEX_DOUALA_VEHICLES)->map(function ($vehicle) {
                     $prices = [];
                     foreach ($vehicle['rows'] as $from => $row) {
@@ -153,8 +169,24 @@ class DeliveryPartnersSeeder extends Seeder
                 })->all(),
                 'asso_commission' => 0,
                 'is_active' => true,
-            ]
-        );
+            ]);
+        } else {
+            $seedPoints = collect($zones)->flatMap(fn ($z) => $z['quarters'])->keyBy('name');
+            $grid->update(['zones' => collect($grid->zones)->map(function ($zone) use ($seedPoints) {
+                $zone['quarters'] = collect(DeliveryCityGrid::quartersOf($zone))->map(fn ($q) => $q['lat'] === null && $seedPoints->has($q['name'])
+                    ? $seedPoints[$q['name']] : $q)->all();
+
+                return $zone;
+            })->all()]);
+        }
+
+        // Boutiques de Douala rattachées à leur quartier (position sur leur carte).
+        \App\Models\Shop::whereNotNull('latitude')->each(function (\App\Models\Shop $shop) {
+            $shop->assignDeliveryQuarter();
+            if ($shop->isDirty('quarter')) {
+                $shop->saveQuietly();
+            }
+        });
 
         foreach ([
             'DHL Express' => 'https://www.dhl.com/cm-fr/home/tracking.html?tracking-id={number}',

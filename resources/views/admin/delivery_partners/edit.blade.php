@@ -10,27 +10,46 @@
         </div>
     </div>
 
-    <!-- Services proposés -->
-    <div class="mb-6 flex flex-wrap gap-2 text-sm">
-        <span class="text-gray-400 mr-1">Services proposés :</span>
-        @foreach($partner->cityGrids as $grid)
-            <span class="px-3 py-1 rounded-full bg-blue-900/30 text-blue-300 border border-blue-500/40">
-                <i class="fas fa-city mr-1"></i> Urbain {{ $grid->city }} — zone à zone, {{ count($grid->vehicles) }} véhicules{{ $grid->is_active ? '' : ' (inactif)' }}
-            </span>
-        @endforeach
-        @if($partner->deliveryZones()->exists())
-            <span class="px-3 py-1 rounded-full bg-blue-900/30 text-blue-300 border border-blue-500/40">
-                <i class="fas fa-map-marked-alt mr-1"></i> Urbain — {{ $partner->deliveryZones()->count() }} zone(s) sur carte
-            </span>
-        @endif
-        @if($partner->deliveryRoutes->isNotEmpty())
-            <span class="px-3 py-1 rounded-full bg-purple-900/30 text-purple-300 border border-purple-500/40">
-                <i class="fas fa-route mr-1"></i> {{ $partner->deliveryRoutes->where('origin_country', '!=', 'CM')->isNotEmpty() ? 'International' : 'Interurbain' }} — {{ $partner->deliveryRoutes->count() }} trajet(s)
-            </span>
-        @endif
-        @if($partner->cityGrids->isEmpty() && !$partner->deliveryZones()->exists() && $partner->deliveryRoutes->isEmpty())
-            <span class="text-yellow-400">Aucun service configuré : ajoutez des trajets ci-dessous.</span>
-        @endif
+    <!-- Services proposés (même résumé que « Livreurs ») -->
+    <div class="mb-6">
+        @include('admin.delivery_partners._services_summary', ['partner' => $partner, 'compact' => true])
+    </div>
+
+    <!-- Coursiers : l'app ASSO reçoit les livraisons à domicile du partenaire -->
+    @php
+        $activeSyncs = $partner->activeCodeSyncs()->with('user')->get();
+        $latestCode = $partner->syncCodes()->latest()->first();
+    @endphp
+    <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-motorcycle mr-2 text-primary-400"></i>Coursiers dans l'app ASSO</h2>
+                <p class="text-sm text-gray-400">Ils reçoivent les livraisons à domicile de {{ $partner->name }} et les clôturent avec le code à 6 chiffres de l'acheteur.</p>
+                <div class="mt-3 text-sm">
+                    @forelse($activeSyncs as $sync)
+                        <span class="inline-block mr-2 mb-1 px-2 py-1 rounded bg-green-900/30 text-green-300 border border-green-500/40">
+                            <i class="fas fa-user-check mr-1"></i>{{ $sync->user?->name }} {{ $sync->user?->phone ? '· ' . $sync->user->phone : '' }}
+                        </span>
+                    @empty
+                        <span class="text-yellow-400"><i class="fas fa-exclamation-triangle mr-1"></i>Aucun coursier synchronisé : les commandes à domicile ne seront prises en charge par personne.</span>
+                    @endforelse
+                </div>
+                @if($latestCode && !$latestCode->is_used && !$latestCode->isExpired())
+                    <p class="mt-2 text-sm text-gray-400">Code en cours : <code class="text-primary-400 font-bold">{{ $latestCode->sync_code }}</code> (jusqu'au {{ $latestCode->expires_at->format('d/m/Y') }})</p>
+                @endif
+            </div>
+            <div class="flex flex-col gap-2">
+                <form action="{{ route('admin.deliverers.sync-code', $partner) }}" method="POST">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm w-full">
+                        <i class="fas fa-key mr-1"></i> Générer un code de synchronisation
+                    </button>
+                </form>
+                <a href="{{ route('admin.deliverers.show', $partner) }}" class="px-4 py-2 bg-dark-50 border border-dark-300 text-gray-300 rounded-lg hover:text-white text-sm text-center">
+                    <i class="fas fa-id-card mr-1"></i> Fiche livreur et historique
+                </a>
+            </div>
+        </div>
     </div>
 
     @if($errors->any())
@@ -70,6 +89,26 @@
             @include('admin.delivery_partners._city_grid', ['grid' => $grid])
         </div>
     @endforeach
+
+    <!-- Nouvelle ville en zone à zone -->
+    <div class="bg-dark-100 rounded-xl shadow-lg border border-dashed border-dark-300 p-6 mb-6">
+        <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-plus-circle mr-2 text-primary-400"></i>Couvrir une nouvelle ville (zones et quartiers)</h2>
+        <p class="text-sm text-gray-400 mb-4">Saisissez la ville : sa carte s'ouvre, chaque quartier tapé y est recherché et placé automatiquement. Saisissez ensuite les prix par véhicule.</p>
+        <form action="{{ route('admin.delivery-partners.city-grids.store', $partner) }}" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            @csrf
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Ville</label>
+                <input type="text" name="city" required placeholder="Yaoundé" class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Nombre de zones</label>
+                <input type="number" name="zones_count" min="1" max="30" value="7" required class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+            </div>
+            <div>
+                <button type="submit" class="w-full px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"><i class="fas fa-city mr-1"></i> Créer la grille</button>
+            </div>
+        </form>
+    </div>
 
     <!-- Trajets -->
     <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6 mb-6">

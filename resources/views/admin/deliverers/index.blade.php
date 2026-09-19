@@ -147,10 +147,21 @@
                                     En attente
                                 </span>
                             @endif
-                            <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-500/50 rounded-full text-blue-400 text-xs">
-                                <i class="fas fa-map-marker-alt"></i>
-                                {{ $deliverer->deliveryZones->count() }} zone(s)
-                            </span>
+                            @if($deliverer->cityGrids->isNotEmpty())
+                                <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-500/50 rounded-full text-blue-400 text-xs">
+                                    <i class="fas fa-city"></i> Urbain {{ $deliverer->cityGrids->pluck('city')->implode(', ') }}
+                                </span>
+                            @endif
+                            @if($deliverer->deliveryZones->isNotEmpty())
+                                <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-500/50 rounded-full text-blue-400 text-xs">
+                                    <i class="fas fa-map-marker-alt"></i> {{ $deliverer->deliveryZones->count() }} zone(s)
+                                </span>
+                            @endif
+                            @if($deliverer->deliveryRoutes->isNotEmpty())
+                                <span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-900/30 border border-purple-500/50 rounded-full text-purple-300 text-xs">
+                                    <i class="fas fa-route"></i> {{ $deliverer->deliveryRoutes->count() }} trajet(s)
+                                </span>
+                            @endif
                         </div>
                     </div>
                 </div>
