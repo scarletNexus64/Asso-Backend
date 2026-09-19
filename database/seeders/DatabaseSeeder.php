@@ -21,7 +21,10 @@ class DatabaseSeeder extends Seeder
         $this->call([
             UserSeeder::class,
             CategorySeeder::class,
+            // CurrencySeeder pose les taux de change de secours ; WorldCurrencySeeder
+            // élargit ensuite le catalogue aux 199 pays (l'ordre compte).
             CurrencySeeder::class,
+            WorldCurrencySeeder::class,
             ImportCountrySeeder::class,
             SettingsSeeder::class,
             PaymentSettingsSeeder::class,
