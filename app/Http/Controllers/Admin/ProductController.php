@@ -108,8 +108,8 @@ class ProductController extends Controller
             'type' => 'required|in:service,article',
             'origin_country' => 'nullable|exists:import_countries,code',
             'weight' => [
-                Rule::requiredIf(fn () => $request->input('type') === 'article'
-                    && in_array(strtoupper((string) $request->input('origin_country')), ['CN', 'TR', 'AE'], true)),
+                // P4 : le poids compte partout (livraison locale, interurbaine, import).
+                Rule::requiredIf(fn () => $request->input('type') === 'article'),
                 'nullable', 'numeric', 'min:0.001', 'max:999999',
             ],
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),
@@ -217,8 +217,8 @@ class ProductController extends Controller
             'type' => 'required|in:service,article',
             'origin_country' => 'nullable|exists:import_countries,code',
             'weight' => [
-                Rule::requiredIf(fn () => $request->input('type') === 'article'
-                    && in_array(strtoupper((string) $request->input('origin_country')), ['CN', 'TR', 'AE'], true)),
+                // P4 : le poids compte partout (livraison locale, interurbaine, import).
+                Rule::requiredIf(fn () => $request->input('type') === 'article'),
                 'nullable', 'numeric', 'min:0.001', 'max:999999',
             ],
             'weight_category' => 'sometimes|in:' . implode(',', Product::WEIGHT_CATEGORIES),

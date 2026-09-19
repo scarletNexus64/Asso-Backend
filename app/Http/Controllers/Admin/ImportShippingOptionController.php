@@ -36,6 +36,9 @@ class ImportShippingOptionController extends Controller
             'lead_time_days'   => 'required|integer|min:1',
             'expedition_note'  => 'nullable|string|max:255',
             'sort_order'       => 'nullable|integer|min:0',
+            // Transporteur (DHL, FedEx…) et lien de suivi ({number} = n° saisi à l'expédition)
+            'carrier'          => 'nullable|string|max:100',
+            'tracking_url_template' => 'nullable|string|max:255',
         ]);
 
         // updateOrCreate sur (country_code, mode) : empêche les doublons de mode
@@ -47,6 +50,8 @@ class ImportShippingOptionController extends Controller
                 'rate_amount'     => $validated['rate_amount'],
                 'lead_time_days'  => $validated['lead_time_days'],
                 'expedition_note' => $validated['expedition_note'] ?? null,
+                'carrier'         => $validated['carrier'] ?? null,
+                'tracking_url_template' => $validated['tracking_url_template'] ?? null,
                 'sort_order'      => $validated['sort_order'] ?? 0,
                 'currency'        => 'XAF',
                 'is_active'       => true,
@@ -69,6 +74,9 @@ class ImportShippingOptionController extends Controller
             'lead_time_days'   => 'required|integer|min:1',
             'expedition_note'  => 'nullable|string|max:255',
             'sort_order'       => 'nullable|integer|min:0',
+            // Transporteur (DHL, FedEx…) et lien de suivi ({number} = n° saisi à l'expédition)
+            'carrier'          => 'nullable|string|max:100',
+            'tracking_url_template' => 'nullable|string|max:255',
         ]);
 
         $shippingOption->update($validated);

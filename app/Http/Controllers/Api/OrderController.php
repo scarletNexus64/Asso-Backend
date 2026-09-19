@@ -24,7 +24,7 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany', 'rating'])
+        $query = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany', 'rating', 'trackingEvents'])
             ->where('user_id', $request->user()->id);
 
         // Masquer les commandes payées par un rail DIRECT (KPay/PayPal/carte) dont le
@@ -61,7 +61,7 @@ class OrderController extends Controller
      */
     public function show(Request $request, $id)
     {
-        $order = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany'])
+        $order = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany', 'trackingEvents'])
             ->where('user_id', $request->user()->id)
             ->findOrFail($id);
 
@@ -86,7 +86,11 @@ class OrderController extends Controller
             'items.*.variant_id' => 'nullable|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
             'delivery_company_id' => 'required|exists:deliverer_companies,id',
-            'delivery_zone_id' => 'required|exists:delivery_zones,id',
+            // Livraison urbaine : zone ; interurbain / international : trajet transporteur.
+            'delivery_zone_id' => 'required_without:delivery_route_id|nullable|exists:delivery_zones,id',
+            'delivery_route_id' => 'nullable|exists:delivery_routes,id',
+            'delivery_city' => 'nullable|string|max:120',
+            'delivery_country' => 'nullable|string|max:60',
             // Mode de paiement : 'wallet' (escrow solde) | 'kpay_direct' (PayIn KPay)
             //                  | 'stripe_direct' (carte bancaire NATIVE, Payment Sheet)
             'payment_mode' => 'nullable|in:wallet,kpay_direct,stripe_direct',
@@ -120,7 +124,7 @@ class OrderController extends Controller
                 client: $request->user(),
                 items: $request->items,
                 deliveryCompanyId: (int) $request->delivery_company_id,
-                deliveryZoneId: (int) $request->delivery_zone_id,
+                deliveryZoneId: $request->delivery_zone_id ? (int) $request->delivery_zone_id : null,
                 walletProvider: $request->input('wallet_provider', 'kpay'),
                 deliveryAddress: $request->delivery_address,
                 deliveryAddressDetails: $request->delivery_address_details,
@@ -131,6 +135,9 @@ class OrderController extends Controller
                 paymentMode: $paymentMode,
                 kpayProvider: $request->input('provider'),
                 kpayPhone: $request->input('phone_number'),
+                deliveryRouteId: $request->delivery_route_id ? (int) $request->delivery_route_id : null,
+                deliveryCity: $request->input('delivery_city'),
+                deliveryCountry: $request->input('delivery_country'),
             );
 
             return response()->json([
@@ -241,6 +248,10 @@ class OrderController extends Controller
                     'cancel_reason' => $request->reason,
                     'cancelled_at' => now(),
                 ]);
+
+                app(\App\Services\OrderTrackingService::class)->record(
+                    $order, 'cancelled', null, $request->reason, 'buyer', $request->user()->id,
+                );
             });
 
             $order->notifySellers(
@@ -263,6 +274,45 @@ class OrderController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    /**
+     * L'acheteur confirme avoir reçu son colis (transporteur : retrait en agence ou
+     * livraison DHL/FedEx). Les livraisons urbaines se clôturent par le code à 6 chiffres.
+     *
+     * POST /api/v1/orders/{id}/confirm-reception
+     */
+    public function confirmReception(Request $request, $id)
+    {
+        $order = Order::where('user_id', $request->user()->id)
+            ->where('delivery_mode', Order::DELIVERY_CARRIER)
+            ->whereNull('delivery_zone_id') // à domicile : clôture par le code du coursier
+            ->where('status', 'shipped')
+            ->findOrFail($id);
+
+        DB::transaction(function () use ($order, $request) {
+            $order->update([
+                'status' => 'delivered',
+                'delivered_at' => now(),
+                'confirmed_by_client_at' => now(),
+                'confirmation_code' => null,
+            ]);
+            app(\App\Services\OrderTrackingService::class)->record(
+                $order, 'delivered', null, "Réception confirmée par l'acheteur", 'buyer', $request->user()->id,
+            );
+        });
+
+        $order->notifySellers(
+            'Colis reçu',
+            "L'acheteur a confirmé la réception de la commande #{$order->order_number}.",
+            ['type' => 'order_delivered_vendor'],
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Réception confirmée. Merci !',
+            'order' => $this->formatOrder($order->fresh(['items.product.primaryImage', 'items.seller', 'deliveryCompany', 'trackingEvents']), true),
+        ]);
     }
 
     /**
@@ -402,8 +452,11 @@ class OrderController extends Controller
             ];
         }
 
-        // Le confirmation_code est visible par le client quand la commande est en livraison (shipped)
-        if (in_array($order->status, ['shipped'])) {
+        $data['delivery'] = \App\Support\DeliveryPresenter::forOrder($order);
+
+        // Code de confirmation : livraison urbaine en cours uniquement (le transporteur
+        // ne le demande pas, l'acheteur confirme lui-même la réception).
+        if ($order->status === 'shipped' && (!$order->isCarrierDelivery() || $order->hasLastMileDelivery())) {
             $data['confirmation_code'] = $order->confirmation_code;
         }
 

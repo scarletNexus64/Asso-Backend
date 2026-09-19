@@ -64,6 +64,11 @@ class VendorProductController extends Controller
         $user = $request->user();
         $product = Product::findOrFail($id);
 
+        // Poids en kg : accepte la virgule décimale (« 1,5 »).
+        if (is_string($request->input('weight'))) {
+            $request->merge(['weight' => str_replace(',', '.', trim($request->input('weight')))]);
+        }
+
         // Verify product belongs to user
         if ($product->user_id !== $user->id) {
             return response()->json([
@@ -87,7 +92,8 @@ class VendorProductController extends Controller
             'sizes' => 'sometimes|nullable|array',
             'sizes.*' => 'string|in:' . implode(',', Product::AVAILABLE_SIZES),
             'stock' => 'sometimes|integer|min:0',
-            'weight' => 'sometimes|nullable|string|max:255',
+            // P4 : poids réel du colis en kg (calcul de la livraison).
+            'weight' => 'sometimes|nullable|numeric|min:0.001|max:100000',
             'images' => 'sometimes|array',
             'images.*' => 'file|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
             'deleted_image_ids' => 'sometimes|array',

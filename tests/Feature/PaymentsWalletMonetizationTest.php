@@ -305,6 +305,7 @@ class PaymentsWalletMonetizationTest extends TestCase
             'currency' => 'XAF',
             'stock' => 10,
             'status' => 'active',
+            'weight' => '1.5', // P4 : sans poids, la livraison est bloquée
         ]);
 
         return compact('seller', 'delivererUser', 'company', 'zone', 'product');

@@ -43,6 +43,7 @@ class ProductVariantOptionsTest extends TestCase
             'price_type' => 'fixed',
             'price' => 20000,
             'type' => 'article',
+            'weight' => 0.8, // P4 : poids obligatoire pour un article
             'stock' => 0,
             'status' => 'active',
             'variant_options' => json_encode([

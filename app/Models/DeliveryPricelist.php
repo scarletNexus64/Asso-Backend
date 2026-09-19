@@ -12,6 +12,7 @@ class DeliveryPricelist extends Model
         'pricing_type',
         'pricing_data',
         'asso_commission',
+        'lead_time',
         'is_active',
     ];
 

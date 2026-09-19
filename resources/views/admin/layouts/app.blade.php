@@ -165,6 +165,18 @@
                         Livreurs
                     </a>
 
+                    <a href="{{ route('admin.delivery-partners.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.delivery-partners.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-route w-5 mr-3"></i>
+                        Partenaires logistiques
+                    </a>
+
+                    <a href="{{ route('admin.shipments.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.shipments.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-shipping-fast w-5 mr-3"></i>
+                        Expéditions
+                    </a>
+
                     <a href="{{ route('admin.shops.index') }}"
                        class="flex items-center justify-between px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.shops.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <span class="flex items-center">

@@ -147,6 +147,15 @@
                     </div>
                 @endif
             @endif
+
+            <!-- Nouveau code : coursier supplémentaire, code expiré, partenaire créé hors formulaire -->
+            <form action="{{ route('admin.deliverers.sync-code', $deliverer) }}" method="POST">
+                @csrf
+                <button type="submit" class="w-full px-4 py-3 bg-dark-100 border border-primary-500/50 text-primary-400 rounded-xl hover:bg-dark-200 transition-all">
+                    <i class="fas fa-key mr-2"></i> Générer un code de synchronisation
+                </button>
+                <p class="mt-2 text-xs text-gray-500 text-center">Le coursier le saisit dans l'app ASSO pour recevoir les livraisons de ce partenaire.</p>
+            </form>
         </div>
 
         <!-- Right: Details -->

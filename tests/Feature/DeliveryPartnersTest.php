@@ -1,0 +1,345 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Category;
+use App\Models\DelivererCompany;
+use App\Models\DeliveryPricelist;
+use App\Models\DeliveryRoute;
+use App\Models\DeliveryZone;
+use App\Models\Order;
+use App\Models\Product;
+use App\Models\Setting;
+use App\Models\Shop;
+use App\Models\User;
+use App\Models\WalletBalance;
+use App\Services\CommissionService;
+use App\Services\FcmService;
+use App\Services\FirebaseMessagingService;
+use App\Support\WeightGrid;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * P4 — Livraison et partenaires logistiques : poids réel, grilles SOLEX (HT + TVA),
+ * blocage sans poids, rayon réglable, suivi transporteur jusqu'à la réception.
+ */
+class DeliveryPartnersTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        CommissionService::flush();
+        $this->mock(FirebaseMessagingService::class, fn ($mock) => $mock->shouldReceive('sendToUser')->andReturn([]));
+        $this->mock(FcmService::class, fn ($mock) => $mock->shouldIgnoreMissing());
+        Setting::set('delivery_vat_rate', '19.25', 'string', 'delivery');
+    }
+
+    /** SOLEX Douala ↔ Yaoundé (plis 2 500 / colis 4 000 / 150 F le kg suppl.), grille HT. */
+    private function solex(): DeliveryRoute
+    {
+        $solex = DelivererCompany::create([
+            'name' => 'SOLEX',
+            'service_type' => DelivererCompany::SERVICE_INTERCITY,
+            'service_mode' => DelivererCompany::MODE_AGENCY,
+            'prices_exclude_vat' => true,
+            'conditions' => "D'agence en agence.",
+            'is_active' => true,
+        ]);
+
+        return DeliveryRoute::create([
+            'deliverer_company_id' => $solex->id,
+            'origin_country' => 'CM', 'origin_city' => 'Douala',
+            'destination_country' => 'CM', 'destination_city' => 'Yaoundé',
+            'bidirectional' => true,
+            'pricing_data' => [
+                'ranges' => [
+                    ['min' => 0, 'max' => 2, 'price' => 2500, 'label' => 'Plis & paquets'],
+                    ['min' => 2, 'max' => 10, 'price' => 4000, 'label' => 'Colis'],
+                ],
+                'extra_per_kg' => 150,
+            ],
+            'lead_time' => '24 h',
+            'is_active' => true,
+        ]);
+    }
+
+    private function product(?string $weight, string $city = 'Douala'): Product
+    {
+        $seller = User::factory()->create();
+        $shop = Shop::create([
+            'user_id' => $seller->id, 'name' => 'Boutique', 'slug' => 'b-' . uniqid(),
+            'status' => 'active', 'city' => $city, 'country' => 'Cameroun',
+        ]);
+
+        return Product::create([
+            'user_id' => $seller->id, 'shop_id' => $shop->id,
+            'category_id' => Category::create(['name' => 'Mode', 'slug' => 'mode-' . uniqid()])->id,
+            'name' => 'Sac', 'slug' => 'sac-' . uniqid(), 'price' => 10000, 'currency' => 'XAF',
+            'stock' => 20, 'status' => 'active', 'type' => 'article', 'weight' => $weight,
+        ]);
+    }
+
+    public function test_weight_grid_applies_tiers_and_extra_kg(): void
+    {
+        $grid = ['ranges' => [['min' => 0, 'max' => 2, 'price' => 2500], ['min' => 2, 'max' => 10, 'price' => 4000]], 'extra_per_kg' => 150];
+
+        $this->assertEquals(2500, WeightGrid::price($grid, 1.2)['price']);
+        $this->assertEquals(4000, WeightGrid::price($grid, 10)['price']);
+        // 12,3 kg = colis + 3 kg entamés × 150.
+        $this->assertEquals(4000 + 3 * 150, WeightGrid::price($grid, 12.3)['price']);
+        $this->assertNull(WeightGrid::price(['ranges' => $grid['ranges']], 12));
+    }
+
+    public function test_buyer_sees_solex_price_from_total_weight_with_vat_and_details(): void
+    {
+        $this->solex();
+        $product = $this->product('3');
+
+        $response = $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&quantity=2&city=" . urlencode('Yaoundé, Cameroun'))
+            ->assertOk();
+
+        $partner = $response->json('partners.0');
+        $this->assertSame('SOLEX', $partner['company_name']);
+        $this->assertSame('intercity', $partner['service_type']);
+        $this->assertSame('agency_to_agency', $partner['service_mode']);
+        $this->assertSame('Douala ↔ Yaoundé', $partner['route_label']);
+        $this->assertSame('24 h', $partner['lead_time']);
+        // 2 × 3 kg = 6 kg → colis 4 000 HT + TVA 19,25 % (770) = 4 770.
+        $this->assertEquals(6, $partner['breakdown']['weight_kg']);
+        $this->assertEquals(4000, $partner['breakdown']['carrier_price_ht']);
+        $this->assertEquals(770, $partner['breakdown']['vat_amount']);
+        $this->assertEquals(4770, $partner['delivery_price']);
+        $this->assertCount(2, $partner['price_grid']);
+
+        // Vice versa : boutique à Yaoundé, acheteur à Douala.
+        $reverse = $this->product('1', 'Yaoundé');
+        $this->getJson("/api/v1/delivery/partners?product_id={$reverse->id}&city=Douala")
+            ->assertJsonPath('partners.0.delivery_price', 2500 + 481);
+    }
+
+    public function test_product_without_weight_blocks_delivery_and_order(): void
+    {
+        $route = $this->solex();
+        $product = $this->product(null);
+
+        $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&city=Yaoundé")
+            ->assertOk()
+            ->assertJsonPath('quote.reason', 'missing_weight')
+            ->assertJsonCount(0, 'partners');
+
+        $client = User::factory()->create();
+        WalletBalance::create(['user_id' => $client->id, 'currency' => 'XAF', 'balance' => 100000, 'locked_balance' => 0]);
+        $this->actingAs($client, 'sanctum')->postJson('/api/v1/orders', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            'delivery_company_id' => $route->deliverer_company_id,
+            'delivery_route_id' => $route->id,
+            'delivery_city' => 'Yaoundé',
+            'payment_mode' => 'wallet', 'wallet_provider' => 'kpay',
+            'customer_phone' => '237670000001',
+        ])->assertStatus(422);
+
+        $this->assertSame(20, $product->fresh()->stock, 'Le stock ne doit pas bouger');
+    }
+
+    public function test_local_zone_radius_is_configurable(): void
+    {
+        $company = DelivererCompany::create(['name' => 'Coursier', 'is_active' => true]);
+        $zone = DeliveryZone::create([
+            'deliverer_company_id' => $company->id, 'name' => 'Akwa', 'city' => null,
+            'center_latitude' => 4.05, 'center_longitude' => 9.70, 'is_active' => true,
+        ]);
+        DeliveryPricelist::create([
+            'delivery_zone_id' => $zone->id, 'pricing_type' => 'fixed',
+            'pricing_data' => ['price' => 1000], 'asso_commission' => 0, 'is_active' => true,
+        ]);
+        $product = $this->product('1');
+
+        // ~15 km du centre de la zone.
+        $url = "/api/v1/delivery/partners?product_id={$product->id}&latitude=4.185&longitude=9.70&city=Douala";
+        Setting::set('delivery_zone_radius_km', '10', 'string', 'delivery');
+        $zone->update(['city' => 'Autre']);
+        $this->getJson($url)->assertJsonCount(0, 'partners');
+
+        Setting::set('delivery_zone_radius_km', '20', 'string', 'delivery');
+        $this->getJson($url)->assertJsonPath('partners.0.company_name', 'Coursier');
+    }
+
+    public function test_carrier_order_is_tracked_from_order_to_buyer_reception(): void
+    {
+        $route = $this->solex();
+        $product = $this->product('3');
+        $seller = $product->user;
+        $client = User::factory()->create();
+        WalletBalance::create(['user_id' => $client->id, 'currency' => 'XAF', 'balance' => 100000, 'locked_balance' => 0]);
+
+        $orderId = $this->actingAs($client, 'sanctum')->postJson('/api/v1/orders', [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+            'delivery_company_id' => $route->deliverer_company_id,
+            'delivery_route_id' => $route->id,
+            'delivery_city' => 'Yaoundé',
+            'payment_mode' => 'wallet', 'wallet_provider' => 'kpay',
+            'customer_phone' => '237670000001',
+        ])->assertCreated()->json('order_id');
+
+        $order = Order::findOrFail($orderId);
+        $this->assertSame(Order::DELIVERY_CARRIER, $order->delivery_mode);
+        $this->assertEquals(6, $order->shipping_weight_kg);
+        $this->assertEquals(4770, (float) $order->delivery_fee);
+        $this->assertEquals(770, (float) $order->delivery_vat_amount);
+
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/validate")->assertOk();
+        // Un transporteur ne s'assigne pas comme un livreur urbain.
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/assign-delivery", ['delivery_person_id' => $seller->id])
+            ->assertStatus(422);
+
+        $this->actingAs($seller, 'sanctum')
+            ->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier", ['carrier_tracking_number' => 'SLX-001', 'location' => 'Agence Akwa'])
+            ->assertOk()
+            ->assertJsonPath('order.delivery.carrier_tracking_number', 'SLX-001');
+
+        $this->actingAs($seller, 'sanctum')
+            ->postJson("/api/v1/vendor/orders/{$orderId}/tracking", ['step' => 'ready_for_pickup', 'location' => 'Agence Mvan'])
+            ->assertOk();
+
+        $detail = $this->actingAs($client, 'sanctum')->getJson("/api/v1/orders/{$orderId}")->assertOk();
+        $this->assertTrue($detail->json('order.delivery.can_confirm_reception'));
+        $this->assertNull($detail->json('order.confirmation_code'));
+        $this->assertSame(
+            ['pending', 'confirmed', 'handed_to_carrier', 'ready_for_pickup'],
+            array_column($detail->json('order.delivery.timeline'), 'step')
+        );
+
+        $this->actingAs($client, 'sanctum')->postJson("/api/v1/orders/{$orderId}/confirm-reception")
+            ->assertOk()
+            ->assertJsonPath('order.status', 'delivered')
+            ->assertJsonPath('order.delivery.tracking_status', 'delivered');
+    }
+
+    public function test_international_route_must_arrive_in_cameroon(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $dhl = DelivererCompany::create(['name' => 'DHL', 'service_type' => 'international', 'is_active' => true]);
+
+        $payload = [
+            'origin_country' => 'CM', 'destination_country' => 'FR',
+            'ranges' => [['min' => 0, 'max' => 5, 'price' => 30000]],
+        ];
+        $this->actingAs($admin)->post(route('admin.delivery-partners.routes.store', $dhl), $payload)
+            ->assertSessionHasErrors('destination_country');
+
+        $payload = ['origin_country' => 'CN', 'destination_country' => 'CM', 'bidirectional' => '1'] + $payload;
+        $this->actingAs($admin)->post(route("admin.delivery-partners.routes.store", $dhl), $payload)->assertSessionHasNoErrors();
+        $this->assertFalse($dhl->deliveryRoutes()->first()->bidirectional, "L'international n'est jamais « vice versa »");
+    }
+
+    public function test_solex_urban_zone_prices_by_weight_with_lead_time_and_home_delivery(): void
+    {
+        $route = $this->solex(); // SOLEX : d'agence en agence en interurbain
+        $zone = DeliveryZone::create([
+            'deliverer_company_id' => $route->deliverer_company_id, 'name' => 'Douala centre', 'city' => 'Douala',
+            'center_latitude' => 4.05, 'center_longitude' => 9.70, 'is_active' => true,
+        ]);
+        DeliveryPricelist::create([
+            'delivery_zone_id' => $zone->id, 'pricing_type' => 'volumetric_weight',
+            'pricing_data' => ['ranges' => [['min' => 0, 'max' => 5, 'price' => 1500]], 'extra_per_kg' => 200],
+            'asso_commission' => 0, 'lead_time' => '24 h', 'is_active' => true,
+        ]);
+        $product = $this->product('2');
+
+        // 4 × 2 kg = 8 kg → 1 500 + 3 kg × 200 = 2 100 HT, + TVA 19,25 % (404) = 2 504.
+        $partner = $this->getJson("/api/v1/delivery/partners?product_id={$product->id}&quantity=4&city=Douala")
+            ->assertOk()->json('partners.0');
+        $this->assertSame('SOLEX', $partner['company_name']);
+        $this->assertSame('local', $partner['service_type']);
+        $this->assertSame('door_to_door', $partner['service_mode'], 'Le coursier SOLEX livre à domicile en ville');
+        $this->assertSame('24 h', $partner['lead_time']);
+        $this->assertEquals(3, $partner['breakdown']['extra_kg']);
+        $this->assertEquals(2504, $partner['delivery_price']);
+
+        // Code de synchronisation pour le coursier SOLEX.
+        $admin = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($admin)->post(route('admin.deliverers.sync-code', $route->deliverer_company_id))->assertSessionHas('success');
+        $this->assertDatabaseHas('deliverer_sync_codes', ['company_id' => $route->deliverer_company_id, 'is_used' => false]);
+    }
+
+    public function test_solex_intercity_home_delivery_adds_destination_zone_and_courier_closes_with_code(): void
+    {
+        $route = $this->solex(); // Douala ↔ Yaoundé, d'agence à agence
+        $zone = DeliveryZone::create([
+            'deliverer_company_id' => $route->deliverer_company_id, 'name' => 'Yaoundé centre', 'city' => 'Yaoundé',
+            'center_latitude' => 3.87, 'center_longitude' => 11.52, 'is_active' => true,
+        ]);
+        DeliveryPricelist::create([
+            'delivery_zone_id' => $zone->id, 'pricing_type' => 'volumetric_weight',
+            'pricing_data' => ['ranges' => [['min' => 0, 'max' => 10, 'price' => 1000]], 'extra_per_kg' => 0],
+            'asso_commission' => 0, 'lead_time' => '24 h', 'is_active' => true,
+        ]);
+        $product = $this->product('3');
+
+        $partners = collect($this->getJson("/api/v1/delivery/partners?product_id={$product->id}&quantity=2&city=Yaoundé")
+            ->assertOk()->json('partners'))->keyBy('delivery_option');
+
+        // Retrait en agence : trajet seul, 4 000 HT + 770 = 4 770.
+        $this->assertEquals(4770, $partners['agency_pickup']['delivery_price']);
+        $this->assertNull($partners['agency_pickup']['zone_id']);
+        // À domicile : (4 000 + 1 000) HT + TVA 963 = 5 963, un seul prix, deux volets en détail.
+        $home = $partners['home_delivery'];
+        $this->assertEquals(5963, $home['delivery_price']);
+        $this->assertSame('door_to_door', $home['service_mode']);
+        $this->assertSame('24 h + 24 h', $home['lead_time']);
+        $this->assertSame([4000.0, 1000.0], array_map('floatval', array_column($home['breakdown']['legs'], 'price')));
+
+        // Commande à domicile.
+        $client = User::factory()->create();
+        WalletBalance::create(['user_id' => $client->id, 'currency' => 'XAF', 'balance' => 100000, 'locked_balance' => 0]);
+        $orderId = $this->actingAs($client, 'sanctum')->postJson('/api/v1/orders', [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+            'delivery_company_id' => $route->deliverer_company_id,
+            'delivery_route_id' => $route->id,
+            'delivery_zone_id' => $zone->id,
+            'delivery_city' => 'Yaoundé',
+            'payment_mode' => 'wallet', 'wallet_provider' => 'kpay',
+            'customer_phone' => '237670000001',
+        ])->assertCreated()->json('order_id');
+        $this->assertEquals(5963, (float) Order::find($orderId)->delivery_fee);
+
+        // Coursier SOLEX synchronisé.
+        $courier = User::factory()->create(['role' => 'livreur']);
+        $code = \App\Models\DelivererSyncCode::create([
+            'company_id' => $route->deliverer_company_id, 'sync_code' => 'SOLX-0000-0001',
+            'sent_via' => 'email', 'sent_at' => now(), 'expires_at' => now()->addDays(30),
+        ]);
+        \App\Models\DelivererCodeSync::create([
+            'user_id' => $courier->id, 'company_id' => $route->deliverer_company_id,
+            'sync_code_id' => $code->id, 'synced_at' => now(), 'is_active' => true, 'is_banned' => false,
+        ]);
+
+        $seller = $product->user;
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/validate")->assertOk();
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier", ['carrier_tracking_number' => 'SLX-9'])->assertOk();
+
+        // Pas encore arrivé à l'agence de Yaoundé : rien pour le coursier.
+        $this->actingAs($courier, 'sanctum')->getJson('/api/v1/delivery/pending')->assertJsonCount(0, 'requests');
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/tracking", ['step' => 'arrived', 'location' => 'Agence Mvan'])->assertOk();
+        $this->actingAs($courier, 'sanctum')->getJson('/api/v1/delivery/pending')->assertJsonCount(1, 'requests');
+
+        // L'acheteur ne confirme pas lui-même : il donne son code au coursier.
+        $buyerView = $this->actingAs($client, 'sanctum')->getJson("/api/v1/orders/{$orderId}")->json('order');
+        $this->assertFalse($buyerView['delivery']['can_confirm_reception']);
+        $this->assertNotEmpty($buyerView['confirmation_code']);
+
+        $this->actingAs($courier, 'sanctum')->postJson("/api/v1/delivery/{$orderId}/accept")->assertOk();
+        $this->actingAs($courier, 'sanctum')
+            ->postJson("/api/v1/delivery/{$orderId}/complete", ['confirmation_code' => $buyerView['confirmation_code']])
+            ->assertOk();
+
+        $this->assertSame('delivered', Order::find($orderId)->status);
+        $this->assertSame(
+            ['pending', 'confirmed', 'handed_to_carrier', 'arrived', 'out_for_delivery', 'delivered'],
+            Order::find($orderId)->trackingEvents->pluck('step')->all()
+        );
+    }
+}

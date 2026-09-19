@@ -154,8 +154,10 @@
                         class="w-full px-4 py-2 bg-dark-100 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 @error('pricing_type') border-red-500 @enderror">
                     <option value="">Sélectionnez le type</option>
                     <option value="fixed" {{ $currentPricingType == 'fixed' ? 'selected' : '' }}>Prix fixe</option>
-                    <option value="weight_category" {{ $currentPricingType == 'weight_category' ? 'selected' : '' }}>Par catégorie de poids</option>
-                    <option value="volumetric_weight" {{ $currentPricingType == 'volumetric_weight' ? 'selected' : '' }}>Par poids volumétrique</option>
+                    @if($currentPricingType == 'weight_category')
+                        <option value="weight_category" selected>Par catégorie de colis (ancien)</option>
+                    @endif
+                    <option value="volumetric_weight" {{ $currentPricingType == 'volumetric_weight' ? 'selected' : '' }}>Par tranche de poids réel (kg)</option>
                 </select>
                 @error('pricing_type')
                     <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
@@ -180,6 +182,14 @@
                 @error('asso_commission')
                     <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                 @enderror
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-white mb-2">Délai de livraison</label>
+                <input type="text" name="lead_time" maxlength="60" value="{{ old('lead_time', $firstPricelist->lead_time ?? '') }}"
+                       placeholder="Ex : 24 h, 2 à 4 h"
+                       class="w-full px-4 py-2 bg-dark-100 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500">
+                <p class="mt-1 text-sm text-gray-400"><i class="fas fa-info-circle mr-1"></i>Affiché à l'acheteur avec le prix, avant la validation de la commande.</p>
             </div>
 
             <div id="pricing-fields">
@@ -911,7 +921,7 @@ function updatePricingFields() {
                 <div class="p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
                     <p class="text-blue-300 text-sm">
                         <i class="fas fa-info-circle mr-2"></i>
-                        Formule de calcul: (Longueur × Largeur × Hauteur) / 139
+                        Poids du colis = somme des poids des fiches produit × quantités. Au-delà de la dernière plage, chaque kg entamé est facturé au prix du kg supplémentaire.
                     </p>
                 </div>
                 <div id="volumetric-ranges" class="space-y-3">
@@ -921,6 +931,12 @@ function updatePricingFields() {
                         class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm">
                     <i class="fas fa-plus mr-2"></i> Ajouter une plage
                 </button>
+                <div class="p-4 bg-dark-100 rounded-lg border border-dark-300">
+                    <label class="block text-sm text-gray-400 mb-1">Prix par kg supplémentaire (FCFA)</label>
+                    <input type="number" name="pricing_data[extra_per_kg]" id="pricing-data-extra-per-kg" step="1" min="0"
+                           placeholder="0 = colis refusé au-delà de la dernière plage"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg text-sm">
+                </div>
             </div>
         `;
     }
@@ -1378,6 +1394,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
                 } else if (currentPricingType === 'volumetric_weight' && currentPricingData.ranges) {
+                    const extraInput = document.getElementById('pricing-data-extra-per-kg');
+                    if (extraInput && currentPricingData.extra_per_kg !== undefined) {
+                        extraInput.value = currentPricingData.extra_per_kg;
+                    }
                     const rangesContainer = document.getElementById('volumetric-ranges');
                     if (rangesContainer) {
                         rangesContainer.innerHTML = '';
@@ -1530,6 +1550,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
                     }
                 });
+                const extraInput = document.getElementById('pricing-data-extra-per-kg');
+                if (extraInput && extraInput.value !== '') {
+                    const newInput = document.createElement('input');
+                    newInput.type = 'hidden';
+                    newInput.name = `delivery_zones[${zoneId}][pricing_data][extra_per_kg]`;
+                    newInput.value = extraInput.value;
+                    container.appendChild(newInput);
+                }
             }
         });
 

@@ -73,8 +73,24 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Preferences management
         Route::get('/preferences', [PreferenceController::class, 'index'])->name('preferences.index');
 
+        // P4 — Partenaires logistiques (réglages, conditions, trajets au poids) et expéditions
+        Route::prefix('delivery-partners')->name('delivery-partners.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'index'])->name('index');
+            Route::put('/settings', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateSettings'])->name('settings');
+            Route::post('/', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'store'])->name('store');
+            Route::get('/{partner}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'edit'])->name('edit');
+            Route::put('/{partner}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'update'])->name('update');
+            Route::post('/{partner}/routes', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'storeRoute'])->name('routes.store');
+            Route::put('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'updateRoute'])->name('routes.update');
+            Route::delete('/{partner}/routes/{route}', [\App\Http\Controllers\Admin\DeliveryPartnerController::class, 'destroyRoute'])->name('routes.destroy');
+        });
+        Route::get('/shipments', [\App\Http\Controllers\Admin\ShipmentController::class, 'index'])->name('shipments.index');
+        Route::get('/shipments/{order}', [\App\Http\Controllers\Admin\ShipmentController::class, 'show'])->name('shipments.show');
+        Route::post('/shipments/{order}/steps', [\App\Http\Controllers\Admin\ShipmentController::class, 'addStep'])->name('shipments.step');
+
         // Deliverers (Livreurs partenaires)
         Route::resource('deliverers', DelivererController::class);
+        Route::post('deliverers/{deliverer}/sync-code', [DelivererController::class, 'generateSyncCode'])->name('deliverers.sync-code');
 
         // Deliverer Sync Management
         Route::prefix('deliverers/syncs')->name('deliverers.syncs.')->group(function () {

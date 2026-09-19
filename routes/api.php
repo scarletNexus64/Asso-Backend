@@ -220,6 +220,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/orders/{id}', [OrderController::class, 'show']);
         Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
         Route::post('/orders/{id}/rate', [OrderController::class, 'rate']);
+        Route::post('/orders/{id}/confirm-reception', [OrderController::class, 'confirmReception']);
 
         // Payments
         Route::get('/payments/methods', [PaymentController::class, 'methods']);
@@ -274,6 +275,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/validate', [VendorOrderController::class, 'validate']);
             Route::post('/{id}/reject', [VendorOrderController::class, 'reject']);
             Route::post('/{id}/assign-delivery', [VendorOrderController::class, 'assignDelivery']);
+            // Transporteur (SOLEX, DHL, FedEx) : remise du colis puis étapes d'acheminement.
+            Route::post('/{id}/hand-to-carrier', [VendorOrderController::class, 'handToCarrier']);
+            Route::post('/{id}/tracking', [VendorOrderController::class, 'addTrackingStep']);
         });
 
         // Delivery management

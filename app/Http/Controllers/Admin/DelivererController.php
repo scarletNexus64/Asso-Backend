@@ -92,6 +92,7 @@ class DelivererController extends Controller
                 'delivery_zones.*.pricing_type' => 'required|in:fixed,weight_category,volumetric_weight',
                 'delivery_zones.*.pricing_data' => 'required|array',
                 'delivery_zones.*.asso_commission' => 'required|numeric|min:0',
+                'lead_time' => 'nullable|string|max:60',
 
                 // Notification preferences (only email is supported)
                 'send_code_via' => 'required|in:email',
@@ -154,6 +155,7 @@ class DelivererController extends Controller
                     'pricing_type' => $zoneData['pricing_type'],
                     'pricing_data' => $zoneData['pricing_data'],
                     'asso_commission' => $zoneData['asso_commission'],
+                    'lead_time' => $request->input('lead_time') ?: null,
                 ]);
                 Log::info("[DELIVERER_STORE] Pricelist créée", ['pricelist_id' => $pricelist->id]);
             }
@@ -346,6 +348,7 @@ class DelivererController extends Controller
             'delivery_zones.*.pricing_type' => 'required|in:fixed,weight_category,volumetric_weight',
             'delivery_zones.*.pricing_data' => 'required|array',
             'delivery_zones.*.asso_commission' => 'required|numeric|min:0',
+                'lead_time' => 'nullable|string|max:60',
         ]);
 
         try {
@@ -392,6 +395,7 @@ class DelivererController extends Controller
                             'pricing_type' => $zoneData['pricing_type'],
                             'pricing_data' => $zoneData['pricing_data'],
                             'asso_commission' => $zoneData['asso_commission'],
+                    'lead_time' => $request->input('lead_time') ?: null,
                         ]);
                     } else {
                         DeliveryPricelist::create([
@@ -399,6 +403,7 @@ class DelivererController extends Controller
                             'pricing_type' => $zoneData['pricing_type'],
                             'pricing_data' => $zoneData['pricing_data'],
                             'asso_commission' => $zoneData['asso_commission'],
+                    'lead_time' => $request->input('lead_time') ?: null,
                         ]);
                     }
 
@@ -419,6 +424,7 @@ class DelivererController extends Controller
                         'pricing_type' => $zoneData['pricing_type'],
                         'pricing_data' => $zoneData['pricing_data'],
                         'asso_commission' => $zoneData['asso_commission'],
+                    'lead_time' => $request->input('lead_time') ?: null,
                     ]);
 
                     $updatedZoneIds[] = $zone->id;
@@ -449,6 +455,36 @@ class DelivererController extends Controller
                 ->withInput()
                 ->with('error', 'Erreur lors de la mise à jour: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Nouveau code de synchronisation (partenaire créé hors formulaire comme SOLEX,
+     * code expiré, ou nouveau coursier) : envoyé par email si l'entreprise en a un.
+     */
+    public function generateSyncCode(DelivererCompany $deliverer)
+    {
+        $code = DelivererSyncCode::generateSyncCode();
+        DelivererSyncCode::create([
+            'user_id' => null,
+            'company_id' => $deliverer->id,
+            'sync_code' => $code,
+            'sent_via' => 'email',
+            'sent_at' => now(),
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $sent = false;
+        if ($deliverer->email) {
+            try {
+                $this->sendSyncCode($deliverer, $code, 'email');
+                $sent = true;
+            } catch (\Exception $e) {
+                Log::error('[DELIVERER_SYNC_CODE] Envoi email échoué: ' . $e->getMessage());
+            }
+        }
+
+        return back()->with('success', "Code de synchronisation : <strong>{$code}</strong> (valable 30 jours)."
+            . ($sent ? " Envoyé à {$deliverer->email}." : ' À communiquer au coursier, qui le saisit dans l\'app ASSO.'));
     }
 
     public function destroy(DelivererCompany $deliverer)

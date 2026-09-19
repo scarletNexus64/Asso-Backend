@@ -38,7 +38,7 @@ class VendorOrderController extends Controller
 
         $query = Order::with(['items' => function($q) use ($user) {
             $q->where('seller_id', $user->id)->with('product.primaryImage');
-        }, 'user', 'deliveryPerson', 'deliveryCompany'])
+        }, 'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents'])
             ->whereIn('id', $orderIds);
 
         if ($request->has('status') && $request->status) {
@@ -106,6 +106,8 @@ class VendorOrderController extends Controller
                 //    de l'entreprise de livraison et d'ASSO. Idempotent (settled_at).
                 $this->orderService->settleOrder($locked, $vendor);
 
+                app(\App\Services\OrderTrackingService::class)->record($locked, 'confirmed', null, null, 'vendor', $vendor->id);
+
                 // 4. Notifications FCM
 
                 // Au client
@@ -114,7 +116,9 @@ class VendorOrderController extends Controller
                     $this->fcmService->sendToUser(
                         $client,
                         'Commande validée !',
-                        "Votre commande #{$order->order_number} a été acceptée par le vendeur. En attente du livreur.",
+                        $order->isCarrierDelivery()
+                            ? "Votre commande #{$order->order_number} a été acceptée par le vendeur. Le colis va être remis au transporteur."
+                            : "Votre commande #{$order->order_number} a été acceptée par le vendeur. En attente du livreur.",
                         [
                             'type' => 'order_confirmed',
                             'order_id' => (string) $order->id,
@@ -123,19 +127,24 @@ class VendorOrderController extends Controller
                     );
                 }
 
-                // Au livreur (via la delivery company assignée)
-                $this->notifyDeliveryCompany($order);
+                // Au livreur (via la delivery company assignée) — livraison urbaine
+                // uniquement : un transporteur reçoit le colis en agence.
+                if (!$order->isCarrierDelivery()) {
+                    $this->notifyDeliveryCompany($order);
+                }
             });
 
             // 5. Dispatcher le job de vérification après 5 minutes
-            \App\Jobs\CheckDeliveryAcceptanceJob::dispatch($order->id)
-                ->delay(now()->addMinutes(5));
+            if (!$order->isCarrierDelivery()) {
+                \App\Jobs\CheckDeliveryAcceptanceJob::dispatch($order->id)
+                    ->delay(now()->addMinutes(5));
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Commande validée. Fonds crédités et disponibles immédiatement.',
                 'order' => $this->formatVendorOrder(
-                    $order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany']),
+                    $order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents']),
                     $vendor->id
                 ),
             ]);
@@ -197,6 +206,8 @@ class VendorOrderController extends Controller
                     $item->restoreStock();
                 }
 
+                app(\App\Services\OrderTrackingService::class)->record($order, 'cancelled', null, $cancelReason, 'vendor', $request->user()->id);
+
                 // 4. Notification au client
                 $client = $order->user;
                 if ($client) {
@@ -247,6 +258,9 @@ class VendorOrderController extends Controller
         if (!in_array($order->status, ['confirmed', 'preparing'])) {
             return response()->json(['success' => false, 'message' => 'La commande doit être confirmée avant d\'assigner un livreur'], 422);
         }
+        if ($order->isCarrierDelivery()) {
+            return response()->json(['success' => false, 'message' => 'Cette commande part par transporteur : remettez le colis en agence et saisissez son numéro de suivi.'], 422);
+        }
 
         // Verify the delivery person has livreur role
         $deliveryPerson = User::where('id', $request->delivery_person_id)
@@ -261,6 +275,7 @@ class VendorOrderController extends Controller
             'delivery_person_id' => $deliveryPerson->id,
             'status' => 'preparing',
         ]);
+        app(\App\Services\OrderTrackingService::class)->record($order, 'preparing', null, "Livreur : {$deliveryPerson->name}", 'vendor', $user->id);
 
         // Notification au livreur
         $this->fcmService->sendToUser(
@@ -286,6 +301,87 @@ class VendorOrderController extends Controller
                 'name' => $deliveryPerson->name,
                 'phone' => $deliveryPerson->phone,
             ],
+        ]);
+    }
+
+    /**
+     * Transporteur (SOLEX, DHL, FedEx) : le vendeur a déposé le colis en agence et
+     * saisit le numéro de suivi du transporteur. La commande passe « expédiée ».
+     *
+     * POST /vendor/orders/{id}/hand-to-carrier  { carrier_tracking_number, location?, note? }
+     */
+    public function handToCarrier(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'carrier_tracking_number' => 'required|string|max:100',
+            'location' => 'nullable|string|max:150',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $vendor = $request->user();
+        $order = $this->getVendorOrder($vendor, $id);
+
+        if (!$order->isCarrierDelivery()) {
+            return response()->json(['success' => false, 'message' => 'Cette commande est livrée par un livreur urbain.'], 422);
+        }
+        if (!in_array($order->status, ['confirmed', 'preparing'])) {
+            return response()->json(['success' => false, 'message' => 'La commande doit être validée avant la remise au transporteur.'], 422);
+        }
+
+        DB::transaction(function () use ($order, $validated, $vendor) {
+            $order->update([
+                'status' => 'shipped',
+                'shipped_at' => now(),
+                'carrier_tracking_number' => trim($validated['carrier_tracking_number']),
+            ]);
+            app(\App\Services\OrderTrackingService::class)->record(
+                $order,
+                'handed_to_carrier',
+                $validated['location'] ?? null,
+                trim("N° de suivi {$order->carrier_tracking_number}. " . ($validated['note'] ?? '')),
+                'vendor',
+                $vendor->id,
+                notifyBuyer: true,
+            );
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Colis remis au transporteur. L\'acheteur a été prévenu.',
+            'order' => $this->formatVendorOrder($order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents']), $vendor->id),
+        ]);
+    }
+
+    /**
+     * Étape d'acheminement transporteur (en transit, dédouanement, arrivé, disponible
+     * en agence). L'acheteur est notifié à chaque étape.
+     *
+     * POST /vendor/orders/{id}/tracking  { step, location?, note? }
+     */
+    public function addTrackingStep(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'step' => 'required|in:' . implode(',', \App\Services\OrderTrackingService::CARRIER_UPDATE_STEPS),
+            'location' => 'nullable|string|max:150',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $vendor = $request->user();
+        $order = $this->getVendorOrder($vendor, $id);
+
+        if (!$order->isCarrierDelivery() || $order->status !== 'shipped') {
+            return response()->json(['success' => false, 'message' => 'Le suivi transporteur commence après la remise du colis.'], 422);
+        }
+
+        app(\App\Services\OrderTrackingService::class)->record(
+            $order, $validated['step'], $validated['location'] ?? null, $validated['note'] ?? null,
+            'vendor', $vendor->id, notifyBuyer: true,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Étape ajoutée. L\'acheteur a été prévenu.',
+            'order' => $this->formatVendorOrder($order->fresh(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents']), $vendor->id),
         ]);
     }
 
@@ -399,7 +495,7 @@ class VendorOrderController extends Controller
     private function getVendorOrder($user, $orderId)
     {
         $orderIds = OrderItem::where('seller_id', $user->id)->pluck('order_id')->unique();
-        return Order::with(['items.product.primaryImage', 'user', 'deliveryPerson'])
+        return Order::with(['items.product.primaryImage', 'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents'])
             ->whereIn('id', $orderIds)
             ->findOrFail($orderId);
     }
@@ -429,7 +525,7 @@ class VendorOrderController extends Controller
         $user = $request->user();
         $order = Order::with([
             'items' => fn ($q) => $q->where('seller_id', $user->id)->with('product.primaryImage'),
-            'user', 'deliveryPerson', 'deliveryCompany',
+            'user', 'deliveryPerson', 'deliveryCompany', 'trackingEvents',
         ])->whereIn('id', OrderItem::where('seller_id', $user->id)->select('order_id'))
             ->findOrFail($id);
 
@@ -477,6 +573,7 @@ class VendorOrderController extends Controller
                 'id' => $order->deliveryCompany->id,
                 'name' => $order->deliveryCompany->name,
             ] : null,
+            'delivery' => \App\Support\DeliveryPresenter::forOrder($order),
             'delivery_person_id' => $order->delivery_person_id,
             'delivery_person' => $order->deliveryPerson ? [
                 'id' => $order->deliveryPerson->id,

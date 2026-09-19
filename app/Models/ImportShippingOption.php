@@ -13,6 +13,8 @@ class ImportShippingOption extends Model
     protected $fillable = [
         'country_code',
         'mode',
+        'carrier',
+        'tracking_url_template',
         'rate_type',
         'rate_amount',
         'currency',
@@ -68,6 +70,7 @@ class ImportShippingOption extends Model
             'country_code' => $this->country_code,
             'mode' => $this->mode,
             'mode_label' => self::MODE_LABELS[$this->mode] ?? $this->mode,
+            'carrier' => $this->carrier,
             'rate_type' => $this->rate_type,
             'rate_amount' => (float) $this->rate_amount,
             'currency' => $this->currency,

@@ -34,6 +34,8 @@ class Order extends Model
         'delivery_longitude',
         'tracking_number', 'confirmation_code',
         'delivery_person_id', 'delivery_company_id', 'delivery_zone_id',
+        'delivery_mode', 'delivery_route_id', 'shipping_weight_kg', 'delivery_vat_amount', 'delivery_breakdown',
+        'carrier_tracking_number', 'tracking_status',
         'payment_method', 'payment_reference', 'payment_currency', 'payment_amount', 'payment_status',
         'notes', 'cancel_reason',
         'confirmed_at', 'shipped_at', 'delivered_at', 'cancelled_at',
@@ -58,7 +60,28 @@ class Order extends Model
         'confirmed_by_client_at' => 'datetime',
         'confirmed_by_deliverer_at' => 'datetime',
         'rated_at' => 'datetime',
+        'shipping_weight_kg' => 'float',
+        'delivery_vat_amount' => 'decimal:2',
+        'delivery_breakdown' => 'array',
     ];
+
+    /** local = livreur ASSO à domicile (code de confirmation) ; carrier = SOLEX, DHL, FedEx… */
+    public const DELIVERY_LOCAL = 'local';
+    public const DELIVERY_CARRIER = 'carrier';
+
+    public function isCarrierDelivery(): bool
+    {
+        return $this->delivery_mode === self::DELIVERY_CARRIER;
+    }
+
+    /**
+     * Transporteur + livraison à domicile depuis l'agence d'arrivée (ex. SOLEX) : le
+     * dernier kilomètre suit le flux urbain (coursier du partenaire, code à 6 chiffres).
+     */
+    public function hasLastMileDelivery(): bool
+    {
+        return $this->isCarrierDelivery() && $this->delivery_zone_id !== null;
+    }
 
     protected static function boot()
     {
@@ -124,7 +147,9 @@ class Order extends Model
     public function deliveryPerson(): BelongsTo { return $this->belongsTo(User::class, 'delivery_person_id'); }
     public function deliveryCompany(): BelongsTo { return $this->belongsTo(DelivererCompany::class, 'delivery_company_id'); }
     public function deliveryZone(): BelongsTo { return $this->belongsTo(DeliveryZone::class, 'delivery_zone_id'); }
+    public function deliveryRoute(): BelongsTo { return $this->belongsTo(DeliveryRoute::class, 'delivery_route_id'); }
     public function items(): HasMany { return $this->hasMany(OrderItem::class); }
+    public function trackingEvents(): HasMany { return $this->hasMany(OrderTrackingEvent::class)->orderBy('occurred_at')->orderBy('id'); }
     public function rating(): HasOne { return $this->hasOne(OrderRating::class); }
 
     public function getFormattedTotalAttribute(): string

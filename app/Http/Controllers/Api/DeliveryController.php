@@ -52,7 +52,13 @@ class DeliveryController extends Controller
             $companyOrders = Order::with(['items.product.primaryImage', 'user', 'deliveryCompany'])
                 ->whereIn('delivery_company_id', $companyIds)
                 ->whereNull('delivery_person_id')
-                ->where('status', 'confirmed')
+                ->where(fn ($q) => $q
+                    ->where(fn ($l) => $l->where('delivery_mode', Order::DELIVERY_LOCAL)->where('status', 'confirmed'))
+                    // Transporteur : dernier kilomètre une fois le colis arrivé à l'agence.
+                    ->orWhere(fn ($c) => $c->where('delivery_mode', Order::DELIVERY_CARRIER)
+                        ->whereNotNull('delivery_zone_id')
+                        ->where('status', 'shipped')
+                        ->whereIn('tracking_status', ['arrived', 'ready_for_pickup'])))
                 ->orderBy('created_at', 'desc')
                 ->get();
         }
@@ -89,7 +95,12 @@ class DeliveryController extends Controller
                                  ->whereNull('delivery_person_id');
                           });
                     })
-                    ->whereIn('status', ['confirmed', 'preparing'])
+                    ->where(fn ($q) => $q
+                        ->where(fn ($l) => $l->where('delivery_mode', Order::DELIVERY_LOCAL)->whereIn('status', ['confirmed', 'preparing']))
+                        ->orWhere(fn ($c) => $c->where('delivery_mode', Order::DELIVERY_CARRIER)
+                            ->whereNotNull('delivery_zone_id')
+                            ->where('status', 'shipped')
+                            ->whereIn('tracking_status', ['arrived', 'ready_for_pickup'])))
                     ->findOrFail($id);
 
                 // Double-check : si un autre livreur a pris entre-temps
@@ -100,8 +111,13 @@ class DeliveryController extends Controller
                 $order->update([
                     'delivery_person_id' => $user->id,
                     'status' => 'shipped',
-                    'shipped_at' => now(),
+                    'shipped_at' => $order->shipped_at ?? now(),
                 ]);
+
+                app(\App\Services\OrderTrackingService::class)->record(
+                    $order, 'out_for_delivery', null,
+                    trim("{$user->first_name} {$user->last_name}"), 'deliverer', $user->id,
+                );
 
                 return $order;
             });
@@ -194,6 +210,10 @@ class DeliveryController extends Controller
                     'confirmed_by_client_at' => now(),
                     'confirmation_code' => null, // Supprimer le code après validation
                 ]);
+
+                app(\App\Services\OrderTrackingService::class)->record(
+                    $order, 'delivered', null, 'Code de réception validé par le livreur', 'deliverer', $user->id,
+                );
 
                 // 2. ENCAISSEMENT DIRECT : plus AUCUN mouvement de fonds ici.
                 //    Le client a été prélevé et le vendeur / livreur / ASSO ont été crédités
@@ -401,10 +421,10 @@ class DeliveryController extends Controller
 
                 \Log::info("  ├─ Distance from requested position: " . round($distance, 2) . " km");
 
-                // Consider zone available if within 10km radius
-                // This is a simple check; you can implement more complex polygon checking
-                $isWithinRadius = $distance <= 10;
-                \Log::info("  ├─ Within 10km radius: " . ($isWithinRadius ? 'YES ✅' : 'NO ❌'));
+                // Rayon de couverture réglable dans l'admin (Paramètres → Livraison).
+                $radius = \App\Services\DeliveryQuoteService::radiusKm();
+                $isWithinRadius = $distance <= $radius;
+                \Log::info("  ├─ Within {$radius}km radius: " . ($isWithinRadius ? 'YES ✅' : 'NO ❌'));
 
                 // A zone qualifies for vendor onboarding based on GEOGRAPHIC COVERAGE only
                 // (active zone within radius). Whether a specific deliverer has already
@@ -427,7 +447,7 @@ class DeliveryController extends Controller
                         ],
                     ];
                 } else {
-                    \Log::info("  └─ ❌ ZONE EXCLUDED (outside 10km radius)");
+                    \Log::info("  └─ ❌ ZONE EXCLUDED (outside {$radius}km radius)");
                 }
             } else {
                 \Log::info("  ├─ Zone Center: NOT SET");
@@ -493,19 +513,31 @@ class DeliveryController extends Controller
             $longitude = $request->input('longitude');
             $city = $request->input('city');
 
-            // Si product_id fourni, retourner les partenaires avec prix calculé
-            if ($productId) {
-                $partners = $this->orderService->getDeliveryPartnersWithPricing(
-                    (int) $productId,
+            // Panier (items[]) ou produit seul (product_id + quantity) : offres chiffrées
+            // au poids réel, avec tout le détail affiché à l'acheteur avant validation.
+            $items = $request->input('items');
+            if (!$items && $productId) {
+                $items = [['product_id' => (int) $productId, 'quantity' => max(1, (int) $request->input('quantity', 1))]];
+            }
+
+            if ($items) {
+                $quote = $this->orderService->deliveryQuotes(
+                    collect($items)->map(fn ($i) => [
+                        'product_id' => (int) ($i['product_id'] ?? 0),
+                        'quantity' => max(1, (int) ($i['quantity'] ?? 1)),
+                    ])->all(),
                     $latitude ? (float) $latitude : null,
                     $longitude ? (float) $longitude : null,
-                    $city
+                    $city,
+                    $request->input('country'),
                 );
 
                 return response()->json([
                     'success' => true,
-                    'partners' => $partners,
-                    'total' => count($partners),
+                    'partners' => $quote['partners'],
+                    'total' => count($quote['partners']),
+                    'quote' => array_diff_key($quote, ['partners' => 1]),
+                    'message' => $quote['message'],
                 ]);
             }
 

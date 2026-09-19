@@ -287,6 +287,11 @@ class ProductController extends Controller
             'count' => $request->hasFile('images') ? count($request->file('images')) : 0,
         ]);
 
+        // Poids en kg : accepte la virgule décimale (« 1,5 »).
+        if (is_string($request->input('weight'))) {
+            $request->merge(['weight' => str_replace(',', '.', trim($request->input('weight')))]);
+        }
+
         // Validate input
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -300,7 +305,8 @@ class ProductController extends Controller
             'origin_country' => 'nullable|string|size:2',
             'condition' => 'required|in:new,used,refurbished',
             'stock' => 'nullable|integer|min:0',
-            'weight' => 'nullable|string|max:255',
+            // P4 : poids réel du colis en kg, obligatoire pour un article (calcul de la livraison).
+            'weight' => 'required_if:type,article|nullable|numeric|min:0.001|max:100000',
             'weight_category' => 'nullable|in:' . implode(',', Product::WEIGHT_CATEGORIES),
             'sizes' => 'nullable|array',
             'sizes.*' => 'string|in:' . implode(',', Product::AVAILABLE_SIZES),

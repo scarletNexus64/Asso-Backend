@@ -251,6 +251,17 @@
                            placeholder="Ex: Commande du 11 au 15, arrivée le 20"
                            class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
                 </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs text-gray-400 mb-1">Transporteur</label>
+                    <input type="text" name="carrier" id="shipping_carrier" placeholder="DHL, FedEx…"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+                </div>
+                <div class="md:col-span-4">
+                    <label class="block text-xs text-gray-400 mb-1">Lien de suivi ({number} = n° de suivi)</label>
+                    <input type="text" name="tracking_url_template" id="shipping_tracking_url"
+                           placeholder="https://www.dhl.com/cm-fr/home/tracking.html?tracking-id={number}"
+                           class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+                </div>
                 <div class="md:col-span-6 flex justify-end gap-2">
                     <button type="button" id="shipping_cancel_edit" onclick="resetShippingForm()"
                             class="hidden px-4 py-2 bg-dark-200 text-gray-300 rounded-lg hover:bg-dark-50 text-sm">
@@ -325,7 +336,7 @@ function loadShippingList() {
             container.innerHTML = options.map(o => `
                 <div class="flex items-center justify-between bg-dark-50 p-3 rounded-lg">
                     <div class="text-sm text-white">
-                        <strong>${o.mode.toUpperCase()}</strong> —
+                        <strong>${o.mode.toUpperCase()}</strong>${o.carrier ? ' (' + o.carrier + ')' : ''} —
                         ${o.rate_type === 'flat'
                             ? Number(o.rate_amount).toLocaleString() + ' FCFA (forfait)'
                             : Number(o.rate_amount).toLocaleString() + ' FCFA/kg'}
@@ -361,6 +372,8 @@ document.getElementById('shippingForm').addEventListener('submit', function (e) 
         rate_amount: document.getElementById('shipping_rate_amount').value,
         lead_time_days: document.getElementById('shipping_lead_time').value,
         expedition_note: document.getElementById('shipping_note').value,
+        carrier: document.getElementById('shipping_carrier').value,
+        tracking_url_template: document.getElementById('shipping_tracking_url').value,
     };
 
     const url = editingShippingOptionId
@@ -395,6 +408,8 @@ function editShippingOption(option) {
     document.getElementById('shipping_rate_amount').value = option.rate_amount;
     document.getElementById('shipping_lead_time').value = option.lead_time_days;
     document.getElementById('shipping_note').value = option.expedition_note ?? '';
+    document.getElementById('shipping_carrier').value = option.carrier ?? '';
+    document.getElementById('shipping_tracking_url').value = option.tracking_url_template ?? '';
     document.getElementById('shipping_submit_label').textContent = 'Mettre à jour';
     document.getElementById('shipping_cancel_edit').classList.remove('hidden');
 }

@@ -182,6 +182,25 @@ class Product extends Model
     }
 
     /**
+     * Poids unitaire en kg lu depuis la fiche (colonne texte : « 1,5 », « 500 g », « 2kg »).
+     * Null si absent ou illisible : la livraison ne peut alors pas être chiffrée.
+     */
+    public function weightKg(): ?float
+    {
+        $raw = strtolower(trim((string) $this->weight));
+        if ($raw === '' || !preg_match('/(\d+(?:[.,]\d+)?)\s*(kg|g)?/', $raw, $m)) {
+            return null;
+        }
+
+        $value = (float) str_replace(',', '.', $m[1]);
+        if (($m[2] ?? '') === 'g') {
+            $value /= 1000;
+        }
+
+        return $value > 0 ? round($value, 3) : null;
+    }
+
+    /**
      * Get the shop that owns this product
      */
     public function shop(): BelongsTo

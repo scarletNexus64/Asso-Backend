@@ -16,11 +16,56 @@ class DelivererCompany extends Model
         'description',
         'logo',
         'is_active',
+        'service_type',
+        'service_mode',
+        'prices_exclude_vat',
+        'conditions',
+        'max_weight_kg',
+        'tracking_url_template',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'prices_exclude_vat' => 'boolean',
+        'max_weight_kg' => 'float',
     ];
+
+    public const SERVICE_LOCAL = 'local';
+    public const SERVICE_INTERCITY = 'intercity';
+    public const SERVICE_INTERNATIONAL = 'international';
+
+    public const SERVICE_TYPES = [
+        self::SERVICE_LOCAL => 'Urbain (même ville)',
+        self::SERVICE_INTERCITY => 'Interurbain (Cameroun)',
+        self::SERVICE_INTERNATIONAL => 'Livraison internationale',
+    ];
+
+    public const MODE_DOOR = 'door_to_door';
+    public const MODE_AGENCY = 'agency_to_agency';
+
+    public const SERVICE_MODES = [
+        self::MODE_DOOR => 'Livraison à domicile',
+        self::MODE_AGENCY => "D'agence en agence (dépôt et retrait en agence)",
+    ];
+
+    public function isCarrier(): bool
+    {
+        return $this->service_type !== self::SERVICE_LOCAL;
+    }
+
+    public function trackingUrl(?string $number): ?string
+    {
+        if (!$number || !$this->tracking_url_template) {
+            return null;
+        }
+
+        return str_replace('{number}', rawurlencode($number), $this->tracking_url_template);
+    }
+
+    public function deliveryRoutes(): HasMany
+    {
+        return $this->hasMany(DeliveryRoute::class);
+    }
 
     /**
      * Get the user/deliverer that owns this company
