@@ -502,4 +502,21 @@ class DeliveryPartnersTest extends TestCase
 
         $this->getJson('/api/v1/delivery/coverage')->assertStatus(422);
     }
+
+    public function test_gps_only_address_uses_nearest_city_for_intercity_routes(): void
+    {
+        $this->solex(); // Douala ↔ Yaoundé
+        $product = $this->product('2');
+
+        // Adresse sans nom de ville (géocodage indisponible) : la position suffit.
+        $response = $this->getJson('/api/v1/delivery/partners?' . http_build_query([
+            'product_id' => $product->id,
+            'city' => 'Position GPS (3.8700, 11.5100)',
+            'latitude' => 3.87, 'longitude' => 11.51,
+        ]))->assertOk();
+
+        $this->assertSame('Yaoundé', $response->json('quote.destination.city'));
+        $this->assertSame('SOLEX', $response->json('partners.0.company_name'));
+        $this->assertSame('Douala ↔ Yaoundé', $response->json('partners.0.route_label'));
+    }
 }

@@ -70,7 +70,7 @@ class DeliveryQuoteService
     public function quotes(array $items, ?float $lat, ?float $lng, ?string $city, ?string $country = null, ?string $quarter = null, ?string $address = null): array
     {
         $cart = $this->cart($items);
-        [$destCity, $destCountry] = $this->destination($city, $country);
+        [$destCity, $destCountry] = $this->destination($city, $country, $lat, $lng);
         [$originCity, $originCountry] = $cart['origin'];
         $gridContext = $this->gridContext($destCity, $quarter, $address ?? $city, $lat, $lng);
 
@@ -399,7 +399,7 @@ class DeliveryQuoteService
     }
 
     /** @return array{0: ?string, 1: ?string} [ville, code pays] de l'acheteur */
-    private function destination(?string $city, ?string $country): array
+    private function destination(?string $city, ?string $country, ?float $lat = null, ?float $lng = null): array
     {
         $code = CountryCode::normalize($country);
         $destCity = null;
@@ -408,6 +408,16 @@ class DeliveryQuoteService
             [$parsedCity, $parsedCountry] = LocationFormatter::parse($city);
             $destCity = $parsedCity ?: trim(explode(',', $city)[0]);
             $code = $code ?: CountryCode::normalize($parsedCountry);
+        }
+
+        // Adresse sans ville reconnue (ex. « Position GPS (5.4821, 10.4235) ») : ville la plus
+        // proche de la position choisie sur la carte.
+        $known = $destCity && (CityCoordinates::of($destCity) || DeliveryCityGrid::forCity($destCity));
+        if (!$known && $lat !== null && $lng !== null && ($lat != 0 || $lng != 0)) {
+            if ($nearest = CityCoordinates::nearest($lat, $lng)) {
+                $destCity = $nearest['name'];
+                $code = $code ?: 'CM';
+            }
         }
 
         // Vente de produits : un seul sens, vers le Cameroun.

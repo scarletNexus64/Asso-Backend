@@ -123,6 +123,9 @@ class DeliveryCityGrid extends Model
             return "Zone {$code}";
         }
         $quarters = array_column(self::quartersOf($zone), 'name');
+        if ($maxQuarters <= 0) {
+            return $zone['label'];
+        }
         $shown = implode(', ', array_slice($quarters, 0, $maxQuarters)) . (count($quarters) > $maxQuarters ? '…' : '');
 
         return $zone['label'] . ($shown !== '' ? " ({$shown})" : '');
