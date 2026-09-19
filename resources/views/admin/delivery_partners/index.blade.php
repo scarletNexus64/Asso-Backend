@@ -71,7 +71,7 @@
             <thead class="bg-dark-200 text-gray-400 text-left">
                 <tr>
                     <th class="px-4 py-3">Partenaire</th>
-                    <th class="px-4 py-3">Catégorie</th>
+                    <th class="px-4 py-3">Services</th>
                     <th class="px-4 py-3">Mode</th>
                     <th class="px-4 py-3 text-center">Grilles / zones urbaines</th>
                     <th class="px-4 py-3 text-center">Trajets</th>
@@ -84,8 +84,13 @@
                 @forelse($partners as $partner)
                     <tr class="text-gray-300">
                         <td class="px-4 py-3 text-white font-medium">{{ $partner->name }}</td>
-                        <td class="px-4 py-3">{{ \App\Models\DelivererCompany::SERVICE_TYPES[$partner->service_type] ?? $partner->service_type }}</td>
-                        <td class="px-4 py-3">{{ $partner->service_mode === 'agency_to_agency' ? "Agence → agence" : 'À domicile' }}</td>
+                        @php $services = $partner->configuredServices(); @endphp
+                        <td class="px-4 py-3">
+                            @foreach($services as $service)<div class="whitespace-nowrap">{{ $service['label'] }}</div>@endforeach
+                        </td>
+                        <td class="px-4 py-3">
+                            @foreach($services as $service)<div class="whitespace-nowrap">{{ $service['mode'] }}</div>@endforeach
+                        </td>
                         <td class="px-4 py-3 text-center">{{ $partner->city_grids_count }} / {{ $partner->delivery_zones_count }}</td>
                         <td class="px-4 py-3 text-center">{{ $partner->delivery_routes_count }}</td>
                         <td class="px-4 py-3">{{ $partner->prices_exclude_vat ? 'Grille HT + TVA' : 'TTC' }}</td>

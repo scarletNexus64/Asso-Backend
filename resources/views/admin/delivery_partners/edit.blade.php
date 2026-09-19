@@ -93,20 +93,53 @@
     <!-- Nouvelle ville en zone à zone -->
     <div class="bg-dark-100 rounded-xl shadow-lg border border-dashed border-dark-300 p-6 mb-6">
         <h2 class="text-lg font-semibold text-white mb-1"><i class="fas fa-plus-circle mr-2 text-primary-400"></i>Couvrir une nouvelle ville (zones et quartiers)</h2>
-        <p class="text-sm text-gray-400 mb-4">Saisissez la ville : sa carte s'ouvre, chaque quartier tapé y est recherché et placé automatiquement. Saisissez ensuite les prix par véhicule.</p>
-        <form action="{{ route('admin.delivery-partners.city-grids.store', $partner) }}" method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+        <p class="text-sm text-gray-400 mb-4">Même modèle que les autres villes : zones, quartiers placés sur la carte, véhicules et prix zone à zone. Choisissez une ville existante comme modèle pour reprendre ses véhicules, délais et prix (à ajuster), puis tapez les quartiers.</p>
+        @php
+            // Villes desservies par les trajets mais sans grille urbaine : à couvrir en priorité.
+            $routeCities = $partner->deliveryRoutes
+                ->flatMap(fn ($r) => [$r->origin_city, $r->destination_city])
+                ->filter()
+                ->unique(fn ($c) => mb_strtolower($c))
+                ->reject(fn ($c) => $partner->cityGrids->contains(fn ($g) => $g->coversCity($c)))
+                ->sort()
+                ->values();
+            $firstGrid = $partner->cityGrids->first();
+        @endphp
+        <form action="{{ route('admin.delivery-partners.city-grids.store', $partner) }}" method="POST" x-data="{ city: @js(old('city', '')) }">
             @csrf
-            <div>
-                <label class="block text-xs text-gray-400 mb-1">Ville</label>
-                <input type="text" name="city" required placeholder="Yaoundé" class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Ville</label>
+                    <input type="text" name="city" x-model="city" required placeholder="Yaoundé" list="route_cities_{{ $partner->id }}" class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+                    <datalist id="route_cities_{{ $partner->id }}">
+                        @foreach($routeCities as $c)<option value="{{ $c }}">@endforeach
+                    </datalist>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Nombre de zones</label>
+                    <input type="number" name="zones_count" min="1" max="30" value="{{ old('zones_count', $firstGrid ? count($firstGrid->zones) : 7) }}" required class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Modèle (véhicules, délais et prix)</label>
+                    <select name="template_grid_id" class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
+                        @foreach($partner->cityGrids as $g)
+                            <option value="{{ $g->id }}" @selected($loop->first)>Comme {{ $g->city }}</option>
+                        @endforeach
+                        <option value="">Vierge (4 véhicules, sans prix)</option>
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" class="w-full px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"><i class="fas fa-city mr-1"></i> Créer la grille</button>
+                </div>
             </div>
-            <div>
-                <label class="block text-xs text-gray-400 mb-1">Nombre de zones</label>
-                <input type="number" name="zones_count" min="1" max="30" value="7" required class="w-full px-3 py-2 bg-dark-50 border border-dark-200 rounded-lg text-white text-sm">
-            </div>
-            <div>
-                <button type="submit" class="w-full px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"><i class="fas fa-city mr-1"></i> Créer la grille</button>
-            </div>
+            @if($routeCities->isNotEmpty())
+                <div class="mt-3 text-xs text-gray-400">
+                    Villes de vos trajets sans livraison urbaine :
+                    @foreach($routeCities as $c)
+                        <button type="button" @click="city = @js($c)" class="ml-1 mb-1 px-2 py-0.5 rounded-full border border-purple-500/50 bg-purple-900/30 text-purple-300 hover:bg-purple-800/40">{{ $c }}</button>
+                    @endforeach
+                </div>
+            @endif
         </form>
     </div>
 

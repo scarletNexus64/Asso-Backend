@@ -112,7 +112,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-blue-100 text-sm">Zones Totales</p>
-                    <p class="text-2xl font-bold">{{ \App\Models\DeliveryZone::count() }}</p>
+                    <p class="text-2xl font-bold">{{ \App\Models\DeliveryZone::count() + \App\Models\DeliveryCityGrid::all()->sum(fn ($g) => count($g->zones)) }}</p>
                 </div>
                 <i class="fas fa-map-marked-alt text-3xl text-blue-200"></i>
             </div>
@@ -149,7 +149,7 @@
                             @endif
                             @if($deliverer->cityGrids->isNotEmpty())
                                 <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-500/50 rounded-full text-blue-400 text-xs">
-                                    <i class="fas fa-city"></i> Urbain {{ $deliverer->cityGrids->pluck('city')->implode(', ') }}
+                                    <i class="fas fa-city"></i> Urbain {{ $deliverer->cityGrids->map(fn ($g) => $g->city . ' — ' . count($g->zones) . ' zones')->implode(', ') }}
                                 </span>
                             @endif
                             @if($deliverer->deliveryZones->isNotEmpty())
@@ -178,6 +178,23 @@
                     </div>
 
                     <!-- Delivery Zones -->
+                    @foreach($deliverer->cityGrids as $grid)
+                        <div class="mt-3">
+                            <p class="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                                <i class="fas fa-city text-primary-500"></i>
+                                Zones de livraison à {{ $grid->city }} :
+                            </p>
+                            <div class="flex flex-wrap gap-1.5">
+                                @foreach($grid->zones as $zone)
+                                    @php $quarters = array_column(\App\Models\DeliveryCityGrid::quartersOf($zone), 'name'); @endphp
+                                    <span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-500/40 rounded-full text-blue-300 text-xs" title="{{ implode(', ', $quarters) }}">
+                                        <i class="fas fa-map-pin text-[10px]"></i>
+                                        {{ $zone['label'] }} · {{ count($quarters) }} quartier(s)
+                                    </span>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
                     @if($deliverer->deliveryZones->count() > 0)
                         <div class="mt-3">
                             <p class="text-xs text-gray-500 mb-2 flex items-center gap-1">

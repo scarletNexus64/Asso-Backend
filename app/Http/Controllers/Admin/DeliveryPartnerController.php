@@ -16,13 +16,14 @@ use Illuminate\Validation\Rule;
  * P4 — Partenaires logistiques : réglages de livraison (rayon des zones, TVA),
  * conditions de chaque partenaire et grilles au poids par trajet
  * (SOLEX interurbain, DHL / FedEx international vers le Cameroun).
- * Les zones urbaines restent gérées dans « Livreurs ».
+ * Seul endroit où se configure la livraison : grille urbaine (zones, quartiers, véhicules) et trajets.
  */
 class DeliveryPartnerController extends Controller
 {
     public function index()
     {
         $partners = DelivererCompany::withCount(['deliveryZones', 'deliveryRoutes', 'cityGrids'])
+            ->with(['cityGrids:id,deliverer_company_id,city', 'deliveryRoutes:id,deliverer_company_id,origin_country,destination_country', 'deliveryZones:id,deliverer_company_id'])
             ->orderByRaw("CASE service_type WHEN 'intercity' THEN 0 WHEN 'international' THEN 1 ELSE 2 END")
             ->orderBy('name')
             ->get();
@@ -104,23 +105,41 @@ class DeliveryPartnerController extends Controller
         $validated = $request->validate([
             'city' => 'required|string|max:120',
             'zones_count' => 'required|integer|min:1|max:30',
+            'template_grid_id' => 'nullable|integer',
         ]);
 
         if ($partner->cityGrids()->get()->contains(fn ($g) => $g->coversCity($validated['city']))) {
             return back()->withErrors(['city' => "{$partner->name} a déjà une grille pour {$validated['city']}."]);
         }
 
-        $partner->cityGrids()->create([
-            'city' => trim($validated['city']),
-            'country' => 'CM',
-            'zones' => collect(range(1, $validated['zones_count']))
-                ->map(fn ($code) => ['code' => $code, 'label' => "Zone {$code}", 'quarters' => []])->all(),
-            'vehicles' => [
+        // Même modèle qu'une ville existante : véhicules, poids max., délais et prix zone à zone
+        // (prix repris pour les zones présentes dans les deux villes). Les quartiers restent propres à la ville.
+        $template = !empty($validated['template_grid_id'])
+            ? $partner->cityGrids()->find($validated['template_grid_id'])
+            : null;
+        $count = (int) $validated['zones_count'];
+        $vehicles = $template
+            ? collect($template->vehicles)->map(fn ($v) => array_merge($v, [
+                'prices' => collect($v['prices'] ?? [])->filter(function ($price, $key) use ($count) {
+                    [$from, $to] = array_map('intval', explode('-', (string) $key) + [1 => 0]);
+
+                    return $from >= 1 && $from <= $count && $to >= 1 && $to <= $count;
+                })->all(),
+            ]))->all()
+            : [
                 ['code' => 'moto', 'label' => 'Moto', 'max_weight_kg' => 30, 'lead_time' => null, 'prices' => []],
                 ['code' => 'tricycle', 'label' => 'Tricycle', 'max_weight_kg' => 300, 'lead_time' => null, 'prices' => []],
                 ['code' => '600kg', 'label' => 'Camionnette 600 kg', 'max_weight_kg' => 600, 'lead_time' => null, 'prices' => []],
                 ['code' => '1t', 'label' => 'Camion 1 tonne', 'max_weight_kg' => 1000, 'lead_time' => null, 'prices' => []],
-            ],
+            ];
+
+        $partner->cityGrids()->create([
+            'city' => trim($validated['city']),
+            'country' => 'CM',
+            'zones' => collect(range(1, $count))
+                ->map(fn ($code) => ['code' => $code, 'label' => "Zone {$code}", 'quarters' => []])->all(),
+            'vehicles' => $vehicles,
+            'asso_commission' => $template ? (float) $template->asso_commission : 0,
             'is_active' => false,
         ]);
 

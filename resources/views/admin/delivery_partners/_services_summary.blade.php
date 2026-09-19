@@ -35,7 +35,7 @@
                 <div class="text-white font-medium mb-1"><i class="fas fa-city text-primary-500 mr-1"></i> {{ $grid->city }} — livraison à domicile, prix zone à zone</div>
                 <div class="text-gray-400">
                     @foreach($grid->zones as $zone)
-                        <div><span class="text-gray-300">{{ $zone['label'] }} :</span> {{ implode(', ', $zone['quarters'] ?? []) }}</div>
+                        <div><span class="text-gray-300">{{ $zone['label'] }} :</span> {{ implode(', ', array_column(\App\Models\DeliveryCityGrid::quartersOf($zone), 'name')) }}</div>
                     @endforeach
                 </div>
                 <div class="mt-2 text-gray-400">

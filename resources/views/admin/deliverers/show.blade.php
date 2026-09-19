@@ -202,10 +202,94 @@
 
             <!-- Delivery Zones -->
             <div class="bg-dark-100 rounded-xl shadow-lg border border-dark-200 p-6">
+                @php
+                    $gridZoneCount = $deliverer->cityGrids->sum(fn ($g) => count($g->zones));
+                    $zoneColors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#eab308', '#6366f1', '#84cc16'];
+                    $mapPoints = [];
+                    $mapCities = [];
+                    $cityKey = fn ($c) => \App\Support\CountryCode::key($c);
+                    // Urbain : quartiers placés, colorés par zone, et centre de chaque ville couverte.
+                    foreach ($deliverer->cityGrids as $grid) {
+                        $placed = [];
+                        foreach ($grid->zones as $zone) {
+                            foreach (\App\Models\DeliveryCityGrid::quartersOf($zone) as $quarter) {
+                                if ($quarter['lat'] !== null && $quarter['lng'] !== null) {
+                                    $placed[] = [$quarter['lat'], $quarter['lng']];
+                                    $mapPoints[] = ['lat' => $quarter['lat'], 'lng' => $quarter['lng'], 'zone' => (int) $zone['code'], 'label' => $quarter['name'] . ' — ' . $zone['label'] . ' (' . $grid->city . ')'];
+                                }
+                            }
+                        }
+                        $center = $placed
+                            ? [array_sum(array_column($placed, 0)) / count($placed), array_sum(array_column($placed, 1)) / count($placed)]
+                            : \App\Support\CityCoordinates::of($grid->city);
+                        $radiusKm = $placed && $center
+                            ? max(2, max(array_map(fn ($p) => \App\Models\DeliveryCityGrid::distanceKm($center[0], $center[1], $p[0], $p[1]), $placed)) + 1)
+                            : 5;
+                        $mapCities[$cityKey($grid->city)] = ['name' => $grid->city, 'query' => $grid->city . ', Cameroun', 'lat' => $center[0] ?? null, 'lng' => $center[1] ?? null, 'urban' => true, 'radius_km' => round($radiusKm, 1), 'zones' => count($grid->zones), 'active' => $grid->is_active, 'agency' => false];
+                    }
+                    // Interurbain / international : villes d'agence et trajets.
+                    $mapRoutes = [];
+                    foreach ($deliverer->deliveryRoutes as $route) {
+                        $ends = [];
+                        foreach ([[$route->origin_city, $route->origin_country], [$route->destination_city, $route->destination_country]] as [$city, $country]) {
+                            $name = $city ?: \App\Support\CountryCode::name($country);
+                            $key = $cityKey($name);
+                            $coords = $city ? \App\Support\CityCoordinates::of($city) : null;
+                            $mapCities[$key] ??= ['name' => $name, 'query' => $city ? $city . ', ' . \App\Support\CountryCode::name($country) : $name, 'lat' => $coords[0] ?? null, 'lng' => $coords[1] ?? null, 'urban' => false, 'agency' => false];
+                            $mapCities[$key]['agency'] = true;
+                            $ends[] = $key;
+                        }
+                        $mapRoutes[] = ['from' => $ends[0], 'to' => $ends[1], 'label' => $route->label(), 'lead_time' => $route->lead_time, 'active' => $route->is_active, 'international' => $route->origin_country !== $route->destination_country];
+                    }
+                    foreach ($deliverer->deliveryZones as $zone) {
+                        if ($zone->center_latitude && $zone->center_longitude) {
+                            $mapPoints[] = ['lat' => (float) $zone->center_latitude, 'lng' => (float) $zone->center_longitude, 'zone' => null, 'label' => $zone->name];
+                        }
+                    }
+                    $hasMap = $mapPoints || $mapCities;
+                    $agencyLabel = $deliverer->service_mode === 'agency_to_agency' ? 'Agence ' . $deliverer->name : 'Ville desservie';
+                @endphp
                 <h3 class="text-xl font-bold text-white mb-4 flex items-center">
                     <i class="fas fa-map-marked-alt text-primary-500 mr-2"></i>
-                    Zones sur carte ({{ $deliverer->deliveryZones->count() }})
+                    Zones sur carte ({{ $gridZoneCount + $deliverer->deliveryZones->count() }})
                 </h3>
+
+                @if($hasMap)
+                    <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+                        <button type="button" data-map-view="all" class="px-3 py-1 rounded-full bg-primary-500 text-white hover:bg-primary-600"><i class="fas fa-globe-africa mr-1"></i> Tout le réseau</button>
+                        @foreach($mapCities as $key => $c)
+                            @if($c['urban'])
+                                <button type="button" data-map-view="{{ $key }}" class="px-3 py-1 rounded-full border border-blue-500/50 bg-blue-900/30 text-blue-300 hover:bg-blue-800/40"><i class="fas fa-city mr-1"></i> {{ $c['name'] }}</button>
+                            @endif
+                        @endforeach
+                    </div>
+                    <div id="deliverer_zones_map" class="h-[480px] rounded-lg border border-dark-300 mb-2 z-0"></div>
+                    <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400 mb-4">
+                        <span><span class="inline-block w-3 h-3 rounded-full align-middle mr-1" style="background:#3b82f6"></span> Quartier (couleur = zone urbaine)</span>
+                        <span><span class="inline-block w-4 h-4 rounded-full align-middle mr-1 border-2 border-dashed border-blue-400 bg-blue-500/10"></span> Ville couverte en livraison urbaine</span>
+                        @if($mapRoutes)
+                            <span><span class="inline-flex w-5 h-5 rounded-md align-middle mr-1 items-center justify-center bg-purple-600 text-white text-[10px]"><i class="fas fa-warehouse"></i></span> {{ $agencyLabel }}</span>
+                            <span><span class="inline-block w-6 align-middle mr-1 border-t-2 border-dashed border-purple-400"></span> Trajet interurbain (délai)</span>
+                            @if(collect($mapRoutes)->contains('international', true))
+                                <span><span class="inline-block w-6 align-middle mr-1 border-t-2 border-dotted border-amber-400"></span> Trajet international</span>
+                            @endif
+                        @endif
+                    </div>
+                    @foreach($deliverer->cityGrids as $grid)
+                        <div class="mb-4 p-4 bg-dark-50 rounded-lg border border-dark-300 text-sm">
+                            <p class="text-white font-semibold mb-2"><i class="fas fa-city text-primary-500 mr-1"></i> {{ $grid->city }}</p>
+                            <div class="space-y-1">
+                                @foreach($grid->zones as $zone)
+                                    @php $quarters = \App\Models\DeliveryCityGrid::quartersOf($zone); $unplaced = collect($quarters)->whereNull('lat')->count(); @endphp
+                                    <div class="flex items-start gap-2">
+                                        <span class="inline-block w-3 h-3 rounded-full mt-1 shrink-0" style="background: {{ $zoneColors[((int) $zone['code'] - 1) % count($zoneColors)] }}"></span>
+                                        <span class="text-gray-400"><span class="text-gray-200">{{ $zone['label'] }}</span>@if($grid->agency_zone === (int) $zone['code']) <span class="text-primary-400">(agence)</span>@endif : {{ implode(', ', array_column($quarters, 'name')) ?: 'aucun quartier' }}@if($unplaced) <span class="text-yellow-400">— {{ $unplaced }} non placé(s)</span>@endif</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
+                @endif
 
                 @forelse($deliverer->deliveryZones as $zone)
                     <div class="mb-4 last:mb-0 p-4 bg-dark-50 rounded-lg border border-dark-300">
@@ -261,13 +345,15 @@
                         @endif
                     </div>
                 @empty
-                    <div class="text-center py-8">
-                        <i class="fas fa-map text-gray-600 text-4xl mb-3"></i>
-                        <p class="text-gray-500">Aucune zone dessinée sur la carte.</p>
-                        @if($deliverer->cityGrids->isNotEmpty() || $deliverer->deliveryRoutes->isNotEmpty())
-                            <p class="text-gray-500 text-sm mt-1">Ce partenaire est chiffré par sa grille de ville et/ou ses trajets (voir ci-dessus) : aucune zone sur carte n'est nécessaire.</p>
-                        @endif
-                    </div>
+                    @unless($hasMap)
+                        <div class="text-center py-8">
+                            <i class="fas fa-map text-gray-600 text-4xl mb-3"></i>
+                            <p class="text-gray-500">Aucun quartier placé sur la carte.</p>
+                            @if($deliverer->cityGrids->isNotEmpty())
+                                <p class="text-gray-500 text-sm mt-1">Placez les quartiers dans <a href="{{ route('admin.delivery-partners.edit', $deliverer) }}" class="text-primary-400 hover:text-primary-300">Partenaires logistiques</a>.</p>
+                            @endif
+                        </div>
+                    @endunless
                 @endforelse
             </div>
 
@@ -313,3 +399,98 @@
     </div>
 </div>
 @endsection
+
+@if($hasMap)
+    @push('styles')
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+        <style>
+            .map-agency { background: #9333ea; color: #fff; border: 2px solid #fff; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+            .map-agency.map-agency-urban { background: #2563eb; }
+            .map-city-label { background: rgba(17,17,17,.8); color: #fff; border: 0; box-shadow: none; font-weight: 600; }
+            .map-city-label::before { display: none; }
+            .map-route-label { background: #faf5ff; color: #6b21a8; border: 1px solid #c084fc; font-size: 11px; padding: 0 4px; }
+            .map-route-label::before { display: none; }
+        </style>
+    @endpush
+    @push('scripts')
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+        (async function () {
+            const points = @json($mapPoints);
+            const cities = @json((object) $mapCities);
+            const routes = @json($mapRoutes);
+            const colors = @json($zoneColors);
+            const agencyLabel = @json($agencyLabel);
+            const map = L.map('deliverer_zones_map');
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+            map.setView([5.7, 12.4], 6);
+
+            // Villes sans position connue : recherche OpenStreetMap, une par seconde.
+            for (const c of Object.values(cities).filter(c => c.lat === null)) {
+                try {
+                    const res = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(c.query))).json();
+                    if (res.length) { c.lat = parseFloat(res[0].lat); c.lng = parseFloat(res[0].lon); }
+                } catch (e) {}
+                await new Promise(r => setTimeout(r, 1100));
+            }
+
+            const all = [];
+            const byCity = {};
+            // Interurbain : trajets en pointillés violets (ambre pour l'international), sous les villes.
+            routes.forEach(r => {
+                const a = cities[r.from], b = cities[r.to];
+                if (!a || !b || a.lat === null || b.lat === null) return;
+                const line = L.polyline([[a.lat, a.lng], [b.lat, b.lng]], {
+                    color: r.international ? '#f59e0b' : '#a855f7', weight: 3, opacity: r.active ? .9 : .35,
+                    dashArray: r.international ? '2 8' : '8 8',
+                }).addTo(map);
+                line.bindTooltip(r.label + (r.lead_time ? ' — ' + r.lead_time : '') + (r.active ? '' : ' (inactif)'), { sticky: true });
+                if (r.lead_time) {
+                    L.tooltip({ permanent: true, direction: 'center', className: 'map-route-label' })
+                        .setLatLng([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2]).setContent(r.lead_time).addTo(map);
+                }
+            });
+            // Villes : contour de la zone urbaine couverte, marqueur d'agence pour l'interurbain.
+            Object.entries(cities).forEach(([key, c]) => {
+                if (c.lat === null) return;
+                const group = [];
+                if (c.urban) {
+                    group.push(L.circle([c.lat, c.lng], { radius: c.radius_km * 1000, color: '#60a5fa', weight: 2, dashArray: '6 6', fillColor: '#3b82f6', fillOpacity: .08 })
+                        .bindTooltip('Livraison urbaine à ' + c.name + ' — ' + c.zones + ' zones' + (c.active ? '' : ' (grille inactive)')).addTo(map));
+                }
+                if (c.agency || c.urban) {
+                    const m = L.marker([c.lat, c.lng], {
+                        icon: L.divIcon({ className: '', html: '<div class="map-agency ' + (c.urban ? 'map-agency-urban' : '') + '" style="width:24px;height:24px"><i class="fas ' + (c.agency ? 'fa-warehouse' : 'fa-city') + '"></i></div>', iconSize: [24, 24], iconAnchor: [12, 12] }),
+                        zIndexOffset: 1000,
+                    }).addTo(map);
+                    m.bindTooltip(c.name, { permanent: true, direction: 'top', offset: [0, -12], className: 'map-city-label' });
+                    const lines = [];
+                    if (c.agency) lines.push(agencyLabel + ' — ' + c.name);
+                    if (c.urban) lines.push('Livraison urbaine : ' + c.zones + ' zones');
+                    routes.filter(r => r.from === key || r.to === key).forEach(r => lines.push(r.label + (r.lead_time ? ' (' + r.lead_time + ')' : '')));
+                    m.bindPopup(lines.join('<br>'));
+                    group.push(m);
+                }
+                all.push(...group);
+                byCity[key] = group;
+            });
+            // Urbain : quartiers colorés par zone.
+            const quarterMarkers = points.map(p => (p.zone
+                ? L.circleMarker([p.lat, p.lng], { radius: 7, color: '#111', weight: 1, fillColor: colors[(p.zone - 1) % colors.length], fillOpacity: .9 })
+                : L.marker([p.lat, p.lng])
+            ).bindTooltip(p.label).addTo(map));
+            all.push(...quarterMarkers);
+
+            const fit = (layers, maxZoom) => layers.length && map.fitBounds(L.featureGroup(layers).getBounds().pad(0.15), { maxZoom });
+            fit(all, 14);
+            document.querySelectorAll('[data-map-view]').forEach(btn => btn.addEventListener('click', () => {
+                const key = btn.dataset.mapView;
+                if (key === 'all') return fit(all, 14);
+                const c = cities[key];
+                const inCity = quarterMarkers.filter(m => c && c.lat !== null && m.getLatLng().distanceTo([c.lat, c.lng]) <= (c.radius_km + 5) * 1000);
+                fit([...(byCity[key] || []), ...inCity], 15);
+            }));
+        })();
+        </script>
+    @endpush
+@endif

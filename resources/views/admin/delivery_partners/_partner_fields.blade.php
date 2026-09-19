@@ -15,13 +15,13 @@
         <input type="email" name="email" value="{{ old('email', $partner?->email) }}" class="{{ $input }}">
     </div>
     <div>
-        <label class="block text-sm text-gray-400 mb-1">Catégorie (tri de la liste) <span class="text-red-500">*</span></label>
+        <label class="block text-sm text-gray-400 mb-1">Catégorie principale (tri de la liste) <span class="text-red-500">*</span></label>
         <select name="service_type" class="{{ $input }}">
             @foreach(\App\Models\DelivererCompany::SERVICE_TYPES as $value => $label)
                 <option value="{{ $value }}" @selected(old('service_type', $partner?->service_type ?? 'intercity') === $value)>{{ $label }}</option>
             @endforeach
         </select>
-        <p class="mt-1 text-xs text-gray-500">L'acheteur voit la catégorie de chaque offre : Urbain pour la grille de ville ou les zones, Interurbain / International pour les trajets.</p>
+        <p class="mt-1 text-xs text-gray-500">Sert seulement au tri. Les services réels viennent de ce qui est configuré : Urbain pour la grille de ville, Interurbain / International pour les trajets — un partenaire peut en avoir plusieurs.</p>
     </div>
     <div>
         <label class="block text-sm text-gray-400 mb-1">Mode des trajets interurbains <span class="text-red-500">*</span></label>

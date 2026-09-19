@@ -53,6 +53,35 @@ class DelivererCompany extends Model
         return $this->service_type !== self::SERVICE_LOCAL;
     }
 
+    /**
+     * Services réellement configurés, pour l'admin : [['label' => 'Urbain (Douala)', 'mode' => 'À domicile'], …].
+     * Un même partenaire peut en avoir plusieurs (ex. SOLEX : urbain à Douala + interurbain).
+     * Sans aucun service, retombe sur la catégorie choisie à la création.
+     */
+    public function configuredServices(): array
+    {
+        $services = [];
+        $cities = $this->cityGrids->pluck('city')->filter()->unique()->values();
+        if ($cities->isNotEmpty() || $this->deliveryZones->isNotEmpty()) {
+            $services[] = [
+                'label' => 'Urbain' . ($cities->isNotEmpty() ? ' (' . $cities->implode(', ') . ')' : ''),
+                'mode' => 'À domicile',
+            ];
+        }
+        $mode = $this->service_mode === self::MODE_AGENCY ? 'Agence → agence' : 'À domicile';
+        if ($this->deliveryRoutes->contains(fn ($r) => $r->origin_country === $r->destination_country)) {
+            $services[] = ['label' => self::SERVICE_TYPES[self::SERVICE_INTERCITY], 'mode' => $mode];
+        }
+        if ($this->deliveryRoutes->contains(fn ($r) => $r->origin_country !== $r->destination_country)) {
+            $services[] = ['label' => self::SERVICE_TYPES[self::SERVICE_INTERNATIONAL], 'mode' => $mode];
+        }
+
+        return $services ?: [[
+            'label' => self::SERVICE_TYPES[$this->service_type] ?? $this->service_type,
+            'mode' => $this->service_type === self::SERVICE_LOCAL ? 'À domicile' : $mode,
+        ]];
+    }
+
     public function trackingUrl(?string $number): ?string
     {
         if (!$number || !$this->tracking_url_template) {
