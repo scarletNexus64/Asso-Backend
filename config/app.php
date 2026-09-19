@@ -56,6 +56,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Boutiques d'applications
+    |--------------------------------------------------------------------------
+    |
+    | Destination d'un lien de produit ouvert sans l'application installée
+    | (voir la route product.share). Renseigner les URL réelles une fois les
+    | fiches publiées.
+    |
+    */
+
+    'android_store_url' => env(
+        'ANDROID_STORE_URL',
+        'https://play.google.com/store/apps/details?id=com.asso.asso',
+    ),
+
+    'ios_store_url' => env(
+        'IOS_STORE_URL',
+        'https://apps.apple.com/app/asso/id000000000',
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

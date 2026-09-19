@@ -40,6 +40,41 @@ Route::get('/', function () {
     return redirect()->route('admin.login');
 });
 
+// Lien public d'un produit, celui que l'application partage.
+//
+// Sur un appareil où l'application est installée, le système ouvre la fiche
+// directement (lien universel) et cette route n'est jamais atteinte. Ailleurs
+// — navigateur de bureau, téléphone sans l'application — elle renvoie vers la
+// boutique d'applications correspondante.
+//
+// Le lien n'ouvre l'application que si le domaine sert aussi
+// /.well-known/assetlinks.json (Android) et
+// /.well-known/apple-app-site-association (iOS).
+Route::get('/produit/{id}', function (string $id) {
+    $agent = (string) request()->header('User-Agent');
+
+    $store = match (true) {
+        (bool) preg_match('/android/i', $agent) => config('app.android_store_url'),
+        (bool) preg_match('/iphone|ipad|ipod/i', $agent) => config('app.ios_store_url'),
+        default => config('app.android_store_url'),
+    };
+
+    return redirect()->away($store);
+})->name('product.share')->where('id', '[0-9]+');
+
+// iOS refuse le fichier d'association s'il n'est pas servi en
+// application/json. Sans extension, le serveur web ne devine pas le type :
+// on le sert donc explicitement.
+Route::get('/.well-known/apple-app-site-association', function () {
+    // Le fichier porte l'extension .json sur le disque : sans elle, le
+    // serveur web le sert en statique, sans type, avant même d'atteindre
+    // Laravel — et iOS l'ignore alors silencieusement.
+    $path = public_path('.well-known/apple-app-site-association.json');
+    abort_unless(is_file($path), 404);
+
+    return response()->file($path, ['Content-Type' => 'application/json']);
+});
+
 // Pages de retour des paiements par redirection (PayPal, Stripe Checkout).
 // La WebView mobile intercepte ces URLs pour clôturer le parcours ; la confirmation
 // réelle du paiement se fait côté serveur (webhook + polling), pas sur ces pages.
