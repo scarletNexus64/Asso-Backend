@@ -4,13 +4,13 @@
 <div class="p-6">
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-white">Expéditions transporteur</h1>
-        <p class="text-gray-400">Commandes confiées à SOLEX, DHL, FedEx… : numéro de suivi et étapes jusqu'à la réception.</p>
+        <p class="text-gray-400">Commandes confiées à SOLEX, DHL, FedEx… Le vendeur valide la commande, remet le colis au transporteur avec le numéro de suivi, puis les étapes s'enchaînent jusqu'à la réception par l'acheteur.</p>
     </div>
 
     <form method="GET" class="flex flex-wrap gap-3 mb-4">
         <select name="status" onchange="this.form.submit()"
                 class="px-3 py-2 bg-dark-100 border border-dark-200 rounded-lg text-white text-sm">
-            @foreach(['in_progress' => 'En cours', 'shipped' => 'Expédiées', 'delivered' => 'Livrées', 'cancelled' => 'Annulées', 'all' => 'Toutes'] as $value => $label)
+            @foreach(['in_progress' => 'En cours', 'awaiting_seller' => 'En attente du vendeur', 'shipped' => 'Expédiées', 'delivered' => 'Livrées', 'cancelled' => 'Annulées', 'all' => 'Toutes'] as $value => $label)
                 <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
             @endforeach
         </select>
@@ -46,7 +46,15 @@
                         </td>
                         <td class="px-4 py-3">{{ $order->shipping_weight_kg ? rtrim(rtrim(number_format($order->shipping_weight_kg, 3, ',', ''), '0'), ',') . ' kg' : '—' }}</td>
                         <td class="px-4 py-3 font-mono">{{ $order->carrier_tracking_number ?? '—' }}</td>
-                        <td class="px-4 py-3">{{ \App\Services\OrderTrackingService::STEPS[$order->tracking_status] ?? $order->status }}</td>
+                        <td class="px-4 py-3">
+                            @if($order->status === 'pending')
+                                <span class="px-2 py-1 rounded text-xs bg-yellow-900/30 text-yellow-400">En attente de validation du vendeur</span>
+                            @elseif(in_array($order->status, ['confirmed', 'preparing'], true) && !$order->carrier_tracking_number)
+                                <span class="px-2 py-1 rounded text-xs bg-blue-900/30 text-blue-300">Validée : à remettre au transporteur</span>
+                            @else
+                                {{ \App\Services\OrderTrackingService::STEPS[$order->tracking_status] ?? $order->status }}
+                            @endif
+                        </td>
                         <td class="px-4 py-3 text-right">
                             <a href="{{ route('admin.shipments.show', $order) }}" class="text-primary-400 hover:text-primary-300"><i class="fas fa-eye mr-1"></i> Suivi</a>
                         </td>

@@ -26,7 +26,10 @@ class ShipmentController extends Controller
 
         $status = $request->input('status', 'in_progress');
         if ($status === 'in_progress') {
-            $query->whereIn('status', ['confirmed', 'preparing', 'shipped']);
+            // Dès le paiement : en attente du vendeur, puis préparation, puis chez le transporteur.
+            $query->whereIn('status', ['pending', 'confirmed', 'preparing', 'shipped']);
+        } elseif ($status === 'awaiting_seller') {
+            $query->where('status', 'pending');
         } elseif ($status !== 'all') {
             $query->where('status', $status);
         }
