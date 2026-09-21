@@ -24,13 +24,17 @@ return new class extends Migration
         // Enable unaccent extension for accent-insensitive search
         DB::statement('CREATE EXTENSION IF NOT EXISTS unaccent');
 
-        // Create a custom function for smarter search
+        // Create a custom function for smarter search.
+        // Le dictionnaire est casté explicitement en regdictionary et qualifié par son
+        // schéma : lors de la création d'un index, PostgreSQL inline la fonction avec un
+        // search_path restreint, et un littéral 'unaccent' non typé n'y résout plus
+        // (ERROR: function unaccent(unknown, text) does not exist).
         DB::statement("
-            CREATE OR REPLACE FUNCTION f_unaccent(text)
+            CREATE OR REPLACE FUNCTION public.f_unaccent(text)
             RETURNS text AS
             \$func\$
-            SELECT unaccent('unaccent', \$1)
-            \$func\$ LANGUAGE sql IMMUTABLE;
+            SELECT public.unaccent('public.unaccent'::regdictionary, \$1)
+            \$func\$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
         ");
 
         // Add GIN index on products for full-text search

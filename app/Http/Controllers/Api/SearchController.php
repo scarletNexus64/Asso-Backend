@@ -152,6 +152,15 @@ class SearchController extends Controller
             return $this->formatProduct($product, $favoriteIds);
         });
 
+        // Asso Ads : annonces intercalées dans la première page de résultats.
+        if ($products->currentPage() === 1) {
+            $productsData = $this->injectSponsored($productsData, $favoriteIds, [
+                'category_id' => $request->get('category_id'),
+                'subcategory_id' => $request->get('subcategory_id'),
+                'type' => $request->get('type'),
+            ]);
+        }
+
         Log::info('[SMART_SEARCH] Search completed', [
             'query' => $searchQuery,
             'results_count' => $products->total(),
@@ -271,6 +280,63 @@ class SearchController extends Controller
     /**
      * Format product for API response
      */
+    /**
+     * Asso Ads — intercale les produits sponsorisés dans les résultats.
+     *
+     * Même mécanique que le feed (ProductController::injectSponsored) : positions
+     * fixes, décompte d'une impression par carte réellement servie. Les annonces
+     * respectent les filtres de la recherche pour rester pertinentes, mais pas le
+     * terme recherché : c'est la contrepartie assumée d'un emplacement acheté,
+     * signalée par le libellé « Sponsorisé ».
+     *
+     * @param  \Illuminate\Support\Collection  $productsData
+     * @return \Illuminate\Support\Collection
+     */
+    private function injectSponsored($productsData, array $favoriteIds, array $filters = [])
+    {
+        $boostService = app(\App\Services\ProductBoostService::class);
+
+        $slots = $boostService->slotsPerPage();
+        if ($slots <= 0) {
+            return $productsData;
+        }
+
+        $boosts = $boostService->pickForFeed(
+            $slots,
+            $productsData->pluck('id')->filter()->all(),
+            $filters
+        );
+
+        if ($boosts->isEmpty()) {
+            return $productsData;
+        }
+
+        $items = $productsData->values()->all();
+        $positions = $boostService->slotPositions();
+        $served = [];
+
+        foreach ($boosts as $index => $boost) {
+            if (!$boost->product) {
+                continue;
+            }
+
+            $card = $this->formatProduct($boost->product, $favoriteIds);
+            $card['is_sponsored'] = true;
+            $card['sponsored_label'] = 'Sponsorisé';
+            $card['boost_id'] = $boost->id;
+
+            $at = $positions[$index] ?? count($items);
+            $at = min($at, count($items));
+
+            array_splice($items, $at, 0, [$card]);
+            $served[] = $boost;
+        }
+
+        $boostService->consume($served);
+
+        return collect($items);
+    }
+
     private function formatProduct($product, $favoriteIds = []): array
     {
         // Prix PUBLICS : prix vendeur majoré de la commission ASSO.
@@ -290,6 +356,9 @@ class SearchController extends Controller
             'stock' => $product->stock,
             'status' => $product->status,
             'is_favorite' => in_array($product->id, $favoriteIds),
+            // Asso Ads : positionné par injectSponsored() sur les seules cartes
+            // servies via un slot sponsorisé.
+            'is_sponsored' => false,
             'relevance_score' => $product->relevance_score ?? 0,
             'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,
             'images' => $product->images->map(fn($img) => [
@@ -330,14 +399,6 @@ class SearchController extends Controller
      */
     private function getImageUrl($imagePath)
     {
-        if (empty($imagePath)) {
-            return null;
-        }
-
-        $cleanPath = str_starts_with($imagePath, 'storage/')
-            ? substr($imagePath, 8)
-            : $imagePath;
-
-        return asset('storage/' . $cleanPath);
+        return media_url($imagePath);
     }
 }

@@ -320,12 +320,6 @@ class ImportController extends Controller
 
     private function imageUrl(?string $path): ?string
     {
-        if (!$path) return null;
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) return $path;
-        $relativePath = ltrim($path, '/');
-        if (str_starts_with($relativePath, 'storage/')) {
-            return asset($relativePath);
-        }
-        return asset('storage/' . $relativePath);
+        return media_url($path);
     }
 }

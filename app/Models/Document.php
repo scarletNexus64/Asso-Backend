@@ -54,7 +54,7 @@ class Document extends Model
      */
     public function getFileUrlAttribute()
     {
-        return Storage::url($this->file_path);
+        return media_url($this->file_path);
     }
 
     /**

@@ -61,7 +61,7 @@ class OrderController extends Controller
      */
     public function show(Request $request, $id)
     {
-        $order = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany', 'trackingEvents'])
+        $order = Order::with(['items.product.primaryImage', 'items.product.images', 'items.seller', 'deliveryPerson', 'deliveryCompany', 'rating', 'trackingEvents'])
             ->where('user_id', $request->user()->id)
             ->findOrFail($id);
 
@@ -333,12 +333,38 @@ class OrderController extends Controller
         $request->validate([
             'rating' => 'required|integer|min:1|max:5',
             'comment' => 'nullable|string|max:1000',
+        ], [
+            'rating.required' => 'Merci d’attribuer une note.',
+            'rating.integer' => 'La note doit être un nombre entier.',
+            'rating.min' => 'La note doit être comprise entre 1 et 5 étoiles.',
+            'rating.max' => 'La note doit être comprise entre 1 et 5 étoiles.',
+            'comment.max' => 'Votre commentaire ne doit pas dépasser 1000 caractères.',
         ]);
 
-        $order = Order::where('user_id', $request->user()->id)
-            ->where('status', 'delivered')
-            ->whereNull('rated_at')
-            ->findOrFail($id);
+        // Diagnostic précis : sans cela une commande déjà notée renvoie une
+        // exception technique « No query results for model [Order] ».
+        $order = Order::where('user_id', $request->user()->id)->find($id);
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Commande introuvable.',
+            ], 404);
+        }
+
+        if ($order->status !== 'delivered') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous pourrez noter cette commande une fois qu’elle sera livrée.',
+            ], 422);
+        }
+
+        if ($order->rated_at !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vous avez déjà noté cette commande.',
+            ], 422);
+        }
 
         try {
             DB::transaction(function () use ($request, $order) {
@@ -350,6 +376,27 @@ class OrderController extends Controller
                 ]);
 
                 $order->update(['rated_at' => now()]);
+
+                // La note de la commande alimente la réputation des produits (et
+                // donc celle de la boutique, calculée sur product_reviews) : sans
+                // cela une note client n'aurait aucun effet visible.
+                foreach ($order->items as $item) {
+                    if (!$item->product_id) {
+                        continue;
+                    }
+
+                    \App\Models\ProductReview::updateOrCreate(
+                        [
+                            'product_id' => $item->product_id,
+                            'user_id' => $request->user()->id,
+                        ],
+                        [
+                            'rating' => $request->rating,
+                            'comment' => $request->comment,
+                            'is_verified_purchase' => true,
+                        ],
+                    );
+                }
 
                 // FCM au vendeur
                 $sellerIds = $order->items()->pluck('seller_id')->unique();
@@ -411,7 +458,7 @@ class OrderController extends Controller
                 'variant_attributes' => $item->variant_attributes,
                 'product_name' => $item->product->name ?? 'Produit supprimé',
                 'product_image' => $item->product?->primaryImage
-                    ? asset('storage/' . $item->product->primaryImage->image_path)
+                    ? media_url($item->product->primaryImage->image_path)
                     : null,
                 'quantity' => $item->quantity,
                 'unit_price' => (float) $item->unit_price,
@@ -456,7 +503,7 @@ class OrderController extends Controller
                 'id' => $order->deliveryCompany->id,
                 'name' => $order->deliveryCompany->name,
                 'phone' => $order->deliveryCompany->phone,
-                'logo' => $order->deliveryCompany->logo ? asset('storage/' . $order->deliveryCompany->logo) : null,
+                'logo' => $order->deliveryCompany->logo ? media_url($order->deliveryCompany->logo) : null,
             ];
         }
 

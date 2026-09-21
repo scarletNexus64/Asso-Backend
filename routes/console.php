@@ -95,6 +95,20 @@ Schedule::command('packages:reconcile-pending')
 
 /**
  * =====================================================
+ * COMMANDES — RÉCONCILIATION DES PAIEMENTS DIRECTS
+ * =====================================================
+ *
+ * Le stock est décrémenté dès la création de la commande. Si l'acheteur quitte
+ * l'écran de paiement (Mobile Money / carte), la commande resterait « en attente »
+ * et le stock immobilisé. Ce passage confirme les paiements aboutis et rend le
+ * stock des tentatives abandonnées.
+ */
+Schedule::command('orders:reconcile-pending')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(300);
+
+/**
+ * =====================================================
  * DIASPO — ÉCHÉANCE DE RÉGULARISATION DE L'IDENTITÉ
  * =====================================================
  *
@@ -103,5 +117,18 @@ Schedule::command('packages:reconcile-pending')
  * DIASPO). Rappel 48 h avant, puis retrait si l'identité n'est toujours pas validée.
  */
 Schedule::command('diaspo:enforce-verification-deadline')
+    ->hourly()
+    ->withoutOverlapping(300);
+
+/**
+ * =====================================================
+ * ASSO ADS — CLÔTURE DES CAMPAGNES DE SPONSORING
+ * =====================================================
+ *
+ * Une campagne dont le quota d'impressions s'épuise se clôt d'elle-même au
+ * moment de la dernière impression servie. Ce passage horaire ferme l'autre
+ * cas : l'échéance atteinte alors qu'il restait des impressions à délivrer.
+ */
+Schedule::command('ads:expire-boosts')
     ->hourly()
     ->withoutOverlapping(300);

@@ -200,7 +200,7 @@ class ProfileController extends Controller
                     'id' => $shop->id,
                     'name' => $shop->name,
                     'slug' => $shop->slug,
-                    'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+                    'logo' => $shop->logo ? media_url($shop->logo) : null,
                     'description' => $shop->description,
                     'address' => $shop->address,
                     'city' => $shop->city,
@@ -221,7 +221,7 @@ class ProfileController extends Controller
                     'roles' => $user->getRoles(),
                     'company_name' => $user->company_name,
                     'gender' => $user->gender,
-                    'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                    'avatar' => $user->avatar ? media_url($user->avatar) : null,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -310,7 +310,7 @@ class ProfileController extends Controller
                 'shops_count' => $user->shops->count(),
             ]);
 
-            $shop = $user->shops->first();
+            $shop = $user->primaryShop;
 
             if (!$shop) {
                 \Log::error('[VENDOR_DASHBOARD] No shop found for vendor:', [
@@ -327,7 +327,13 @@ class ProfileController extends Controller
                 'shop_name' => $shop->name,
             ]);
 
-            $products = $shop->products()->with(['primaryImage', 'images'])->get();
+            // Restreint au vendeur : des produits d'autres comptes partagent le
+            // même shop_id et faisaient diverger ce total de la liste
+            // « Mes produits », qui filtre elle sur user_id.
+            $products = $shop->products()
+                ->where('user_id', $user->id)
+                ->with(['primaryImage', 'images'])
+                ->get();
             \Log::info('[VENDOR_DASHBOARD] Products loaded:', [
                 'products_count' => $products->count(),
             ]);
@@ -430,7 +436,7 @@ class ProfileController extends Controller
                         'id' => $shop->id,
                         'name' => $shop->name,
                         'slug' => $shop->slug,
-                        'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+                        'logo' => $shop->logo ? media_url($shop->logo) : null,
                         'description' => $shop->description,
                         'address' => $shop->address,
                     'city' => $shop->city,
@@ -475,7 +481,7 @@ class ProfileController extends Controller
                         'price' => (float) $p->price,
                         'stock' => $p->stock,
                         'status' => $p->status,
-                        'primary_image' => $p->primaryImage ? asset('storage/' . $p->primaryImage->image_path) : null,
+                        'primary_image' => $p->primaryImage ? media_url($p->primaryImage->image_path) : null,
                     ]),
                 ],
             ];
@@ -562,11 +568,21 @@ class ProfileController extends Controller
 
         \Log::info("📊 Total Deliveries: {$deliveries->count()}");
 
+        // Gains encaissés par le livreur (part transporteur créditée au règlement
+        // de chaque commande) : sans cela le tableau de bord affichait 0 FCFA.
+        $totalCommissions = (float) \App\Models\WalletTransaction::where('user_id', $user->id)
+            ->where('type', 'credit')
+            ->where('description', 'like', 'Commission livraison%')
+            ->sum('amount');
+
         $stats = [
             'total_deliveries' => $deliveries->count(),
             'completed' => $directOrders->where('status', 'delivered')->count(),
             'in_progress' => $directOrders->where('status', 'shipped')->count(),
             'pending' => $deliveries->whereIn('status', ['confirmed', 'preparing'])->count(),
+            'total_commissions' => $totalCommissions,
+            // Plafond de courses simultanées, pour l'affichage côté mobile.
+            'max_active_runs' => \App\Http\Controllers\Api\DeliveryController::MAX_ACTIVE_RUNS,
         ];
 
         \Log::info('📈 Stats:');
@@ -589,7 +605,7 @@ class ProfileController extends Controller
                 'phone' => $company->phone,
                 'email' => $company->email,
                 'description' => $company->description,
-                'logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+                'logo' => $company->logo ? media_url($company->logo) : null,
                 'is_active' => $company->is_active,
                 'created_at' => $company->created_at?->toIso8601String(),
                 'updated_at' => $company->updated_at?->toIso8601String(),
@@ -630,36 +646,62 @@ class ProfileController extends Controller
         return response()->json([
             'success' => true,
             'company' => $companyData,
-            'deliveries' => $deliveries->map(fn($order) => [
-                'id' => $order->id,
-                'order_id' => $order->id,
-                'order_number' => $order->order_number,
-                'status' => $order->status,
-                'total' => (float) $order->total,
-                'delivery_fee' => (float) $order->delivery_fee,
-                'commission' => (float) $order->delivery_fee,
-                'delivery_address' => $order->delivery_address,
-                'delivery_latitude' => $order->delivery_latitude,
-                'delivery_longitude' => $order->delivery_longitude,
-                'customer_name' => $order->user ? $order->user->name : 'Client',
-                'customer_phone' => $order->user ? $order->user->phone : '',
-                'customer' => $order->user ? [
-                    'id' => $order->user->id,
-                    'name' => $order->user->name,
-                    'phone' => $order->user->phone,
-                    'address' => $order->user->address,
-                ] : null,
-                'delivery_company' => $order->deliveryCompany ? [
-                    'id' => $order->deliveryCompany->id,
-                    'name' => $order->deliveryCompany->name,
-                ] : null,
-                'pickup_address' => '',
-                'items_count' => $order->items->count(),
-                'created_at' => $order->created_at->toIso8601String(),
-                'confirmed_at' => $order->confirmed_at?->toIso8601String(),
-                'shipped_at' => $order->shipped_at?->toIso8601String(),
-                'delivered_at' => $order->delivered_at?->toIso8601String(),
-            ]),
+            // Le livreur décide d'accepter depuis cet écran : il lui faut les
+            // mêmes informations que dans /delivery/pending (lieu d'enlèvement,
+            // contenu du colis, délai annoncé), pas seulement l'adresse d'arrivée.
+            'deliveries' => $deliveries->map(function ($order) {
+                $delivery = \App\Support\DeliveryPresenter::forOrder($order);
+                $shop = $order->items->first()?->product?->shop;
+
+                return [
+                    'id' => $order->id,
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'status' => $order->status,
+                    'total' => (float) $order->total,
+                    'delivery_fee' => (float) $order->delivery_fee,
+                    'commission' => (float) $order->delivery_fee,
+                    'delivery_address' => $order->delivery_address,
+                    'delivery_address_details' => $order->delivery_address_details,
+                    'delivery_latitude' => $order->delivery_latitude,
+                    'delivery_longitude' => $order->delivery_longitude,
+                    'customer_name' => $order->user ? $order->user->name : 'Client',
+                    'customer_phone' => $order->customer_phone ?: ($order->user?->phone ?? ''),
+                    'customer' => $order->user ? [
+                        'id' => $order->user->id,
+                        'name' => $order->user->name,
+                        'phone' => $order->user->phone,
+                        'address' => $order->user->address,
+                    ] : null,
+                    'delivery_company' => $order->deliveryCompany ? [
+                        'id' => $order->deliveryCompany->id,
+                        'name' => $order->deliveryCompany->name,
+                    ] : null,
+                    'delivery' => $delivery,
+                    'pickup' => \App\Support\DeliveryPresenter::pickupFor($order),
+                    'dropoff' => \App\Support\DeliveryPresenter::dropoffFor($order),
+                    'pickup_address' => $order->hasLastMileDelivery()
+                        ? "Agence {$delivery['company_name']}"
+                        : trim(implode(' — ', array_filter([$shop?->name, $shop?->location_label, $shop?->address]))),
+                    'pickup_latitude' => $shop?->latitude,
+                    'pickup_longitude' => $shop?->longitude,
+                    'notes' => trim(implode(' · ', array_filter([
+                        $delivery['vehicle_label'],
+                        $delivery['route_label'],
+                        $delivery['lead_time'] ? 'Délai annoncé : ' . $delivery['lead_time'] : null,
+                        $order->notes,
+                    ]))),
+                    'items' => $order->items->map(fn ($item) => [
+                        'product_name' => $item->product->name ?? 'Produit',
+                        'quantity' => $item->quantity,
+                    ]),
+                    'items_count' => $order->items->count(),
+                    'created_at' => $order->created_at->toIso8601String(),
+                    'confirmed_at' => $order->confirmed_at?->toIso8601String(),
+                    'shipped_at' => $order->shipped_at?->toIso8601String(),
+                    'delivered_at' => $order->delivered_at?->toIso8601String(),
+                ];
+            }),
             'stats' => $stats,
         ]);
     }

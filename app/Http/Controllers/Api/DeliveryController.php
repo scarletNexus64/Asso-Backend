@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
 
 class DeliveryController extends Controller
 {
+    /** Nombre de courses qu'un coursier peut transporter en même temps. */
+    public const MAX_ACTIVE_RUNS = 3;
+
     protected OrderService $orderService;
     protected WalletService $walletService;
     protected FirebaseMessagingService $fcmService;
@@ -102,6 +105,26 @@ class DeliveryController extends Controller
                             ->where('status', 'shipped')
                             ->whereIn('tracking_status', ['arrived', 'ready_for_pickup'])))
                     ->findOrFail($id);
+
+                // Plafond de courses simultanées : le coursier ne transporte pas
+                // plus de MAX_ACTIVE_RUNS colis à la fois. Une place se libère
+                // dès qu'une course est marquée livrée. Compté DANS la
+                // transaction pour résister à deux acceptations simultanées.
+                // Postgres refuse FOR UPDATE avec un agrégat : on verrouille les
+                // lignes puis on les compte.
+                $activeRuns = Order::where('delivery_person_id', $user->id)
+                    ->where('status', 'shipped')
+                    ->where('id', '!=', $order->id)
+                    ->lockForUpdate()
+                    ->pluck('id')
+                    ->count();
+
+                if ($activeRuns >= self::MAX_ACTIVE_RUNS) {
+                    throw new \Exception(
+                        'Vous transportez déjà ' . self::MAX_ACTIVE_RUNS . ' commandes. '
+                        . "Livrez-en une pour pouvoir en accepter une autre."
+                    );
+                }
 
                 // Double-check : si un autre livreur a pris entre-temps
                 if ($order->delivery_person_id !== null && $order->delivery_person_id !== $user->id) {
@@ -582,7 +605,7 @@ class DeliveryController extends Controller
                         'phone' => $company->phone,
                         'email' => $company->email,
                         'description' => $company->description,
-                        'logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+                        'logo' => $company->logo ? media_url($company->logo) : null,
                         'zone' => [
                             'id' => $zone->id,
                             'name' => $zone->name,
@@ -684,6 +707,9 @@ class DeliveryController extends Controller
                 $order->notes,
             ]))),
             'delivery' => $delivery,
+            // Les deux bouts de la course, en clair : où retirer, chez qui livrer.
+            'pickup' => \App\Support\DeliveryPresenter::pickupFor($order),
+            'dropoff' => \App\Support\DeliveryPresenter::dropoffFor($order),
             'id' => $order->id,
             'order_number' => $order->order_number,
             'status' => $order->status,

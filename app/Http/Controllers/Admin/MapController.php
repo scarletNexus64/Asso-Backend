@@ -62,7 +62,7 @@ class MapController extends Controller
                 'latitude' => (float) $user->latitude,
                 'longitude' => (float) $user->longitude,
                 'address' => $user->address,
-                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                'avatar' => $user->avatar ? media_url($user->avatar) : null,
             ];
         });
 
@@ -101,7 +101,7 @@ class MapController extends Controller
                 'latitude' => (float) $user->latitude,
                 'longitude' => (float) $user->longitude,
                 'address' => $user->address,
-                'avatar' => $user->avatar ? asset('storage/' . $user->avatar) : null,
+                'avatar' => $user->avatar ? media_url($user->avatar) : null,
             ];
         });
 

@@ -155,6 +155,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::post('/shops/{shop}/reset-audience', [\App\Http\Controllers\Admin\ShopStatisticsController::class, 'resetAudience'])->name('shops.reset');
         });
 
+        // Asso Ads — campagnes de sponsoring de produits
+        Route::prefix('ads')->name('ads.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Admin\ProductBoostController::class, 'index'])->name('index');
+            Route::post('/settings', [\App\Http\Controllers\Admin\ProductBoostController::class, 'updateSettings'])->name('settings');
+            Route::get('/{boost}', [\App\Http\Controllers\Admin\ProductBoostController::class, 'show'])->name('show');
+            Route::post('/{boost}/cancel', [\App\Http\Controllers\Admin\ProductBoostController::class, 'cancel'])->name('cancel');
+        });
+
         // Shop Location Requests
         Route::post('/shops/{shop}/location-requests/{request}/approve', [ShopController::class, 'approveLocationRequest'])->name('shops.location-requests.approve');
         Route::post('/shops/{shop}/location-requests/{request}/reject', [ShopController::class, 'rejectLocationRequest'])->name('shops.location-requests.reject');

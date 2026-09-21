@@ -114,6 +114,20 @@ class User extends Authenticatable
     }
 
     /**
+     * Boutique principale du vendeur : la plus ancienne.
+     *
+     * Les appels historiques faisaient `shops()->first()` sans tri. Tant qu'un
+     * vendeur n'a qu'une boutique le résultat est le bon, mais dès qu'il en a
+     * plusieurs le SGBD est libre de renvoyer n'importe laquelle, et d'une
+     * requête à l'autre : le tableau de bord pouvait alors changer de boutique
+     * en cours de session. L'ordre est donc fixé ici, en un seul endroit.
+     */
+    public function primaryShop(): HasOne
+    {
+        return $this->hasOne(Shop::class)->oldest('id');
+    }
+
+    /**
      * Get all products for this user
      */
     public function products(): HasMany

@@ -6,6 +6,7 @@ use App\Exceptions\InvalidSalesCodeException;
 use App\Http\Controllers\Controller;
 use App\Models\Package;
 use App\Models\PackageSubscription;
+use App\Models\Product;
 use App\Models\SalesAgent;
 use App\Models\VendorPackage;
 use App\Services\WalletService;
@@ -100,18 +101,54 @@ class PackageController extends Controller
     }
 
     /**
-     * Souscrire à un forfait (stockage ou certification).
+     * Forfaits Asso Ads : sponsoriser un produit.
+     *
+     * GET /v1/packages/boost
+     *
+     * `reach_users` est le quota d'impressions acheté : la campagne s'arrête
+     * quand il est épuisé, ou à l'échéance, au premier des deux.
+     */
+    public function boostPackages()
+    {
+        $packages = Package::ofType('boost')
+            ->active()
+            ->ordered()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'packages' => $packages->map(fn($package) => [
+                'id' => $package->id,
+                'name' => $package->name,
+                'description' => $package->description,
+                'price' => (float) $package->price,
+                'formatted_price' => $package->formatted_price,
+                'duration_days' => $package->duration_days,
+                'formatted_duration' => $package->formatted_duration,
+                'reach_users' => (int) $package->reach_users,
+                'formatted_reach' => number_format((int) $package->reach_users, 0, ',', ' ') . ' personnes',
+                'is_popular' => (bool) $package->is_popular,
+            ]),
+        ]);
+    }
+
+    /**
+     * Souscrire à un forfait (stockage, certification ou sponsoring).
      *
      * POST /v1/packages/subscribe
      *   payment_mode = wallet        → débit immédiat du solde Wallet ASSO (activation instantanée)
      *                  kpay_direct   → Mobile Money (USSD), confirmation par polling
      *                  stripe_direct → carte (Payment Sheet), confirmation par polling
      * Rétro-compat : payment_mode absent + wallet_type=kpay ⇒ wallet.
+     *
+     * `product_id` est requis pour un forfait de type boost : c'est le produit
+     * qui sera sponsorisé.
      */
     public function subscribe(Request $request)
     {
         $validated = $request->validate([
             'package_id' => 'required|exists:packages,id',
+            'product_id' => 'nullable|exists:products,id',
             'wallet_type' => 'nullable|in:kpay',
             'payment_mode' => 'nullable|in:wallet,kpay_direct,stripe_direct',
             'provider' => 'required_if:payment_mode,kpay_direct|nullable|string',
@@ -124,8 +161,14 @@ class PackageController extends Controller
         $package = Package::findOrFail($validated['package_id']);
         $paymentMode = $validated['payment_mode'] ?? 'wallet';
 
+        // Produit à sponsoriser : la propriété et l'éligibilité sont vérifiées
+        // par assertSubscribable, avant tout paiement.
+        $product = !empty($validated['product_id'])
+            ? Product::find($validated['product_id'])
+            : null;
+
         try {
-            $this->packageSubscriptionService->assertSubscribable($user, $package);
+            $this->packageSubscriptionService->assertSubscribable($user, $package, $product);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
@@ -144,7 +187,7 @@ class PackageController extends Controller
         }
 
         if (in_array($paymentMode, ['kpay_direct', 'stripe_direct'], true)) {
-            return $this->subscribeDirect($request, $user, $package, $paymentMode, $salesAgent);
+            return $this->subscribeDirect($request, $user, $package, $paymentMode, $salesAgent, $product);
         }
 
         // ── Paiement par SOLDE Wallet ASSO ──
@@ -163,7 +206,7 @@ class PackageController extends Controller
         }
 
         try {
-            $subscription = $this->packageSubscriptionService->payWithWallet($user, $package, $salesAgent);
+            $subscription = $this->packageSubscriptionService->payWithWallet($user, $package, $salesAgent, $product);
         } catch (\Exception $e) {
             Log::error('[PackageController] Souscription wallet échouée', ['user_id' => $user->id, 'error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -171,9 +214,11 @@ class PackageController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $package->type === 'certification'
-                ? 'Certification activée ! Votre boutique affiche désormais le badge vérifié.'
-                : 'Forfait activé ! Votre espace de stockage est disponible.',
+            'message' => match ($package->type) {
+                'certification' => 'Certification activée ! Votre boutique affiche désormais le badge vérifié.',
+                'boost' => 'Sponsoring activé ! Votre produit est désormais mis en avant.',
+                default => 'Forfait activé ! Votre espace de stockage est disponible.',
+            },
             'payment_mode' => 'wallet',
             'subscription_id' => $subscription->id,
             'status' => $subscription->status, // paid
@@ -191,7 +236,7 @@ class PackageController extends Controller
      * paiement (polling GET /v1/packages/subscription/{id}/payment-status). Aucune
      * validation vendeur ici : l'abonnement s'active dès que l'argent est encaissé.
      */
-    private function subscribeDirect(Request $request, $user, Package $package, string $paymentMode, ?SalesAgent $salesAgent = null)
+    private function subscribeDirect(Request $request, $user, Package $package, string $paymentMode, ?SalesAgent $salesAgent = null, ?Product $product = null)
     {
         // Garde-fou : le rail carte (Stripe natif) n'est proposé que s'il est réellement
         // fonctionnel (clés configurées + activé). Sinon on bloque immédiatement.
@@ -210,6 +255,7 @@ class PackageController extends Controller
                 kpayProvider: $request->input('provider'),
                 kpayPhone: $request->input('phone_number'),
                 salesAgent: $salesAgent,
+                product: $product,
             );
         } catch (\Exception $e) {
             Log::error('[PackageController] ❌ Direct subscription init failed', ['error' => $e->getMessage()]);
@@ -301,11 +347,15 @@ class PackageController extends Controller
         $vendorPackage = $user->activeVendorPackage;
 
         if (!$vendorPackage) {
+            // Un vendeur sans forfait est un état normal, pas une ressource
+            // absente : le 404 faisait passer la réponse pour une erreur côté
+            // client alors que `has_package: false` suffit à décrire le cas.
             return response()->json([
-                'success' => false,
+                'success' => true,
                 'message' => 'Aucun package actif',
                 'has_package' => false,
-            ], 404);
+                'vendor_package' => null,
+            ]);
         }
 
         // Load package relationship only if package_id is not null

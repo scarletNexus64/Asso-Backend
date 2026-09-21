@@ -35,44 +35,35 @@ class DeviceTokenController extends Controller
 
         $user = $request->user();
 
-        // Vérifier si le token existe déjà pour cet utilisateur
-        $deviceToken = DeviceToken::where('user_id', $user->id)
-            ->where('token', $request->token)
-            ->first();
+        // Le token FCM est unique par APPAREIL, pas par utilisateur : si le même
+        // téléphone sert à un autre compte (déconnexion / reconnexion), la ligne
+        // est réattribuée au nouvel utilisateur au lieu de violer la contrainte
+        // d'unicité sur `token`.
+        $deviceToken = DeviceToken::where('token', $request->token)->first();
+        $existed = $deviceToken !== null;
 
-        if ($deviceToken) {
-            // Mettre à jour le token existant
-            $deviceToken->update([
-                'platform' => $request->platform,
-                'device_name' => $request->device_name,
-                'device_model' => $request->device_model,
-                'is_active' => true,
-                'last_used_at' => now(),
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Device token updated successfully',
-                'data' => $deviceToken,
-            ]);
-        }
-
-        // Créer un nouveau token
-        $deviceToken = DeviceToken::create([
+        $attributes = [
             'user_id' => $user->id,
-            'token' => $request->token,
             'platform' => $request->platform,
             'device_name' => $request->device_name,
             'device_model' => $request->device_model,
             'is_active' => true,
             'last_used_at' => now(),
-        ]);
+        ];
+
+        if ($existed) {
+            $deviceToken->update($attributes);
+        } else {
+            $deviceToken = DeviceToken::create($attributes + ['token' => $request->token]);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Device token registered successfully',
+            'message' => $existed
+                ? 'Device token updated successfully'
+                : 'Device token registered successfully',
             'data' => $deviceToken,
-        ], 201);
+        ], $existed ? 200 : 201);
     }
 
     /**

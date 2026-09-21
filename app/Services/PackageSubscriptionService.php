@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Package;
 use App\Models\PackageSubscription;
+use App\Models\Product;
+use App\Models\ProductBoost;
 use App\Models\SalesAgent;
 use App\Models\User;
 use App\Models\VendorPackage;
@@ -45,9 +47,10 @@ class PackageSubscriptionService
         string $paymentMode,
         ?string $kpayProvider = null,
         ?string $kpayPhone = null,
-        ?SalesAgent $salesAgent = null
+        ?SalesAgent $salesAgent = null,
+        ?Product $product = null
     ): PackageSubscription {
-        $this->assertSubscribable($user, $package);
+        $this->assertSubscribable($user, $package, $product);
         $amountXaf = (float) $package->price;
 
         $subscription = PackageSubscription::create([
@@ -61,6 +64,9 @@ class PackageSubscriptionService
             'metadata' => [
                 'package_name' => $package->name,
                 'provider' => $kpayProvider,
+                // Boost : la campagne ne s'ouvrira qu'à la confirmation, mais le
+                // produit ciblé doit survivre au délai de paiement.
+                'boost_product_id' => $package->type === 'boost' ? $product?->id : null,
             ],
         ]);
 
@@ -225,8 +231,9 @@ class PackageSubscriptionService
     public function confirm(PackageSubscription $subscription): void
     {
         $activated = false;
+        $refundNeeded = false;
 
-        DB::transaction(function () use ($subscription, &$activated) {
+        DB::transaction(function () use ($subscription, &$activated, &$refundNeeded) {
             $sub = PackageSubscription::whereKey($subscription->id)->lockForUpdate()->first();
             if (!$sub || $sub->status === 'paid') {
                 return; // déjà traité
@@ -235,7 +242,24 @@ class PackageSubscriptionService
             $package = Package::findOrFail($sub->package_id);
             $user = User::findOrFail($sub->user_id);
 
-            $result = $this->applyPackage($user, $package, $sub->payment_reference);
+            // Boost : le produit ciblé a été mémorisé à la création de l'intent,
+            // le paiement ayant pu être confirmé bien après (polling, webhook, cron).
+            $product = null;
+            if ($package->type === 'boost') {
+                $productId = $sub->metadata['boost_product_id'] ?? null;
+                $product = $productId ? Product::find($productId) : null;
+
+                // Le produit a disparu entre l'intent et l'encaissement (vendeur
+                // qui le supprime pendant un paiement Mobile Money, par exemple).
+                // L'argent est déjà chez le PSP : on ne peut pas ouvrir la
+                // campagne, mais il est hors de question de garder la somme.
+                if (!$product) {
+                    $refundNeeded = true;
+                    return;
+                }
+            }
+
+            $result = $this->applyPackage($user, $package, $sub->payment_reference, $product, $sub);
 
             $sub->update([
                 'status' => 'paid',
@@ -244,6 +268,7 @@ class PackageSubscriptionService
                 'metadata' => array_merge($sub->metadata ?? [], [
                     'package_type' => $package->type,
                     'certification_expires_at' => $result['certification_expires_at'],
+                    'product_boost_id' => $result['product_boost_id'],
                 ]),
             ]);
 
@@ -258,7 +283,7 @@ class PackageSubscriptionService
                 'amount' => (float) $sub->amount_xaf,
                 'balance_before' => $balance,
                 'balance_after' => $balance,
-                'description' => ($package->type === 'certification' ? 'Certification' : 'Forfait') . " — {$package->name}",
+                'description' => $this->transactionLabel($package),
                 'reference_type' => 'package_subscription',
                 'reference_id' => $sub->id,
                 'metadata' => [
@@ -280,8 +305,77 @@ class PackageSubscriptionService
             ]);
         });
 
+        if ($refundNeeded) {
+            $this->refundUndeliverable($subscription->fresh());
+            return;
+        }
+
         if ($activated) {
             $this->notifyActivated($subscription->fresh());
+        }
+    }
+
+    /**
+     * Rembourse sur le Wallet une souscription encaissée que l'on ne peut pas
+     * honorer (produit à sponsoriser disparu entre l'intent et la confirmation).
+     *
+     * Le crédit passe par le Wallet plutôt que par un remboursement PSP : il est
+     * immédiat, traçable, et le vendeur peut s'en resservir tout de suite. La
+     * souscription est close en `failed` avec le motif, pour que la
+     * réconciliation ne la reprenne pas.
+     */
+    protected function refundUndeliverable(PackageSubscription $subscription): void
+    {
+        DB::transaction(function () use ($subscription) {
+            $sub = PackageSubscription::whereKey($subscription->id)->lockForUpdate()->first();
+            if (!$sub || ($sub->metadata['refunded_at'] ?? null)) {
+                return; // déjà remboursé
+            }
+
+            $user = User::find($sub->user_id);
+            if (!$user) {
+                return;
+            }
+
+            app(WalletService::class)->credit(
+                user: $user,
+                amount: (float) $sub->amount_xaf,
+                description: 'Remboursement sponsoring — article introuvable',
+                metadata: [
+                    'reference_type' => 'package_subscription',
+                    'subscription_id' => $sub->id,
+                    'reason' => 'boost_product_missing',
+                    'payment_reference' => $sub->payment_reference,
+                ],
+                provider: 'kpay'
+            );
+
+            $sub->update([
+                'status' => 'failed',
+                'metadata' => array_merge($sub->metadata ?? [], [
+                    'failure_reason' => 'boost_product_missing',
+                    'refunded_at' => now()->toIso8601String(),
+                ]),
+            ]);
+
+            Log::warning('[PackageSubscription] Boost non honorable, remboursé au Wallet', [
+                'subscription_id' => $sub->id,
+                'amount_xaf' => (float) $sub->amount_xaf,
+            ]);
+        });
+
+        try {
+            $user = User::find($subscription->user_id);
+            if ($user) {
+                $this->fcmService->sendToUser(
+                    $user,
+                    'Sponsoring non activé',
+                    "L'article à sponsoriser n'existe plus. Le montant a été recrédité sur votre portefeuille.",
+                    ['type' => 'boost_refunded', 'subscription_id' => (string) $subscription->id]
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[PackageSubscription] Notification de remboursement échouée: ' . $e->getMessage());
         }
     }
 
@@ -307,9 +401,9 @@ class PackageSubscriptionService
      * Vérifie qu'un package peut être souscrit par cet utilisateur AVANT tout paiement.
      * Lance une exception au message affichable sinon.
      */
-    public function assertSubscribable(User $user, Package $package): void
+    public function assertSubscribable(User $user, Package $package, ?Product $product = null): void
     {
-        if (!in_array($package->type, ['storage', 'certification'], true)) {
+        if (!in_array($package->type, ['storage', 'certification', 'boost'], true)) {
             throw new \Exception('Type de forfait non supporté.');
         }
         if (!$package->is_active) {
@@ -321,37 +415,51 @@ class PackageSubscriptionService
         if ($package->type === 'certification' && !$user->shops()->exists()) {
             throw new \Exception('Créez votre boutique avant de souscrire à une certification.');
         }
+        if ($package->type === 'boost') {
+            if (!$product) {
+                throw new \Exception('Choisissez le produit à sponsoriser.');
+            }
+            if ((int) $package->reach_users <= 0) {
+                throw new \Exception('Ce forfait de sponsoring est mal configuré. Contactez le support.');
+            }
+            app(ProductBoostService::class)->assertBoostable($user, $product);
+        }
     }
 
     /**
      * Souscription payée depuis le SOLDE du Wallet ASSO : débit + activation dans une
      * seule transaction (tout ou rien). Renvoie la PackageSubscription 'paid'.
      */
-    public function payWithWallet(User $user, Package $package, ?SalesAgent $salesAgent = null): PackageSubscription
-    {
-        $this->assertSubscribable($user, $package);
+    public function payWithWallet(
+        User $user,
+        Package $package,
+        ?SalesAgent $salesAgent = null,
+        ?Product $product = null
+    ): PackageSubscription {
+        $this->assertSubscribable($user, $package, $product);
         $price = (float) $package->price;
 
-        $subscription = DB::transaction(function () use ($user, $package, $price, $salesAgent) {
+        $subscription = DB::transaction(function () use ($user, $package, $price, $salesAgent, $product) {
             $walletService = app(WalletService::class);
 
             // Débit sous verrou de ligne (lance une exception si solde insuffisant).
             $walletTx = $walletService->debit(
                 user: $user,
                 amount: $price,
-                description: ($package->type === 'certification' ? 'Certification' : 'Forfait') . " — {$package->name}",
+                description: $this->transactionLabel($package),
                 referenceType: 'package_subscription',
                 referenceId: null,
                 metadata: [
                     'package_id' => $package->id,
                     'package_name' => $package->name,
                     'package_type' => $package->type,
+                    'boost_product_id' => $product?->id,
                 ],
                 provider: 'kpay'
             );
 
             $reference = 'PKG-' . strtoupper(Str::random(10));
-            $result = $this->applyPackage($user, $package, $reference);
+            $result = $this->applyPackage($user, $package, $reference, $product);
 
             $sub = PackageSubscription::create([
                 'user_id' => $user->id,
@@ -371,10 +479,19 @@ class PackageSubscriptionService
                     'package_type' => $package->type,
                     'wallet_transaction_id' => $walletTx->id,
                     'certification_expires_at' => $result['certification_expires_at'],
+                    'boost_product_id' => $product?->id,
+                    'product_boost_id' => $result['product_boost_id'],
                 ],
             ]);
 
             $walletTx->update(['reference_id' => $sub->id]);
+
+            // La campagne est créée avant la souscription (elle en fait partie) :
+            // on referme le lien une fois l'identifiant connu.
+            if ($result['product_boost_id']) {
+                ProductBoost::whereKey($result['product_boost_id'])
+                    ->update(['package_subscription_id' => $sub->id]);
+            }
 
             // P6 : commission du commercial dont le code a été saisi.
             app(SalesCommissionService::class)->recordForSubscription($sub);
@@ -390,17 +507,38 @@ class PackageSubscriptionService
     /**
      * Active le package payé :
      *  - storage       : cumule sur le forfait de stockage actif (espace + durée) ou en crée un ;
-     *  - certification : certifie la boutique (prolonge une certification en cours).
+     *  - certification : certifie la boutique (prolonge une certification en cours) ;
+     *  - boost         : ouvre une campagne Asso Ads sur le produit choisi.
      *
-     * Une certification ne touche JAMAIS au forfait de stockage (ancien bug : elle était
-     * cumulée dessus, ou échouait faute de taille de stockage).
+     * Ni la certification ni le boost ne touchent au forfait de stockage : chaque
+     * type a sa branche explicite, et tout type inconnu est refusé plutôt que de
+     * retomber sur le stockage (ancien bug : la certification y était cumulée).
      *
-     * @return array{vendor_package: ?VendorPackage, certification_expires_at: ?string}
+     * @return array{vendor_package: ?VendorPackage, certification_expires_at: ?string, product_boost_id: ?int}
      */
-    public function applyPackage(User $user, Package $package, ?string $paymentReference = null): array
-    {
+    public function applyPackage(
+        User $user,
+        Package $package,
+        ?string $paymentReference = null,
+        ?Product $product = null,
+        ?PackageSubscription $subscription = null
+    ): array {
+        if ($package->type === 'boost') {
+            if (!$product) {
+                throw new \Exception('Produit à sponsoriser introuvable.');
+            }
+
+            $boost = app(ProductBoostService::class)->startCampaign($user, $product, $package, $subscription);
+
+            return [
+                'vendor_package' => null,
+                'certification_expires_at' => null,
+                'product_boost_id' => $boost->id,
+            ];
+        }
+
         if ($package->type === 'certification') {
-            $shop = $user->shops()->first();
+            $shop = $user->primaryShop;
             if (!$shop) {
                 throw new \Exception('Aucune boutique à certifier.');
             }
@@ -418,7 +556,15 @@ class PackageSubscriptionService
                 'certified_by' => $user->id,
             ]);
 
-            return ['vendor_package' => null, 'certification_expires_at' => $expiresAt->toIso8601String()];
+            return [
+                'vendor_package' => null,
+                'certification_expires_at' => $expiresAt->toIso8601String(),
+                'product_boost_id' => null,
+            ];
+        }
+
+        if ($package->type !== 'storage') {
+            throw new \Exception('Type de forfait non supporté.');
         }
 
         $existingPackage = VendorPackage::where('user_id', $user->id)
@@ -436,7 +582,11 @@ class PackageSubscriptionService
                 'custom_name' => 'Espace Cumulé',
             ]);
 
-            return ['vendor_package' => $existingPackage->fresh(), 'certification_expires_at' => null];
+            return [
+                'vendor_package' => $existingPackage->fresh(),
+                'certification_expires_at' => null,
+                'product_boost_id' => null,
+            ];
         }
 
         $vendorPackage = VendorPackage::create([
@@ -451,7 +601,11 @@ class PackageSubscriptionService
             'payment_reference' => $paymentReference ?? ('PKG-' . strtoupper(Str::random(10))),
         ]);
 
-        return ['vendor_package' => $vendorPackage, 'certification_expires_at' => null];
+        return [
+            'vendor_package' => $vendorPackage,
+            'certification_expires_at' => null,
+            'product_boost_id' => null,
+        ];
     }
 
     /** Notification push d'activation (hors transaction, jamais bloquante). */
@@ -475,6 +629,27 @@ class PackageSubscriptionService
                 return;
             }
 
+            if ($package->type === 'boost') {
+                $boostId = $subscription->metadata['product_boost_id'] ?? null;
+                $boost = $boostId ? ProductBoost::with('product')->find($boostId) : null;
+                $name = $boost?->product?->name;
+                $reach = number_format((int) ($boost?->impressions_quota ?? $package->reach_users), 0, ',', ' ');
+
+                $this->fcmService->sendToUser(
+                    $user,
+                    'Sponsoring activé 🚀',
+                    ($name ? "« {$name} » est sponsorisé" : 'Votre produit est sponsorisé')
+                        . " : jusqu'à {$reach} personnes vont le voir.",
+                    [
+                        'type' => 'boost_activated',
+                        'subscription_id' => (string) $subscription->id,
+                        'product_boost_id' => (string) ($boostId ?? ''),
+                        'product_id' => (string) ($boost?->product_id ?? ''),
+                    ]
+                );
+                return;
+            }
+
             $vendorPackage = $subscription->vendor_package_id ? VendorPackage::find($subscription->vendor_package_id) : null;
             if ($vendorPackage) {
                 $this->fcmService->sendPackagePurchaseNotification($user, [
@@ -486,6 +661,18 @@ class PackageSubscriptionService
         } catch (\Throwable $e) {
             Log::warning('[PackageSubscription] Notification d\'activation échouée: ' . $e->getMessage());
         }
+    }
+
+    /** Libellé lisible dans l'historique du portefeuille. */
+    private function transactionLabel(Package $package): string
+    {
+        $prefix = match ($package->type) {
+            'certification' => 'Certification',
+            'boost' => 'Sponsoring',
+            default => 'Forfait',
+        };
+
+        return "{$prefix} — {$package->name}";
     }
 
     private function providerFor(string $paymentMethod): string

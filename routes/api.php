@@ -237,6 +237,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('packages')->group(function () {
             Route::get('/', [PackageController::class, 'index']);
             Route::get('/certification', [PackageController::class, 'certificationPackages']);
+            // Asso Ads : forfaits de sponsoring d'un produit.
+            Route::get('/boost', [PackageController::class, 'boostPackages']);
             Route::post('/subscribe', [PackageController::class, 'subscribe']);
             // Statut de paiement d'un abonnement direct (polling), équivalent des commandes.
             Route::get('/subscription/{id}/payment-status', [PackageController::class, 'subscriptionPaymentStatus']);
@@ -258,6 +260,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/vendor/apply', [ProfileController::class, 'applyVendor']);
         Route::get('/vendor/dashboard', [ProfileController::class, 'vendorDashboard']);
         Route::get('/vendor/statistics', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'vendor']);
+        Route::get('/vendor/statistics/export', [\App\Http\Controllers\Api\ShopStatisticsController::class, 'export']);
+
+        // Asso Ads — suivi des campagnes de sponsoring du vendeur.
+        Route::get('/vendor/boosts', [\App\Http\Controllers\Api\ProductBoostController::class, 'index']);
+        Route::get('/vendor/boosts/{id}', [\App\Http\Controllers\Api\ProductBoostController::class, 'show']);
+        Route::post('/vendor/boosts/{id}/cancel', [\App\Http\Controllers\Api\ProductBoostController::class, 'cancel']);
+        Route::get('/vendor/products/{id}/boost-status', [\App\Http\Controllers\Api\ProductBoostController::class, 'status']);
         Route::get('/vendor/package/current', [PackageController::class, 'currentPackage']);
 
         // Vendor shop management

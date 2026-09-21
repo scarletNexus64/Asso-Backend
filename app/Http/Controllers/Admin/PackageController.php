@@ -85,9 +85,11 @@ class PackageController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'price' => 'required|numeric|min:0',
-            'duration_days' => 'required|integer|min:1',
+            'duration_days' => 'required|integer|min:1|max:365',
             'storage_size_mb' => 'nullable|integer|min:1',
-            'reach_users' => 'nullable|integer|min:1',
+            // Obligatoire pour un boost : un forfait sans quota d'audience se
+            // vendrait puis échouerait à l'activation, côté client.
+            'reach_users' => 'required_if:type,boost|nullable|integer|min:1|max:10000000',
             'benefits' => 'nullable|array',
             'benefits.*' => 'nullable|string|max:500',
             'is_active' => 'boolean',
@@ -149,9 +151,11 @@ class PackageController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'price' => 'required|numeric|min:0',
-            'duration_days' => 'required|integer|min:1',
+            'duration_days' => 'required|integer|min:1|max:365',
             'storage_size_mb' => 'nullable|integer|min:1',
-            'reach_users' => 'nullable|integer|min:1',
+            // Obligatoire pour un boost : un forfait sans quota d'audience se
+            // vendrait puis échouerait à l'activation, côté client.
+            'reach_users' => 'required_if:type,boost|nullable|integer|min:1|max:10000000',
             'benefits' => 'nullable|array',
             'benefits.*' => 'nullable|string|max:500',
             'is_active' => 'boolean',

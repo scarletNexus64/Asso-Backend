@@ -90,11 +90,11 @@ class DiaspoVerificationController extends Controller
             ->first();
 
         $frontUrl = $frontDocument && $frontDocument->file_path
-            ? asset('storage/' . $frontDocument->file_path)
+            ? media_url($frontDocument->file_path)
             : null;
 
         $backUrl = $backDocument && $backDocument->file_path
-            ? asset('storage/' . $backDocument->file_path)
+            ? media_url($backDocument->file_path)
             : null;
 
         return response()->json([
@@ -312,11 +312,11 @@ class DiaspoVerificationController extends Controller
             : null;
 
         $frontUrl = $frontDocument && $frontDocument->file_path
-            ? asset('storage/' . $frontDocument->file_path)
+            ? media_url($frontDocument->file_path)
             : null;
 
         $backUrl = $backDocument && $backDocument->file_path
-            ? asset('storage/' . $backDocument->file_path)
+            ? media_url($backDocument->file_path)
             : null;
 
         return view('admin.diaspo.verifications.show', compact('user', 'frontDocument', 'backDocument', 'frontUrl', 'backUrl', 'offers', 'events'));

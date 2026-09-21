@@ -106,9 +106,14 @@ class OrderService
 
                 $variant = null;
                 if (!empty($item['variant_id'])) {
+                    // Variante d'un autre produit : message clair pour l'acheteur,
+                    // pas l'exception technique du modèle.
                     $variant = ProductVariant::where('product_id', $product->id)
                         ->lockForUpdate()
-                        ->findOrFail($item['variant_id']);
+                        ->find($item['variant_id']);
+                    if (!$variant) {
+                        throw new \Exception("La variante sélectionnée pour '{$product->name}' n'existe pas.");
+                    }
                     if (!$variant->is_active) {
                         throw new \Exception("La variante sélectionnée pour '{$product->name}' n'est plus disponible.");
                     }

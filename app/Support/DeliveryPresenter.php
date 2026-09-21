@@ -58,4 +58,54 @@ class DeliveryPresenter
             'timeline' => $order->relationLoaded('trackingEvents') ? OrderTrackingService::timeline($order) : [],
         ];
     }
+
+    /**
+     * Point d'ENLÈVEMENT présenté au livreur : la boutique (ou l'agence du
+     * partenaire pour un dernier kilomètre). Le coursier va chercher le colis
+     * ici, il lui faut donc de quoi s'y rendre ET appeler sur place.
+     */
+    public static function pickupFor(Order $order): array
+    {
+        $shop = $order->items->first()?->product?->shop;
+        $isAgency = $order->hasLastMileDelivery();
+        $company = $order->relationLoaded('deliveryCompany') ? $order->deliveryCompany : $order->deliveryCompany;
+
+        if ($isAgency) {
+            return [
+                'kind' => 'agency',
+                'name' => trim('Agence ' . ($company?->name ?? '')),
+                'phone' => $company?->phone,
+                'address' => null,
+                'city' => null,
+                'latitude' => null,
+                'longitude' => null,
+            ];
+        }
+
+        return [
+            'kind' => 'shop',
+            'name' => $shop?->name,
+            // Le vendeur est le contact sur place si la boutique n'a pas de ligne.
+            'phone' => $shop?->phone ?: $shop?->user?->phone,
+            'address' => trim(implode(' — ', array_filter([$shop?->location_label, $shop?->address]))) ?: null,
+            'city' => $shop?->city,
+            'latitude' => $shop?->latitude !== null ? (float) $shop->latitude : null,
+            'longitude' => $shop?->longitude !== null ? (float) $shop->longitude : null,
+        ];
+    }
+
+    /**
+     * Point de LIVRAISON présenté au livreur : l'acheteur et son adresse.
+     */
+    public static function dropoffFor(Order $order): array
+    {
+        return [
+            'name' => $order->user?->name ?: 'Client',
+            'phone' => $order->customer_phone ?: ($order->user?->phone ?? null),
+            'address' => $order->delivery_address,
+            'address_details' => $order->delivery_address_details,
+            'latitude' => $order->delivery_latitude !== null ? (float) $order->delivery_latitude : null,
+            'longitude' => $order->delivery_longitude !== null ? (float) $order->delivery_longitude : null,
+        ];
+    }
 }

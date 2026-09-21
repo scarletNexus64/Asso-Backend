@@ -132,15 +132,11 @@ class DelivererSyncController extends Controller
                 \Log::info("✅ Deliverer company '{$company->name}' (ID: {$company->id}) has been ACTIVATED");
             }
 
-            // Update user role to add 'livreur' if not already present
-            $roles = $user->roles ?? [];
-            if (!in_array('livreur', $roles)) {
-                $roles[] = 'livreur';
-                $user->update([
-                    'role' => 'livreur', // Primary role
-                    'roles' => $roles
-                ]);
-            }
+            // Ajoute le rôle livreur SANS effacer les autres : un vendeur qui
+            // devient aussi coursier doit garder l'accès à sa boutique.
+            // addRole() retombe sur la colonne `role` quand `roles` est vide et
+            // conserve le rôle principal existant.
+            $user->addRole('livreur');
 
             // Mark sync code as used (but don't prevent reuse)
             // We keep this for backward compatibility
@@ -195,7 +191,7 @@ class DelivererSyncController extends Controller
                     'phone' => $company->phone,
                     'email' => $company->email,
                     'description' => $company->description,
-                    'logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+                    'logo' => $company->logo ? media_url($company->logo) : null,
                     'is_active' => $company->is_active,
                 ],
                 'delivery_zones' => $company->deliveryZones->map(function ($zone) {

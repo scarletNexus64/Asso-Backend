@@ -866,7 +866,7 @@ class DeliveryQuoteService
             'company_phone' => $company->phone,
             'company_email' => $company->email,
             'company_description' => $company->description,
-            'company_logo' => $company->logo ? asset('storage/' . $company->logo) : null,
+            'company_logo' => $company->logo ? media_url($company->logo) : null,
             'service_type' => $extra['service_type'],
             'service_type_label' => DelivererCompany::SERVICE_TYPES[$extra['service_type']],
             'service_mode' => $extra['service_mode'],

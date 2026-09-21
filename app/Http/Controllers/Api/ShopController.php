@@ -27,7 +27,7 @@ class ShopController extends Controller
         }
 
         // Get the user's first shop
-        $shop = $user->shops()->first();
+        $shop = $user->primaryShop;
 
         if (!$shop) {
             return response()->json([
@@ -175,7 +175,7 @@ class ShopController extends Controller
             ], 403);
         }
 
-        $shop = $user->shops()->first();
+        $shop = $user->primaryShop;
 
         if (!$shop) {
             return response()->json([
@@ -334,7 +334,7 @@ class ShopController extends Controller
             'name' => $shop->name,
             'slug' => $shop->slug,
             'description' => $shop->description,
-            'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+            'logo' => $shop->logo ? media_url($shop->logo) : null,
             'address' => $shop->address,
             'city' => $shop->city,
             'country' => $shop->country,
@@ -362,7 +362,7 @@ class ShopController extends Controller
             'name' => $shop->name,
             'slug' => $shop->slug,
             'description' => $shop->description,
-            'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+            'logo' => $shop->logo ? media_url($shop->logo) : null,
             'address' => $shop->address,
             'city' => $shop->city,
             'country' => $shop->country,
@@ -387,13 +387,13 @@ class ShopController extends Controller
 
             // Add primary image first
             if ($product->primaryImage) {
-                $images[] = asset('storage/' . $product->primaryImage->image_path);
+                $images[] = media_url($product->primaryImage->image_path);
             }
 
             // Add all other images
             if ($product->images && $product->images->count() > 0) {
                 foreach ($product->images as $image) {
-                    $imageUrl = asset('storage/' . $image->image_path);
+                    $imageUrl = media_url($image->image_path);
                     if (!in_array($imageUrl, $images)) {
                         $images[] = $imageUrl;
                     }
@@ -407,7 +407,7 @@ class ShopController extends Controller
                 'description' => $product->description,
                 'price' => \App\Services\CommissionService::buyerPrice($product), // prix public
                 'stock' => (int) $product->stock,
-                'primary_image' => $product->primaryImage ? asset('storage/' . $product->primaryImage->image_path) : null,
+                'primary_image' => $product->primaryImage ? media_url($product->primaryImage->image_path) : null,
                 'images' => $images,
                 'category' => $product->category,
                 'condition' => $product->condition,
@@ -423,7 +423,7 @@ class ShopController extends Controller
             'name' => $shop->name,
             'slug' => $shop->slug,
             'description' => $shop->description,
-            'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+            'logo' => $shop->logo ? media_url($shop->logo) : null,
             'address' => $shop->address,
             'city' => $shop->city,
             'country' => $shop->country,
@@ -438,7 +438,7 @@ class ShopController extends Controller
             'owner' => [
                 'id' => $shop->user->id,
                 'name' => $shop->user->first_name . ' ' . $shop->user->last_name,
-                'profile_picture' => $shop->user->profile_picture ? asset('storage/' . $shop->user->profile_picture) : null,
+                'profile_picture' => $shop->user->profile_picture ? media_url($shop->user->profile_picture) : null,
             ],
         ];
     }
@@ -452,7 +452,7 @@ class ShopController extends Controller
             'id' => $shop->id,
             'name' => $shop->name,
             'slug' => $shop->slug,
-            'logo' => $shop->logo ? asset('storage/' . $shop->logo) : null,
+            'logo' => $shop->logo ? media_url($shop->logo) : null,
             'status' => $shop->status,
             'is_certified' => (bool) $shop->is_certified,
             'products_count' => $shop->products()->count(),
@@ -469,12 +469,18 @@ class ShopController extends Controller
         $ordersCount = $counters['orders'];
         $totalSales = $counters['revenue'];
 
-        $totalProducts = $shop->products()->count();
-        $totalStock = $shop->products()->sum('stock');
+        // Compter les produits du vendeur, et pas tous ceux rattachés à la
+        // boutique : des fiches d'autres comptes (grossistes de l'import)
+        // portent le même shop_id et gonflaient le total affiché au tableau
+        // de bord, qui ne correspondait plus à la liste « Mes produits ».
+        $ownProducts = $shop->products()->where('user_id', $user->id);
+
+        $totalProducts = (clone $ownProducts)->count();
+        $totalStock = (clone $ownProducts)->sum('stock');
 
         $averageRating = 0.0;
         $totalReviews = 0;
-        $productIds = $shop->products()->pluck('id');
+        $productIds = (clone $ownProducts)->pluck('id');
 
         if ($productIds->count() > 0) {
             $reviews = DB::table('product_reviews')
@@ -520,7 +526,7 @@ class ShopController extends Controller
             ], 403);
         }
 
-        $shop = $user->shops()->first();
+        $shop = $user->primaryShop;
 
         if (!$shop) {
             return response()->json([

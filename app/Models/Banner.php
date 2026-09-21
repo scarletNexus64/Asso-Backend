@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class Banner extends Model
 {
@@ -38,7 +37,7 @@ class Banner extends Model
      */
     public function getImageUrlAttribute(): string
     {
-        return Storage::url($this->image_path);
+        return media_url($this->image_path);
     }
 
     /**

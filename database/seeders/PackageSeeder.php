@@ -67,13 +67,16 @@ class PackageSeeder extends Seeder
         $this->command->info('');
         $this->command->info('🚀 Packages de Boost Sponsoring:');
 
+        // Règle tarifaire : 1 FCFA = 1 vue garantie. La durée est la fenêtre
+        // pendant laquelle les vues sont délivrées ; la campagne s'arrête dès
+        // que le quota est atteint, même avant l'échéance.
         $boostPackages = [
             [
                 'type' => 'boost',
-                'name' => 'Boost Local',
-                'description' => 'Touchez jusqu\'à 1000 utilisateurs dans votre ville. Augmentez votre visibilité locale pendant 7 jours avec des placements prioritaires.',
-                'price' => 2500,
-                'duration_days' => 7,
+                'name' => 'Coup de pouce',
+                'description' => 'Votre article vu par 1 000 personnes en 2 jours. Idéal pour tester le sponsoring ou relancer une annonce qui stagne.',
+                'price' => 1000,
+                'duration_days' => 2,
                 'reach_users' => 1000,
                 'is_active' => true,
                 'is_popular' => false,
@@ -81,22 +84,22 @@ class PackageSeeder extends Seeder
             ],
             [
                 'type' => 'boost',
-                'name' => 'Boost Régional',
-                'description' => 'Étendez votre portée à 5000 utilisateurs dans votre région. 15 jours de visibilité renforcée pour booster vos ventes.',
-                'price' => 6000,
-                'duration_days' => 15,
-                'reach_users' => 5000,
+                'name' => 'Boost',
+                'description' => 'Votre article vu par 3 000 personnes en 5 jours. Le bon rythme pour installer un produit dans le fil d\'actualité.',
+                'price' => 3000,
+                'duration_days' => 5,
+                'reach_users' => 3000,
                 'is_active' => true,
                 'is_popular' => true,
                 'order' => 2,
             ],
             [
                 'type' => 'boost',
-                'name' => 'Boost National',
-                'description' => 'Visibilité maximale ! Touchez jusqu\'à 15000 utilisateurs partout au Cameroun. 30 jours de promotion intensive avec placement premium sur toutes les pages.',
-                'price' => 15000,
-                'duration_days' => 30,
-                'reach_users' => 15000,
+                'name' => 'Boost Max',
+                'description' => 'Votre article vu par 10 000 personnes en 15 jours. La visibilité maximale, pour un lancement ou un stock important à écouler.',
+                'price' => 10000,
+                'duration_days' => 15,
+                'reach_users' => 10000,
                 'is_active' => true,
                 'is_popular' => false,
                 'order' => 3,

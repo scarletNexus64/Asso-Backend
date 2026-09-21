@@ -128,13 +128,7 @@ class Shop extends Model
             return null;
         }
 
-        // If logo starts with http, it's already a full URL
-        if (str_starts_with($this->logo, 'http')) {
-            return $this->logo;
-        }
-
-        // Generate storage URL
-        return \Storage::url($this->logo);
+        return media_url($this->logo);
     }
 
     /**

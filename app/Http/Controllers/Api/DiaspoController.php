@@ -495,10 +495,13 @@ class DiaspoController extends Controller
         DB::transaction(function () use ($booking, $request) {
             $b = DiaspoBooking::whereKey($booking->id)->lockForUpdate()->first();
 
-            // Rembourser dans le mini-wallet acheteur si déjà payé
+            // Rembourser dans le mini-wallet acheteur si déjà payé.
+            // La devise vit sur l'OFFRE, pas sur la réservation : sans ce
+            // repli le remboursement échouait sur une devise nulle.
             if ($b->payment_status === 'completed') {
                 $buyer = User::find($b->buyer_user_id);
-                $buyer->creditKpay($b->currency, (float) $b->total_price);
+                $currency = DiaspoOffer::whereKey($b->diaspo_offer_id)->value('currency') ?: 'XAF';
+                $buyer->creditKpay($currency, (float) $b->total_price);
                 $b->refunded_at = now();
                 $b->payment_status = 'refunded';
             }

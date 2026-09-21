@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\DiaspoBooking;
 use App\Models\DiaspoOffer;
 use App\Models\ServiceConfiguration;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\FirebaseMessagingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -75,6 +77,10 @@ class DiaspoBookingLifecycleTest extends TestCase
             '*/api/v1/payments/*' => Http::response(['status' => 'SUCCESS'], 200), // polling → payé
         ]);
 
+        // Le taux vient d'un réglage administrable : on le fige pour que le
+        // test ne dépende pas de la configuration de l'environnement.
+        Setting::set('diaspo_commission_rate', 10);
+
         $seller = User::factory()->create(['pending_earnings' => 0]);
         $buyer = User::factory()->create();
         $offer = $this->makeApprovedOffer($seller);
@@ -83,6 +89,7 @@ class DiaspoBookingLifecycleTest extends TestCase
         Sanctum::actingAs($buyer);
         $book = $this->postJson("/api/v1/diaspo/offers/{$offer->id}/book", [
             'kg_booked' => 5,
+            'payment_method' => 'kpay',
             'provider' => 'MTN_MOMO_CMR',
             'phone_number' => '237653456789',
         ]);
@@ -136,7 +143,7 @@ class DiaspoBookingLifecycleTest extends TestCase
 
         Sanctum::actingAs($buyer);
         $bookingId = $this->postJson("/api/v1/diaspo/offers/{$offer->id}/book", [
-            'kg_booked' => 5, 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456029',
+            'kg_booked' => 5, 'payment_method' => 'kpay', 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456029',
         ])->assertStatus(201)->json('booking_id');
 
         $this->assertEquals(15, (float) $offer->fresh()->remaining_kg);
@@ -158,7 +165,7 @@ class DiaspoBookingLifecycleTest extends TestCase
 
         Sanctum::actingAs($seller);
         $this->postJson("/api/v1/diaspo/offers/{$offer->id}/book", [
-            'kg_booked' => 5, 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456789',
+            'kg_booked' => 5, 'payment_method' => 'kpay', 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456789',
         ])->assertStatus(422);
 
         $this->assertDatabaseCount('diaspo_bookings', 0);
@@ -177,7 +184,7 @@ class DiaspoBookingLifecycleTest extends TestCase
 
         Sanctum::actingAs($buyer);
         $bookingId = $this->postJson("/api/v1/diaspo/offers/{$offer->id}/book", [
-            'kg_booked' => 5, 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456789',
+            'kg_booked' => 5, 'payment_method' => 'kpay', 'provider' => 'MTN_MOMO_CMR', 'phone_number' => '237653456789',
         ])->json('booking_id');
         $this->getJson("/api/v1/diaspo/bookings/{$bookingId}/payment-status")->assertOk();
 
@@ -185,6 +192,57 @@ class DiaspoBookingLifecycleTest extends TestCase
         $this->postJson("/api/v1/diaspo/bookings/{$bookingId}/seller-confirm-code", [
             'confirmation_code' => '000000',
         ])->assertStatus(422);
+    }
+
+    /**
+     * Annuler une réservation PAYÉE doit rembourser l'acheteur et rendre les kg.
+     *
+     * La devise vit sur l'offre, pas sur la réservation : le remboursement
+     * échouait auparavant sur une devise nulle.
+     */
+    public function test_cancelling_a_paid_booking_refunds_the_buyer_and_restores_kg(): void
+    {
+        Http::fake([
+            '*/api/v1/payments/init' => Http::response(['id' => 'pay_cancel', 'status' => 'PENDING'], 200),
+            '*/api/v1/payments/*' => Http::response(['status' => 'SUCCESS'], 200),
+        ]);
+
+        $seller = User::factory()->create();
+        $buyer = User::factory()->create();
+        $offer = $this->makeApprovedOffer($seller, availableKg: 20, pricePerKg: 10);
+
+        Sanctum::actingAs($buyer);
+        $bookingId = $this->postJson("/api/v1/diaspo/offers/{$offer->id}/book", [
+            'kg_booked' => 5,
+            'payment_method' => 'kpay',
+            'provider' => 'MTN_MOMO_CMR',
+            'phone_number' => '237653456789',
+        ])->json('booking_id');
+
+        $this->getJson("/api/v1/diaspo/bookings/{$bookingId}/payment-status")->assertOk();
+
+        $booking = DiaspoBooking::findOrFail($bookingId);
+        $this->assertSame('completed', $booking->payment_status);
+        $this->assertSame(15.0, (float) $offer->fresh()->remaining_kg);
+
+        $this->postJson("/api/v1/diaspo/bookings/{$bookingId}/cancel", [
+            'cancel_reason' => 'Changement de programme',
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $booking->refresh();
+        $this->assertSame('cancelled', $booking->status);
+        $this->assertSame('refunded', $booking->payment_status);
+        $this->assertNotNull($booking->refunded_at);
+
+        // Les kg repartent à l'offre.
+        $this->assertSame(20.0, (float) $offer->fresh()->remaining_kg);
+
+        // L'acheteur est remboursé du total payé, dans la devise de l'offre.
+        $this->assertDatabaseHas('wallet_balances', [
+            'user_id' => $buyer->id,
+            'currency' => $offer->currency,
+            'balance' => $booking->total_price,
+        ]);
     }
 
     protected function tearDown(): void

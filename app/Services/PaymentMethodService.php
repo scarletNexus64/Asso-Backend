@@ -40,7 +40,9 @@ class PaymentMethodService
      */
     private const RAILS = [
         'kpay' => [
-            'label' => 'KPay',
+            // Libellé destiné à l'utilisateur : le nom du prestataire (KPay)
+            // ne lui parle pas, le moyen de paiement si.
+            'label' => 'Mobile Money',
             'subtitle' => 'Orange Money, MTN MoMo, Airtel…',
             'flow' => 'phone',
             'setting_min' => 'pay_min_kpay',

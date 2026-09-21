@@ -43,6 +43,8 @@ class ProductVariantService
             'variants.*.sku' => 'nullable|string|max:100',
             'variants.*.price_adjustment' => 'nullable|numeric',
             'variants.*.stock' => 'nullable|integer|min:0',
+            // Poids propre à la déclinaison, en kg (null => poids du produit).
+            'variants.*.weight' => 'nullable|numeric|min:0.001|max:100000',
             'variants.*.is_active' => 'nullable|boolean',
             'variant_options' => 'nullable',
         ];
@@ -132,6 +134,7 @@ class ProductVariantService
                     'sku' => $row['sku'],
                     'price_adjustment' => $row['price_adjustment'],
                     'stock' => $row['stock'],
+                    'weight' => $row['weight'],
                     'is_active' => $row['is_active'],
                     'sort_order' => $index,
                 ];
@@ -247,6 +250,10 @@ class ProductVariantService
             'price' => $price,
             'price_xaf' => $priceXaf,
             'stock' => $variant->stock,
+            // Poids de la déclinaison ; `weight` retombe sur celui du produit
+            // pour que le client n'ait pas à gérer le cas nul.
+            'weight' => $variant->effectiveWeight(),
+            'own_weight' => $variant->weight !== null ? (float) $variant->weight : null,
             'is_active' => (bool) $variant->is_active,
         ];
     }
@@ -281,6 +288,9 @@ class ProductVariantService
                 'sku' => $sku,
                 'price_adjustment' => is_numeric($variant['price_adjustment'] ?? null) ? (float) $variant['price_adjustment'] : 0,
                 'stock' => max(0, (int) ($variant['stock'] ?? 0)),
+                'weight' => is_numeric($variant['weight'] ?? null) && (float) $variant['weight'] > 0
+                    ? (float) $variant['weight']
+                    : null,
                 'is_active' => filter_var($variant['is_active'] ?? true, FILTER_VALIDATE_BOOL),
             ]);
         }

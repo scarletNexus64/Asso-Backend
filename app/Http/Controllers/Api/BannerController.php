@@ -16,7 +16,7 @@ class BannerController extends Controller
             ->map(fn($banner) => [
                 'id' => $banner->id,
                 'title' => $banner->title,
-                'image' => $banner->image ? asset('storage/' . $banner->image) : null,
+                'image' => $banner->image ? media_url($banner->image) : null,
                 'link' => $banner->link,
                 'position' => $banner->position,
             ]);

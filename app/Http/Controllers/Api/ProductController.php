@@ -100,6 +100,17 @@ class ProductController extends Controller
             return $this->formatProduct($product, $favoriteIds);
         });
 
+        // Asso Ads : les annonces s'intercalent dans la première page seulement —
+        // au-delà, l'utilisateur fait défiler un résultat, pas une vitrine.
+        if ($products->currentPage() === 1) {
+            $productsData = $this->injectSponsored($productsData, $favoriteIds, [
+                'category_id' => $request->get('category_id'),
+                'subcategory_id' => $request->get('subcategory_id'),
+                'type' => $request->get('type'),
+                'origin_country' => $request->get('origin_country'),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'products' => $productsData,
@@ -111,6 +122,66 @@ class ProductController extends Controller
                 'has_more' => $products->hasMorePages(),
             ],
         ]);
+    }
+
+    /**
+     * Asso Ads — intercale les produits sponsorisés dans une page de résultats.
+     *
+     * Les annonces sont insérées à des positions fixes (réglables en admin) plutôt
+     * qu'ajoutées en tête : une publicité reconnaissable, au milieu du flux, se lit
+     * mieux qu'un bloc de trois annonces qui repousse le contenu réel.
+     *
+     * Chaque carte réellement insérée consomme une impression du quota acheté :
+     * c'est le seul endroit où la facturation est décomptée.
+     *
+     * @param  \Illuminate\Support\Collection  $productsData  cartes déjà formatées
+     * @return \Illuminate\Support\Collection
+     */
+    private function injectSponsored($productsData, array $favoriteIds, array $filters = [])
+    {
+        $boostService = app(\App\Services\ProductBoostService::class);
+
+        $slots = $boostService->slotsPerPage();
+        if ($slots <= 0) {
+            return $productsData;
+        }
+
+        $boosts = $boostService->pickForFeed(
+            $slots,
+            $productsData->pluck('id')->filter()->all(),
+            $filters
+        );
+
+        if ($boosts->isEmpty()) {
+            return $productsData;
+        }
+
+        $items = $productsData->values()->all();
+        $positions = $boostService->slotPositions();
+        $served = [];
+
+        foreach ($boosts as $index => $boost) {
+            if (!$boost->product) {
+                continue;
+            }
+
+            $card = $this->formatProduct($boost->product, $favoriteIds);
+            $card['is_sponsored'] = true;
+            $card['sponsored_label'] = 'Sponsorisé';
+            $card['boost_id'] = $boost->id;
+
+            // Position prévue, ou à la suite si la page est plus courte que le slot.
+            $at = $positions[$index] ?? count($items);
+            $at = min($at, count($items));
+
+            array_splice($items, $at, 0, [$card]);
+            $served[] = $boost;
+        }
+
+        // Décompté après insertion : on ne facture que ce qui part réellement.
+        $boostService->consume($served);
+
+        return collect($items);
     }
 
     /**
@@ -195,6 +266,13 @@ class ProductController extends Controller
                 ->where('user_id', $request->user()->id)
                 ->pluck('product_id')
                 ->toArray();
+        }
+
+        // Asso Ads : ouverture venue d'une carte sponsorisée. Le clic ne consomme
+        // pas de quota (seule l'impression est facturée), il mesure l'efficacité
+        // de la campagne pour le vendeur.
+        if ($request->boolean('from_ad')) {
+            app(\App\Services\ProductBoostService::class)->recordClick($product);
         }
 
         return response()->json([
@@ -348,7 +426,7 @@ class ProductController extends Controller
         \Log::info('[PRODUCT_STORE] Creating product...');
 
         // Get the user's shop (vendors should have a shop)
-        $shop = $request->user()->shops()->first();
+        $shop = $request->user()->primaryShop;
         if (!$shop) {
             \Log::warning('[PRODUCT_STORE] User has no shop');
             return response()->json([
@@ -526,6 +604,10 @@ class ProductController extends Controller
             'latitude' => $product->latitude ? (float) $product->latitude : null,
             'longitude' => $product->longitude ? (float) $product->longitude : null,
             'is_favorite' => in_array($product->id, $favoriteIds),
+            // Asso Ads : vrai uniquement sur les cartes servies via un slot sponsorisé.
+            // Positionné par injectSponsored(), jamais déduit du produit lui-même —
+            // une même fiche n'est « Sponsorisé » que là où l'annonce est diffusée.
+            'is_sponsored' => false,
             'primary_image' => $product->primaryImage ? $this->getImageUrl($product->primaryImage->image_path) : null,
             'images' => $product->images->map(fn($img) => [
                 'id' => $img->id,
@@ -609,16 +691,7 @@ class ProductController extends Controller
      */
     private function getImageUrl($imagePath)
     {
-        if (empty($imagePath)) {
-            return null;
-        }
-
-        // Remove 'storage/' prefix if it exists (to avoid double storage/ in URL)
-        $cleanPath = str_starts_with($imagePath, 'storage/')
-            ? substr($imagePath, 8)  // Remove 'storage/'
-            : $imagePath;
-
-        return asset('storage/' . $cleanPath);
+        return media_url($imagePath);
     }
 
     /**

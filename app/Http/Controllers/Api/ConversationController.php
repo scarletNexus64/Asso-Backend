@@ -46,7 +46,7 @@ class ConversationController extends Controller
                         'id' => $conv->product->id,
                         'name' => $conv->product->name,
                         'price' => \App\Services\CommissionService::buyerPrice($conv->product), // prix public
-                        'image' => $conv->product->primaryImage ? asset('storage/' . $conv->product->primaryImage->image_path) : null,
+                        'image' => $conv->product->primaryImage ? media_url($conv->product->primaryImage->image_path) : null,
                     ] : null,
                     'diaspo_offer' => $conv->diaspoOffer ? [
                         'id' => $conv->diaspoOffer->id,
@@ -254,18 +254,18 @@ class ConversationController extends Controller
                 'id' => $msg->id,
                 'sender_id' => $msg->sender_id,
                 'message' => $msg->message,
-                'image_path' => $msg->image_path ? asset('storage/' . $msg->image_path) : null,
+                'image_path' => $msg->image_path ? media_url($msg->image_path) : null,
                 'product_id' => $msg->product_id,
                 'product' => $msg->product ? [
                     'id' => $msg->product->id,
                     'name' => $msg->product->name,
                     'price' => \App\Services\CommissionService::buyerPrice($msg->product), // prix public
                     'primary_image' => $msg->product->primaryImage ?
-                        asset('storage/' . $msg->product->primaryImage->image_path) : null,
+                        media_url($msg->product->primaryImage->image_path) : null,
                     'image' => $msg->product->primaryImage ?
-                        asset('storage/' . $msg->product->primaryImage->image_path) : null,
+                        media_url($msg->product->primaryImage->image_path) : null,
                     'images' => $msg->product->images ?
-                        $msg->product->images->map(fn($img) => asset('storage/' . $img->image_path))->toArray() : [],
+                        $msg->product->images->map(fn($img) => media_url($img->image_path))->toArray() : [],
                 ] : null,
                 'diaspo_offer_id' => $msg->diaspo_offer_id,
                 'diaspo_offer' => $msg->diaspoOffer ? [
@@ -447,14 +447,14 @@ class ConversationController extends Controller
                 'id' => $message->id,
                 'sender_id' => $message->sender_id,
                 'message' => $message->message,
-                'image_path' => $message->image_path ? asset('storage/' . $message->image_path) : null,
+                'image_path' => $message->image_path ? media_url($message->image_path) : null,
                 'product_id' => $message->product_id,
                 'product' => $message->product ? [
                     'id' => $message->product->id,
                     'name' => $message->product->name,
                     'price' => \App\Services\CommissionService::buyerPrice($message->product), // prix public
                     'image' => $message->product->primaryImage ?
-                        asset('storage/' . $message->product->primaryImage->image_path) : null,
+                        media_url($message->product->primaryImage->image_path) : null,
                 ] : null,
                 'diaspo_offer_id' => $message->diaspo_offer_id,
                 'diaspo_offer' => $message->diaspoOffer ? [

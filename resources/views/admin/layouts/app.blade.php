@@ -220,6 +220,12 @@
                         Packages
                     </a>
 
+                    <a href="{{ route('admin.ads.index') }}"
+                       class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.ads.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
+                        <i class="fas fa-bullhorn w-5 mr-3"></i>
+                        Asso Ads
+                    </a>
+
                     <a href="{{ route('admin.transactions.index') }}"
                        class="flex items-center px-4 py-3 text-sm rounded-lg transition-all {{ request()->routeIs('admin.transactions.*') ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md' : 'text-gray-300 hover:bg-dark-200 hover:text-white' }}">
                         <i class="fas fa-exchange-alt w-5 mr-3"></i>

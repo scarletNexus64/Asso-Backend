@@ -54,53 +54,90 @@ ASSO est une plateforme complète de gestion d'association offrant un ensemble d
 
 ## Prérequis
 
-- PHP >= 8.2
+- PHP >= 8.2 (extensions: PDO, pdo_pgsql, Mbstring, OpenSSL, Tokenizer, XML, Ctype, JSON, GD, BCMath, Intl)
 - Composer
 - Node.js & NPM
-- MySQL ou PostgreSQL
-- Extension PHP requises: PDO, Mbstring, OpenSSL, Tokenizer, XML, Ctype, JSON
+- **PostgreSQL >= 14** (recommandé)
 
-## Installation
+> **Pourquoi PostgreSQL ?** La recherche produits s'appuie sur les extensions
+> `pg_trgm` et `unaccent` (index GIN trigramme, `tsvector`), et plusieurs migrations
+> utilisent des `CHECK constraints` spécifiques. Sur MySQL/SQLite ces migrations sont
+> des no-op et la recherche retombe sur de simples `LIKE` : l'app fonctionne, mais en
+> mode dégradé. Utilisez PostgreSQL pour être iso-production.
 
-### 1. Cloner le repository
+## Installation locale
 
-```bash
-git clone <repository-url>
-cd ASSO
-```
-
-### 2. Installation automatique
+### Installation automatique (recommandé)
 
 ```bash
-composer run setup
+./setup-local.sh
 ```
 
-Cette commande exécute automatiquement:
-- Installation des dépendances Composer
-- Copie du fichier `.env.example` vers `.env`
-- Génération de la clé d'application
-- Exécution des migrations
-- Installation des dépendances NPM
-- Build des assets
+Le script est **idempotent** (relançable sans risque) et enchaîne :
 
-### 3. Configuration
+1. vérification des prérequis (PHP, Composer, NPM, PostgreSQL démarré) ;
+2. `composer install` ;
+3. création du `.env` (depuis `.env.example`) + `php artisan key:generate` ;
+4. création de l'arborescence `storage/framework/*` et du lien `public/storage` ;
+5. création de la base + extensions `pg_trgm` / `unaccent` ;
+6. `php artisan migrate` puis `php artisan db:seed` ;
+7. seeders de démo (boutiques, produits, avis, packages) — voir ci-dessous ;
+8. `npm install` + `npm run build`.
 
-Éditez le fichier `.env` avec vos paramètres:
+Pour une base propre façon production (sans boutiques ni produits factices) :
 
-```env
-APP_NAME=ASSO
-APP_ENV=local
-APP_URL=http://localhost:8000
-
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=asso_db
-DB_USERNAME=root
-DB_PASSWORD=
+```bash
+SEED_DEMO=0 ./setup-local.sh
 ```
 
-### 4. Lancement du serveur de développement
+La base ciblée est `asso_local` avec l'utilisateur système courant. Pour en changer :
+
+```bash
+DB_NAME=ma_base DB_USER=mon_user ./setup-local.sh
+```
+
+⚠️ Le script **ne crée pas** le `.env` s'il existe déjà, et **ne recrée pas** la base si
+elle existe. Adaptez ensuite `DB_DATABASE` / `DB_USERNAME` dans le `.env` si besoin.
+
+### Installation manuelle
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+
+# Arborescence storage — NON versionnée : sans elle, l'app renvoie
+# "Please provide a valid cache path" (HTTP 500) sur toute vue Blade.
+mkdir -p storage/framework/{views,cache/data,sessions,testing} storage/logs
+php artisan storage:link
+
+createdb asso_local
+psql -d asso_local -c "CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS unaccent;"
+
+# Puis renseigner dans .env :
+#   DB_CONNECTION=pgsql
+#   DB_DATABASE=asso_local
+#   DB_USERNAME=<votre utilisateur postgres>
+
+php artisan migrate
+php artisan db:seed
+npm install && npm run build
+```
+
+### Services optionnels
+
+| Service  | Usage                       | Activation                                                        |
+|----------|-----------------------------|-------------------------------------------------------------------|
+| Mailpit  | Capture des mails en local  | `brew services start mailpit`, puis `MAIL_MAILER=smtp` (port 1025) — UI sur http://localhost:8025 |
+| Redis    | Cache / queues alternatifs  | `brew services start redis`, puis `CACHE_STORE=redis`              |
+| Reverb   | Websockets temps réel       | `php artisan reverb:start` (port 8080)                             |
+| Firebase | Notifications push (FCM)    | Déposer le service account dans `storage/app/private/firebase/service-account.json` |
+
+Les intégrations tierces (Stripe, KPay, Gemini, Firebase) sont **laissées vides** dans le
+`.env` local : les services concernés dégradent proprement. Renseignez uniquement les clés
+de **test/sandbox** si vous devez tester ces parcours.
+
+### Lancement du serveur de développement
 
 ```bash
 composer run dev
@@ -111,6 +148,52 @@ Cette commande lance simultanément:
 - Worker de queue
 - Logs en temps réel (Pail)
 - Vite dev server pour les assets
+
+Alternative minimale : `php artisan serve`.
+
+### Comptes de démonstration
+
+Créés par les seeders, tous avec le mot de passe `password` :
+
+| Rôle    | Email                       |
+|---------|-----------------------------|
+| Admin   | `admin@asso.com`            |
+| Vendeur | `amina.kossou@vendeur.com`  |
+| Client  | `marie.ahossou@client.com`  |
+| Livreur | `moussa.traore@livreur.com` |
+
+- Back-office : http://localhost:8000/admin/login
+- API : `POST /api/v1/auth/login-email` (renvoie un token Sanctum)
+
+### Données de démo
+
+Le `DatabaseSeeder` par défaut ne crée **ni boutiques ni produits** (en production, ils
+sont créés par de vrais utilisateurs). `setup-local.sh` lance en plus, pour le confort du
+développement local, les seeders suivants — reproductibles à la main :
+
+```bash
+php artisan db:seed --class=ProductSeeder        # 3 boutiques + 19 produits/services
+php artisan db:seed --class=PackageSeeder        # 9 packages (stockage, boost, certification)
+php artisan db:seed --class=ProductReviewsSeeder # ~171 avis notés
+php artisan db:seed --class=OrderTestSeeder      # client.test@asso.com (wallet 500 000 FCFA) + produits
+```
+
+Résultat : 20 utilisateurs, 3 boutiques, 61 produits, 171 avis, 9 packages.
+
+⚠️ **Ces seeders ne sont pas idempotents** : `products.slug` porte une contrainte unique,
+les relancer sur une base déjà peuplée échoue en `UniqueConstraintViolationException`.
+`setup-local.sh` les saute automatiquement si des produits existent déjà. Pour repartir de
+zéro : `php artisan migrate:fresh --seed` puis relancer le script.
+
+**Aucun seeder ne crée de commandes** (`orders` reste vide) : `OrderTestSeeder` prépare
+seulement le client et les produits, les commandes se passent via l'app ou l'API.
+
+#### Seeders non branchés
+
+`ExtendedProductsSeeder` et `MultipleProductsSeeder` ciblent des IDs **codés en dur**
+(`user_id = 21`, `shop_id = 10`) qui n'existent pas sur une base fraîche : ils échouent en
+violation de clé étrangère. Ils téléchargent en outre 79 images depuis `images.unsplash.com`
+(lent, nécessite le réseau). À corriger avant usage.
 
 ## Utilisation
 
@@ -187,11 +270,19 @@ public/
 
 ## Tests
 
-Exécuter les tests:
-
 ```bash
-composer run test
+composer run test          # ou : php artisan test
+php artisan test --filter=NomDuTest
 ```
+
+Les tests tournent sur **SQLite en mémoire** (voir `phpunit.xml`), indépendamment du
+`.env` : aucune configuration supplémentaire n'est requise, et la base de dev n'est
+jamais touchée. Les migrations spécifiques à PostgreSQL y sont des no-op.
+
+> État au 19/09/2026 : **182 tests passent, 6 échouent** (`StripePaymentSettingsTest` ×2,
+> `DiaspoBookingLifecycleTest` ×3, `DiaspoUnverifiedPublicationTest` ×1). Ces échecs sont
+> **préexistants** et sans rapport avec l'installation locale — voir `DEPLOY_NOTES_UNIFY.md`
+> §4 sur la cohabitation des deux implémentations Diaspo.
 
 ## Contribution
 

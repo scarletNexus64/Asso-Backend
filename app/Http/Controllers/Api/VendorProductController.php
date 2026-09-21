@@ -23,11 +23,27 @@ class VendorProductController extends Controller
 
         $query = Product::with(['images', 'primaryImage', 'category', 'subcategory', 'shop', 'variants'])
             ->where('user_id', $user->id)
-            ->orderBy('created_at', 'desc');
+            // Départage par id : sans lui, les produits créés à la même
+            // seconde s'ordonnent librement d'une requête à l'autre, et la
+            // pagination répète certaines fiches en en omettant d'autres.
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc');
 
         // Filter by status if provided
         if ($request->has('status') && $request->status) {
             $query->where('status', $request->status);
+        }
+
+        // Recherche par nom ou description, insensible à la casse et aux accents
+        // (« cafe » doit trouver « Café »), sur l'ensemble du catalogue du
+        // vendeur et non sur la seule page affichée.
+        $search = trim((string) $request->get('search', ''));
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->whereRaw('f_unaccent(name) ILIKE f_unaccent(?)', [$like])
+                    ->orWhereRaw('f_unaccent(description) ILIKE f_unaccent(?)', [$like]);
+            });
         }
 
         $perPage = $request->get('per_page', 20);
@@ -459,15 +475,7 @@ class VendorProductController extends Controller
      */
     private function getImageUrl($imagePath)
     {
-        if (empty($imagePath)) {
-            return null;
-        }
-
-        $cleanPath = str_starts_with($imagePath, 'storage/')
-            ? substr($imagePath, 8)
-            : $imagePath;
-
-        return asset('storage/' . $cleanPath);
+        return media_url($imagePath);
     }
 
     /**
