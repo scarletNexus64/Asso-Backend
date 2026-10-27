@@ -134,9 +134,11 @@ class Product extends Model
         'tier_mix_variants',
         // Référence de l'application pour un produit saisi hors ligne (idempotence).
         'client_reference',
+        'requires_quote',
     ];
 
     protected $casts = [
+        'requires_quote' => 'boolean',
         'price' => 'decimal:2',
         'price_xaf' => 'decimal:2',
         'min_price' => 'decimal:2',

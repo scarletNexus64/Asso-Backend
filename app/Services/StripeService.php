@@ -237,6 +237,7 @@ class StripeService
         }
         $currency = strtolower($currency);
         $holder = $data['account_holder_name'];
+        $businessProfile = $this->businessProfileParams();
 
         $dob = new \DateTimeImmutable((string) $data['birth_date']);
         $individual = array_filter([
@@ -283,7 +284,6 @@ class StripeService
                 'recipient' => [
                     'capabilities' => [
                         'stripe_balance' => [
-                            'payouts' => ['requested' => true],
                             'stripe_transfers' => ['requested' => true],
                         ],
                     ],
@@ -291,6 +291,10 @@ class StripeService
             ],
             'defaults' => [
                 'currency' => $currency,
+                'profile' => array_filter([
+                    'business_url' => $businessProfile['url'] ?? null,
+                    'product_description' => $businessProfile['product_description'] ?? null,
+                ]),
                 'responsibilities' => [
                     'fees_collector' => 'application',
                     'losses_collector' => 'application',
@@ -509,20 +513,18 @@ class StripeService
             $capabilities = $recipient->capabilities->stripe_balance ?? null;
             $transfers = (string) ($capabilities->stripe_transfers->status ?? 'unknown');
             $payoutsEnabled = (string) ($capabilities->payouts->status ?? 'unknown') === 'active';
-            $due = array_values(array_unique(array_merge(
-                (array) ($v2Account->requirements->currently_due ?? []),
-                (array) ($v2Account->requirements->past_due ?? []),
-            )));
-            $disabledReason = $v2Account->requirements->disabled_reason ?? null;
         } else {
             $transfers = (string) ($account->capabilities->transfers ?? 'unknown');
             $payoutsEnabled = (bool) ($account->payouts_enabled ?? false);
-            $due = array_values(array_unique(array_merge(
-                (array) ($account->requirements->currently_due ?? []),
-                (array) ($account->requirements->past_due ?? []),
-            )));
-            $disabledReason = $account->requirements->disabled_reason ?? null;
         }
+
+        // The interoperable v1 account exposes currently_due/past_due for both
+        // account generations. V2 requirements use entries, not these arrays.
+        $due = array_values(array_unique(array_merge(
+            (array) ($account->requirements->currently_due ?? []),
+            (array) ($account->requirements->past_due ?? []),
+        )));
+        $disabledReason = $account->requirements->disabled_reason ?? null;
 
         return [
             'exists' => true,
@@ -1270,7 +1272,7 @@ class StripeService
     }
 
     /**
-     * Crée l'endpoint webhook s'il n'existe pas déjà pour cette URL/portée.
+     * Assure la présence de l'endpoint et des événements pour cette URL/portée.
      *
      * @return array{id:string,secret:?string,created:bool}
      */
@@ -1278,6 +1280,13 @@ class StripeService
     {
         foreach ($this->listWebhookEndpoints() as $existing) {
             if ($existing['url'] === $url && $existing['connect'] === $connect) {
+                if (!in_array('*', $existing['events'], true)
+                    && array_diff($events, $existing['events']) !== []) {
+                    $this->withoutStripeNotices(fn () => $this->client()->webhookEndpoints->update(
+                        $existing['id'],
+                        ['enabled_events' => array_values(array_unique(array_merge($existing['events'], $events)))],
+                    ));
+                }
                 return ['id' => $existing['id'], 'secret' => null, 'created' => false];
             }
         }

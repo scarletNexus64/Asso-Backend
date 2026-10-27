@@ -1012,6 +1012,7 @@
         "insufficient_stock": "Stock insuffisant pour ':product'. Disponible: :available",
         "product_conversion_unavailable_retry": "Conversion :currency → XAF indisponible pour ':product'. Réessayez plus tard.",
         "wholesale_unavailable": "Le produit ':product' n'est pas disponible en gros.",
+        "quote_required": "ASSO doit confirmer le prix final et la disponibilité de ':product' avant votre commande.",
         "wholesale_price_missing": "Le produit ':product' n'a pas encore de prix de gros.",
         "wholesale_minimum_not_reached": "Quantité minimale non atteinte pour ':product' : minimum :minimum.",
         "product_conversion_unavailable": "Conversion :currency → XAF indisponible pour ':product'.",

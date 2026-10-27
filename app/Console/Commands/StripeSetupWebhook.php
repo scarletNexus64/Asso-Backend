@@ -96,7 +96,7 @@ class StripeSetupWebhook extends Command
             $result = $stripe->ensureWebhookEndpoint($url, $events, $connect);
 
             if (!$result['created']) {
-                $this->line("• Endpoint {$label} déjà déclaré ({$result['id']}) — secret inchangé.");
+                $this->line("• Endpoint {$label} configuré ({$result['id']}) — événements vérifiés, secret inchangé.");
                 continue;
             }
 

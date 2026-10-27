@@ -1,0 +1,926 @@
+{
+  "batch": "sourcing-2026-10-27",
+  "consulted_at": "2026-10-27T01:15:38+00:00",
+  "price_policy": "Source prices converted using the ASSO exchange service, rounded upward to 50 XAF. Indicative procurement prices, excluding logistics and taxes; no invented wholesale discounts. Stock remains zero pending commercial confirmation.",
+  "products": [
+    {
+      "key": "bottle2",
+      "source": {
+        "platform": "Alibaba",
+        "id": "1600676954819",
+        "url": "https://turkiye.alibaba.com/product-detail/wholesale-350ml-500ml-Wide-Mouth-Stainless_1600676954819.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "Yiwu Qipeng Daily Necessities Co., Ltd.",
+        "supplier_country": "CN",
+        "declared_origin": "Zhejiang, China",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Gourde isotherme inox 350/500 ml avec anse — Gros Chine",
+        "origin_country": "CN",
+        "category_id": 3,
+        "subcategory_id": 17,
+        "description": "Une gourde à double paroi pour les boissons du quotidien, avec couvercle à anse et format facile à transporter. Une référence pour les boutiques de maison, de sport et les cadeaux d’entreprise.",
+        "characteristics": "Matière : acier inoxydable 304 indiqué par le fournisseur.\nContenances proposées : 350 ml et 500 ml, à préciser avant commande.\nFormat 500 ml : environ 7,8 × 25 cm.\nColoris visibles : rouge, noir, gris, blanc et bleu, selon disponibilité fournisseur.\nPoids logistique communiqué : 0,65 kg par pièce emballée.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 50 pièce(s) : 1 550 FCFA par pièce.\n• Dès 500 pièce(s) : 1 400 FCFA par pièce.\n• Dès 1 000 pièce(s) : 1 300 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/wholesale-350ml-500ml-Wide-Mouth-Stainless_1600676954819.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 1550,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 50,
+        "stock": 0,
+        "weight": 0.65,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-1600676954819",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 50 pièce(s)",
+          "unit_price": 1550,
+          "currency": "XAF",
+          "min_quantity": 50,
+          "pack_size": 1,
+          "weight_kg": 0.65,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 2.6
+        },
+        {
+          "label": "À partir de 500 pièce(s)",
+          "unit_price": 1400,
+          "currency": "XAF",
+          "min_quantity": 500,
+          "pack_size": 1,
+          "weight_kg": 0.65,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 2.35
+        },
+        {
+          "label": "À partir de 1 000 pièce(s)",
+          "unit_price": 1300,
+          "currency": "XAF",
+          "min_quantity": 1000,
+          "pack_size": 1,
+          "weight_kg": 0.65,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 2.2
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-1600676954819-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/Hb58fcc22072743b4a73910150b78a06cq.jpg",
+          "width": 800,
+          "height": 800,
+          "sha256": "87194996922be2bc3c9fe95e0cffc356b04433f6c2ee204f2418bc9452f4d0e9"
+        },
+        {
+          "file": "alibaba-1600676954819-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/H8b729574f49a4da0933f5f025c95efcau.jpg",
+          "width": 1200,
+          "height": 1200,
+          "sha256": "7f9e16bfa3abc6d9071590189fb250568cdce410810d19df84f326dfb381aeac"
+        },
+        {
+          "file": "alibaba-1600676954819-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/H7e0b0e704a9f48fdacf634fcaf468cc3l.jpg",
+          "width": 800,
+          "height": 800,
+          "sha256": "30308a07e3719e999b2a957b4ff3dee38811664f15eb8505ae5ef3dff2de7d37"
+        }
+      ]
+    },
+    {
+      "key": "bottle3",
+      "source": {
+        "platform": "Alibaba",
+        "id": "1601011980715",
+        "url": "https://turkiye.alibaba.com/product-detail/Custom-Logo-500ml-Sublimation-Blank-Double_1601011980715.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "Shenzhen Kobes Silicone Products Co., Ltd.",
+        "supplier_country": "CN",
+        "declared_origin": "Guangdong, China",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Thermos inox 500 ml format droit — Gros Chine",
+        "origin_country": "CN",
+        "category_id": 3,
+        "subcategory_id": 17,
+        "description": "Un thermos de 500 ml au format droit, proposé dans plusieurs coloris. Sa double paroi et son bouchon vissé conviennent aux usages au bureau, en déplacement et aux assortiments de cadeaux.",
+        "characteristics": "Matière : acier inoxydable 304 indiqué par le fournisseur.\nContenance : 500 ml.\nConstruction : double paroi ; bouchon vissé.\nColoris : assortiment présenté dans les photos, à confirmer avant commande.\nPoids net indiqué : 320 g ; poids logistique communiqué : 0,40 kg par pièce.\nPersonnalisation du logo : possible sur devis, non comprise dans le prix.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 2 pièce(s) : 1 450 FCFA par pièce.\n• Dès 100 pièce(s) : 1 350 FCFA par pièce.\n• Dès 1 000 pièce(s) : 1 000 FCFA par pièce.\n• Dès 10 000 pièce(s) : 800 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/Custom-Logo-500ml-Sublimation-Blank-Double_1601011980715.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 1450,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 2,
+        "stock": 0,
+        "weight": 0.4,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-1601011980715",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 2 pièce(s)",
+          "unit_price": 1450,
+          "currency": "XAF",
+          "min_quantity": 2,
+          "pack_size": 1,
+          "weight_kg": 0.4,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 2.4
+        },
+        {
+          "label": "À partir de 100 pièce(s)",
+          "unit_price": 1350,
+          "currency": "XAF",
+          "min_quantity": 100,
+          "pack_size": 1,
+          "weight_kg": 0.4,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 2.3
+        },
+        {
+          "label": "À partir de 1 000 pièce(s)",
+          "unit_price": 1000,
+          "currency": "XAF",
+          "min_quantity": 1000,
+          "pack_size": 1,
+          "weight_kg": 0.4,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 1.68
+        },
+        {
+          "label": "À partir de 10 000 pièce(s)",
+          "unit_price": 800,
+          "currency": "XAF",
+          "min_quantity": 10000,
+          "pack_size": 1,
+          "weight_kg": 0.4,
+          "sort_order": 4,
+          "is_active": true,
+          "source_price": 1.28
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-1601011980715-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/Hdb3637cb18e742bba66e1b495acceabc0.jpg",
+          "width": 720,
+          "height": 720,
+          "sha256": "0b8debccfa62742916f67b832fe4b1568ae380b96729f87e5fc1eddc06a4fd34"
+        },
+        {
+          "file": "alibaba-1601011980715-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/He9be05df93374f23b0f636f8e5debca8t.jpg",
+          "width": 960,
+          "height": 960,
+          "sha256": "9d810e599787f991ae86cf2c6da636731260f71f0c450a1cc53226fe41cc780b"
+        },
+        {
+          "file": "alibaba-1601011980715-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/Hab781bfc35104e84bad4048046318f32u.jpg",
+          "width": 960,
+          "height": 960,
+          "sha256": "b56a9e58996a44153f373a84d43eb04cdde330f11ddfaa7814db49bcc532c614"
+        }
+      ]
+    },
+    {
+      "key": "bag",
+      "source": {
+        "platform": "Alibaba",
+        "id": "1600551738319",
+        "url": "https://turkiye.alibaba.com/product-detail/Wholesale-or-300pcs-Custom-LOGO-Large_1600551738319.html",
+        "currency": "USD",
+        "price_type": "wholesale_upper_bound",
+        "supplier": "Yiwu Spring-Bag Co., Ltd.",
+        "supplier_country": "CN",
+        "declared_origin": "Zhejiang, China",
+        "unit": "piece",
+        "batch_size": 2,
+        "price_range": {
+          "dollarPriceRangeHigh": 3.5,
+          "dollarPriceRangeLow": 2.75,
+          "priceRangeHigh": 2.65,
+          "priceRangeLow": 2.08,
+          "priceRangeText": "£2.08-2.65"
+        },
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Trousse de toilette grand format en PU — Gros Chine",
+        "origin_country": "CN",
+        "category_id": 30,
+        "subcategory_id": 171,
+        "description": "Une trousse de toilette zippée à large ouverture pour organiser maquillage et petits accessoires de voyage. Le modèle W6627 se décline en plusieurs coloris et finitions.",
+        "characteristics": "Modèle fournisseur : W6627.\nMatière principale annoncée : PU (similicuir).\nDimensions annoncées : 23,5 × 12 × 11,5 cm ; à confirmer pour la finition choisie.\nFermeture : zip ; poignée de transport.\nConditionnement fournisseur : multiples de 2 pièces.\nPoids logistique : 0,50 kg par lot de 2, soit environ 0,25 kg par pièce.\nColoris et finition à préciser avant validation.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 10 pièce(s) : 2 100 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nBase indicative : borne haute de l’offre fournisseur (3,50 USD/pièce). Le prix dépend du coloris et de la finition. Commandes par multiples de 2 ; minimum 10 pièces.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/Wholesale-or-300pcs-Custom-LOGO-Large_1600551738319.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 2100,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 10,
+        "stock": 0,
+        "weight": 0.25,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-1600551738319",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 10 pièce(s)",
+          "unit_price": 2100,
+          "currency": "XAF",
+          "min_quantity": 10,
+          "pack_size": 1,
+          "weight_kg": 0.25,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 3.5
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-1600551738319-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/H61c48658204c4a3f8b823b5ed56f5891D.jpg",
+          "width": 800,
+          "height": 800,
+          "sha256": "c65d967c74ae43e77ef5371e3e533fb18305e8b57aebe1ebffa03fc2e5273dc8"
+        },
+        {
+          "file": "alibaba-1600551738319-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/Hda425d17e8f0413c831d266cfacc15c6N.jpg",
+          "width": 1500,
+          "height": 1390,
+          "sha256": "489f20c03c31bc7d6e9b184ac0a6d24603376f7377be9c518efc5a7addbe094a"
+        },
+        {
+          "file": "alibaba-1600551738319-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/H1bcf02490f564dd6825de913287e73bay.jpg",
+          "width": 800,
+          "height": 800,
+          "sha256": "25f0e8bc412a6399dae376dc1747492e8217f5f3989e5265cdf410d98333f10b"
+        }
+      ]
+    },
+    {
+      "key": "organizer",
+      "source": {
+        "platform": "Alibaba",
+        "id": "60194199365",
+        "url": "https://turkiye.alibaba.com/product-detail/High-quality-multifunction-waterproof-travel-wash_60194199365.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "Yiwu Runhui Bag Co., Ltd.",
+        "supplier_country": "CN",
+        "declared_origin": "Zhejiang, China",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Organisateur de toilette suspendu RH203 — Gros Chine",
+        "origin_country": "CN",
+        "category_id": 30,
+        "subcategory_id": 172,
+        "description": "Une trousse de voyage à suspendre, avec crochet et compartiments pour les accessoires de toilette. Le modèle RH203 convient à la revente en bagagerie et aux opérations en volume.",
+        "characteristics": "Modèle fournisseur : RH203.\nMatière : polyester.\nDimensions du modèle : 22 × 17 × 9 cm.\nFermeture : zip ; poignée et crochet de suspension.\nColoris : selon disponibilité fournisseur.\nPoids logistique communiqué : 0,30 kg par pièce.\nTarif usine pour grandes quantités ; minimum de 5 000 pièces.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 5 000 pièce(s) : 900 FCFA par pièce.\n• Dès 8 000 pièce(s) : 900 FCFA par pièce.\n• Dès 10 000 pièce(s) : 800 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/High-quality-multifunction-waterproof-travel-wash_60194199365.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 900,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 5000,
+        "stock": 0,
+        "weight": 0.3,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-60194199365",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 5 000 pièce(s)",
+          "unit_price": 900,
+          "currency": "XAF",
+          "min_quantity": 5000,
+          "pack_size": 1,
+          "weight_kg": 0.3,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 1.51
+        },
+        {
+          "label": "À partir de 8 000 pièce(s)",
+          "unit_price": 900,
+          "currency": "XAF",
+          "min_quantity": 8000,
+          "pack_size": 1,
+          "weight_kg": 0.3,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 1.49
+        },
+        {
+          "label": "À partir de 10 000 pièce(s)",
+          "unit_price": 800,
+          "currency": "XAF",
+          "min_quantity": 10000,
+          "pack_size": 1,
+          "weight_kg": 0.3,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 1.29
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-60194199365-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/HTB1hJAnmrYI8KJjy0Faq6zAiVXal.jpg",
+          "width": 750,
+          "height": 705,
+          "sha256": "01fc09863e63eabf8d80522027561612e9e4e295239ed76bfaf8f5be6b4af2e7"
+        },
+        {
+          "file": "alibaba-60194199365-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/H6396810626514b1bb2c93a57dd41dfccb.jpg",
+          "width": 748,
+          "height": 1016,
+          "sha256": "349c0695193e4a50a95622a9df6a45df3718b15354fd0a78349b103c65ddbd2a"
+        }
+      ]
+    },
+    {
+      "key": "robe",
+      "source": {
+        "platform": "Alibaba",
+        "id": "148754867",
+        "url": "https://turkiye.alibaba.com/product-detail/Custom-Logo-Turkish-Cotton-Luxury-Bathrobes_148754867.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "MODAM DIS TICARET TEKSTIL SANAYI LIMITED SIRKETI",
+        "supplier_country": "TR",
+        "declared_origin": "Denizli, Turkey",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Peignoir unisexe à capuche en coton — Gros Turquie",
+        "origin_country": "TR",
+        "category_id": 3,
+        "subcategory_id": 18,
+        "description": "Un peignoir à capuche en coton, avec ceinture et poches, pour les boutiques de linge de maison, les spas et l’hôtellerie. Le modèle présenté est bleu clair et fabriqué à Denizli en Turquie selon la fiche fournisseur.",
+        "characteristics": "Matière annoncée : 100 % coton.\nOrigine déclarée par le fournisseur : Denizli, Turquie.\nModèle : BOR-CEP-BABYBLUE.\nCoupe : unisexe, manches longues, capuche, ceinture et poches.\nTailles fournisseur : S/M et L/XL, à confirmer avant commande.\nPoids net communiqué : 520 g ; poids emballé à confirmer.\nLogo et emballage personnalisés : sur devis séparé.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 20 pièce(s) : 12 850 FCFA par pièce.\n• Dès 100 pièce(s) : 10 300 FCFA par pièce.\n• Dès 1 000 pièce(s) : 9 250 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/Custom-Logo-Turkish-Cotton-Luxury-Bathrobes_148754867.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 12850,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 20,
+        "stock": 0,
+        "weight": 0.52,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-148754867",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 20 pièce(s)",
+          "unit_price": 12850,
+          "currency": "XAF",
+          "min_quantity": 20,
+          "pack_size": 1,
+          "weight_kg": 0.52,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 21.88
+        },
+        {
+          "label": "À partir de 100 pièce(s)",
+          "unit_price": 10300,
+          "currency": "XAF",
+          "min_quantity": 100,
+          "pack_size": 1,
+          "weight_kg": 0.52,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 17.5
+        },
+        {
+          "label": "À partir de 1 000 pièce(s)",
+          "unit_price": 9250,
+          "currency": "XAF",
+          "min_quantity": 1000,
+          "pack_size": 1,
+          "weight_kg": 0.52,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 15.75
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-148754867-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/S51e186dbc8bf47c8affa21059362ae15E.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "ddb99c6c8737a2a695543be0f801a4fda1bef186c252d32e9a2ab953223e818e"
+        },
+        {
+          "file": "alibaba-148754867-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/S9d40e531034f4a968098ad937bbcb504Y.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "b002cc327fbacef99e29f48de072781bbf4f8427d506a5064d0f0a8db8fb0d01"
+        },
+        {
+          "file": "alibaba-148754867-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/S1fc3b70695a64f5db41ee716c3c51c79u.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "33e1258d58d3e7d162337ad634feb9c37059eb5099f979a2e0e9c24c3fe9a36c"
+        }
+      ]
+    },
+    {
+      "key": "beach",
+      "source": {
+        "platform": "Alibaba",
+        "id": "11000012788175",
+        "url": "https://turkiye.alibaba.com/product-detail/First-Quality-Authentic-Turkish-Beach-Towel_11000012788175.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "AYSELIZA IC VE DIS TICARET LIMITED SIRKETI",
+        "supplier_country": "TR",
+        "declared_origin": "Izmir, Turkey",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Fouta peshtemal Alea en coton — Gros Turquie",
+        "origin_country": "TR",
+        "category_id": 3,
+        "subcategory_id": 18,
+        "description": "Une fouta tissée en coton à rayures et franges, pour la plage, le hammam et le linge de maison. Le modèle Alea est proposé par Ayseliza avec une origine déclarée à Izmir, en Turquie.",
+        "characteristics": "Matière annoncée : coton.\nOrigine déclarée : Izmir, Turquie.\nMarque et modèle : Ayseliza, Alea.\nFinition : tissage à rayures, franges aux extrémités.\nDimensions : à confirmer avec le fournisseur ; pas de taille standard garantie dans la fiche.\nColoris présentés : beige avec bandes bleues/grises, selon sélection.\nPoids logistique communiqué : 0,80 kg par pièce.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 1 pièce(s) : 2 900 FCFA par pièce.\n• Dès 500 pièce(s) : 2 700 FCFA par pièce.\n• Dès 1 000 pièce(s) : 2 550 FCFA par pièce.\n• Dès 5 000 pièce(s) : 2 450 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/First-Quality-Authentic-Turkish-Beach-Towel_11000012788175.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 2900,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 1,
+        "stock": 0,
+        "weight": 0.8,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-11000012788175",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 1 pièce(s)",
+          "unit_price": 2900,
+          "currency": "XAF",
+          "min_quantity": 1,
+          "pack_size": 1,
+          "weight_kg": 0.8,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 4.9
+        },
+        {
+          "label": "À partir de 500 pièce(s)",
+          "unit_price": 2700,
+          "currency": "XAF",
+          "min_quantity": 500,
+          "pack_size": 1,
+          "weight_kg": 0.8,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 4.6
+        },
+        {
+          "label": "À partir de 1 000 pièce(s)",
+          "unit_price": 2550,
+          "currency": "XAF",
+          "min_quantity": 1000,
+          "pack_size": 1,
+          "weight_kg": 0.8,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 4.3
+        },
+        {
+          "label": "À partir de 5 000 pièce(s)",
+          "unit_price": 2450,
+          "currency": "XAF",
+          "min_quantity": 5000,
+          "pack_size": 1,
+          "weight_kg": 0.8,
+          "sort_order": 4,
+          "is_active": true,
+          "source_price": 4.1
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-11000012788175-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/A59deda6d49ea413b999085a163b10ff7k.jpg",
+          "width": 1224,
+          "height": 1224,
+          "sha256": "051da5e88fe5848926390924a7c6371f93bab2df28cf17149ae3693b8ac50fe6"
+        },
+        {
+          "file": "alibaba-11000012788175-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/A1334db2e9f8f414cb46aea7e762172959.jpg",
+          "width": 1220,
+          "height": 1220,
+          "sha256": "12c5bbac6095b499b8038aaf38cc9e413a873d55277e45b9a0585f99ffd5243f"
+        },
+        {
+          "file": "alibaba-11000012788175-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/A2101a12883ea4cbf91fa1f10144825b4E.jpg",
+          "width": 1215,
+          "height": 1216,
+          "sha256": "c04542f5a0e7f5096e05ebc98f3367f05ecbc0f99a7a4d9a6cfbb1245df6e5a6"
+        }
+      ]
+    },
+    {
+      "key": "kitchen",
+      "source": {
+        "platform": "Alibaba",
+        "id": "10000018486448",
+        "url": "https://turkiye.alibaba.com/product-detail/Pure-Series-Turkish-Hand-and-Face_10000018486448.html",
+        "currency": "USD",
+        "price_type": "wholesale",
+        "supplier": "MODAM DIS TICARET TEKSTIL SANAYI LIMITED SIRKETI",
+        "supplier_country": "TR",
+        "declared_origin": "Denizli, Turkey",
+        "unit": "piece",
+        "batch_size": 1,
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 586.3872
+      },
+      "product": {
+        "name": "Serviette peskir coton 60 × 90 cm — Gros Turquie",
+        "origin_country": "TR",
+        "category_id": 3,
+        "subcategory_id": 18,
+        "description": "Une serviette peskir en coton tissé, au coloris gris-bleu avec rayures et franges. Son format 60 × 90 cm convient au linge de cuisine et aux serviettes pour les mains.",
+        "characteristics": "Matière annoncée : 100 % coton.\nOrigine déclarée : Denizli, Turquie.\nModèle : PES-PESKIR-GREYBLUE.\nDimensions : 60 × 90 cm.\nColoris : gris-bleu.\nFinition : coton tissé, rayures et franges.\nPoids net communiqué : 110 g ; poids emballé à confirmer.\nPersonnalisation possible à partir de 100 pièces, sur devis.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 20 pièce(s) : 2 400 FCFA par pièce.\n• Dès 100 pièce(s) : 1 950 FCFA par pièce.\n• Dès 1 000 pièce(s) : 1 750 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nSource consultée le 27/10/2026 : https://turkiye.alibaba.com/product-detail/Pure-Series-Turkish-Hand-and-Face_10000018486448.html\nConversion de référence : 1 USD = 586.3872 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 2400,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 20,
+        "stock": 0,
+        "weight": 0.11,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-alibaba-10000018486448",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "À partir de 20 pièce(s)",
+          "unit_price": 2400,
+          "currency": "XAF",
+          "min_quantity": 20,
+          "pack_size": 1,
+          "weight_kg": 0.11,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 4.06
+        },
+        {
+          "label": "À partir de 100 pièce(s)",
+          "unit_price": 1950,
+          "currency": "XAF",
+          "min_quantity": 100,
+          "pack_size": 1,
+          "weight_kg": 0.11,
+          "sort_order": 2,
+          "is_active": true,
+          "source_price": 3.25
+        },
+        {
+          "label": "À partir de 1 000 pièce(s)",
+          "unit_price": 1750,
+          "currency": "XAF",
+          "min_quantity": 1000,
+          "pack_size": 1,
+          "weight_kg": 0.11,
+          "sort_order": 3,
+          "is_active": true,
+          "source_price": 2.93
+        }
+      ],
+      "images": [
+        {
+          "file": "alibaba-10000018486448-1.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/A849af3452d7a476fbc7e8d77fefa404cP.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "8171a6893fb9bd7ef3499a209fe28ba1fa68a4c9c6c39f3c509c6a3be4ce23b3"
+        },
+        {
+          "file": "alibaba-10000018486448-2.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/A959cfe79a7f34499b603fa20a5494bf2q.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "983b9d6b08d9a9d281d15969efeb479a174656d999635afafa34f4b57c8ea4fb"
+        },
+        {
+          "file": "alibaba-10000018486448-3.jpg",
+          "source_url": "https://sc04.alicdn.com/kf/Ac350847b55ce4e49822f0fcb222df09b4.jpg",
+          "width": 1024,
+          "height": 1024,
+          "sha256": "ae6723dbd5c29f11c5421cd75e72c4f81d9c0f9a54ac691a45d5b5e869888e01"
+        }
+      ]
+    },
+    {
+      "key": "yara",
+      "source": {
+        "platform": "Amazon.ae",
+        "id": "B09C8VNWBP",
+        "url": "https://www.amazon.ae/dp/B09C8VNWBP",
+        "currency": "AED",
+        "price_type": "retail_reference",
+        "price": 61,
+        "origin_evidence": "https://lattafa.com/about-us/",
+        "origin_note": "Marque émiratie, fabrication interne décrite par la marque ; classement filière import AE, pas de revendication de fabrication dans la ville de Dubaï.",
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 159.6698
+      },
+      "product": {
+        "name": "Parfum Lattafa Yara 100 ml — Import Dubaï",
+        "origin_country": "AE",
+        "category_id": 5,
+        "subcategory_id": 31,
+        "description": "Yara de Lattafa est une eau de parfum féminine de 100 ml, présentée dans son flacon rose. Cette référence de parfumerie émiratie complète la sélection import Dubaï d’ASSO.",
+        "characteristics": "Marque : Lattafa.\nRéférence : Yara (flacon rose), sans confusion avec Yara Moi ou Yara Tous.\nConcentration : eau de parfum.\nContenance : 100 ml.\nPrésentation : flacon vaporisateur avec boîte, selon l’offre retenue.\nFamille indiquée sur la fiche : vanillée.\nFilière d’approvisionnement : Émirats arabes unis, sélection Import Dubaï.\nPoids logistique estimatif : 0,50 kg ; à confirmer avant expédition.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 1 pièce(s) : 9 750 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nLe prix de repérage provient d’une offre Amazon au détail ; aucun tarif ni remise de gros n’est confirmé.\nSource consultée le 27/10/2026 : https://www.amazon.ae/dp/B09C8VNWBP\nConversion de référence : 1 AED = 159.6698 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 9750,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 1,
+        "stock": 0,
+        "weight": 0.5,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-amazon-B09C8VNWBP",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "Référence unitaire — tarif de gros à confirmer",
+          "unit_price": 9750,
+          "currency": "XAF",
+          "min_quantity": 1,
+          "pack_size": 1,
+          "weight_kg": 0.5,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 61
+        }
+      ],
+      "images": [
+        {
+          "file": "amazon-B09C8VNWBP-1.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/61QFvUF8ylL._AC_SL1500_.jpg",
+          "width": 638,
+          "height": 1500,
+          "sha256": "235457a3af7b1a9d41720841dddddfcc371059e486e7cb6e9b303e0381990127"
+        },
+        {
+          "file": "amazon-B09C8VNWBP-2.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/71tE0mQE1tL._AC_SL1500_.jpg",
+          "width": 1477,
+          "height": 1500,
+          "sha256": "84d89ec0032f50bdce00a1b6dd50c5436e1b1a9903e01e84ff84e014389421cc"
+        },
+        {
+          "file": "amazon-B09C8VNWBP-3.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/61bvtVtuxLL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 1500,
+          "sha256": "fc598b858f6d761ee2c450f30f4325f9adc60ed2c4f72530618d697dde6ccb0a"
+        }
+      ]
+    },
+    {
+      "key": "khamrah",
+      "source": {
+        "platform": "Amazon.ae",
+        "id": "B0B92Y18GT",
+        "url": "https://www.amazon.ae/dp/B0B92Y18GT",
+        "currency": "AED",
+        "price_type": "retail_reference",
+        "price": 84.78,
+        "origin_evidence": "https://lattafa.com/about-us/",
+        "origin_note": "Marque émiratie, fabrication interne décrite par la marque ; classement filière import AE, pas de revendication de fabrication dans la ville de Dubaï.",
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 159.6698
+      },
+      "product": {
+        "name": "Parfum Lattafa Khamrah 100 ml — Import Dubaï",
+        "origin_country": "AE",
+        "category_id": 5,
+        "subcategory_id": 31,
+        "description": "Khamrah de Lattafa est une eau de parfum mixte en flacon de 100 ml, avec une présentation facettée et un étui. Cette référence complète les parfums de la sélection import Dubaï.",
+        "characteristics": "Marque : Lattafa.\nRéférence : Khamrah, version originale (hors Khamrah Qahwa).\nConcentration : eau de parfum.\nContenance : 100 ml.\nPublic : mixte.\nFamille indiquée : orientale, boisée et vanillée.\nFilière d’approvisionnement : Émirats arabes unis, sélection Import Dubaï.\nPoids logistique estimatif : 0,65 kg ; à confirmer avant expédition.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 1 pièce(s) : 13 550 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nLe prix de repérage provient d’une offre Amazon au détail ; aucun tarif ni remise de gros n’est confirmé.\nSource consultée le 27/10/2026 : https://www.amazon.ae/dp/B0B92Y18GT\nConversion de référence : 1 AED = 159.6698 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 13550,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 1,
+        "stock": 0,
+        "weight": 0.65,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-amazon-B0B92Y18GT",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "Référence unitaire — tarif de gros à confirmer",
+          "unit_price": 13550,
+          "currency": "XAF",
+          "min_quantity": 1,
+          "pack_size": 1,
+          "weight_kg": 0.65,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 84.78
+        }
+      ],
+      "images": [
+        {
+          "file": "amazon-B0B92Y18GT-1.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/812VtJAFfHL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 1445,
+          "sha256": "b03cbfa1e8008d2ea8612a3fe084c1371dfe26a62a0e48fb5eef3ec566c9574e"
+        },
+        {
+          "file": "amazon-B0B92Y18GT-2.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/710CwatteaL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 1500,
+          "sha256": "980f809a43175705517d48a53900da39dbe7e4be42fb5bfea1d0fa76d86eb481"
+        },
+        {
+          "file": "amazon-B0B92Y18GT-3.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/71ZLipCchqL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 1500,
+          "sha256": "c4d3bd229dd4c9a709fcf171b7d7fefb22163f6c0e72bf947b994fc35d39d86c"
+        }
+      ]
+    },
+    {
+      "key": "oud",
+      "source": {
+        "platform": "Amazon.ae",
+        "id": "B01MSXP4OG",
+        "url": "https://www.amazon.ae/dp/B01MSXP4OG",
+        "currency": "AED",
+        "price_type": "retail_reference",
+        "price": 42,
+        "origin_evidence": "https://lattafa.com/about-us/",
+        "origin_note": "Marque émiratie, fabrication interne décrite par la marque ; classement filière import AE, pas de revendication de fabrication dans la ville de Dubaï.",
+        "consulted_at": "2026-10-27T01:15:38+00:00",
+        "exchange_rate_xaf": 159.6698
+      },
+      "product": {
+        "name": "Coffret Lattafa Ameer Al Oudh 100 ml + 50 ml — Import Dubaï",
+        "origin_country": "AE",
+        "category_id": 5,
+        "subcategory_id": 31,
+        "description": "Un coffret Lattafa Ameer Al Oudh associant une eau de parfum et un déodorant parfumé. Une présentation adaptée à la parfumerie et aux cadeaux dans la sélection import Dubaï.",
+        "characteristics": "Marque : Lattafa.\nRéférence : Ameer Al Oudh (hors version Intense Oud).\nContenu présenté sur la fiche : eau de parfum 100 ml et déodorant 50 ml.\nVolume cumulé : 150 ml ; le flacon de parfum seul contient 100 ml.\nPublic : mixte.\nNotes annoncées par le vendeur : oud, notes boisées, vanille, sucre et labdanum.\nFilière d’approvisionnement : Émirats arabes unis, sélection Import Dubaï.\nPoids logistique estimatif : 0,65 kg ; à confirmer avant expédition.",
+        "commercial_information": "Prix indicatifs par pièce, hors transport international, droits et taxes, puis livraison locale.\n• Dès 1 pièce(s) : 6 750 FCFA par pièce.\nDisponibilité fournisseur et coût final à confirmer par ASSO avant mise en vente. Stock ASSO non confirmé : aucune quantité disponible à la commande.\nLe prix de repérage provient d’une offre Amazon au détail ; aucun tarif ni remise de gros n’est confirmé.\nSource consultée le 27/10/2026 : https://www.amazon.ae/dp/B01MSXP4OG\nConversion de référence : 1 AED = 159.6698 XAF ; arrondi au multiple de 50 FCFA supérieur.",
+        "price": 6750,
+        "currency": "XAF",
+        "price_type": "fixed",
+        "type": "article",
+        "is_wholesale": true,
+        "is_local_made": false,
+        "min_order_quantity": 1,
+        "stock": 0,
+        "weight": 0.65,
+        "weight_category": "X-small",
+        "status": "active",
+        "tier_mix_variants": false,
+        "sizes": [],
+        "client_reference": "sourced-amazon-B01MSXP4OG",
+        "requires_quote": true
+      },
+      "tiers": [
+        {
+          "label": "Référence unitaire — tarif de gros à confirmer",
+          "unit_price": 6750,
+          "currency": "XAF",
+          "min_quantity": 1,
+          "pack_size": 1,
+          "weight_kg": 0.65,
+          "sort_order": 1,
+          "is_active": true,
+          "source_price": 42
+        }
+      ],
+      "images": [
+        {
+          "file": "amazon-B01MSXP4OG-1.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/61gBdyA8DSL._AC_SL1432_.jpg",
+          "width": 923,
+          "height": 1395,
+          "sha256": "12f79bf6c64d645254fd457f2030d16e65f069192362c23260384214e7f76d36"
+        },
+        {
+          "file": "amazon-B01MSXP4OG-2.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/71vbTPHOClL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 993,
+          "sha256": "43ecb78935e9659242bc87fcab2fdd0db2eb2c5378401a1d68b10f7f9dbfbf7c"
+        },
+        {
+          "file": "amazon-B01MSXP4OG-3.jpg",
+          "source_url": "https://m.media-amazon.com/images/I/71zvZHwJ5JL._AC_SL1500_.jpg",
+          "width": 1500,
+          "height": 878,
+          "sha256": "aa480e07c72c529359a28fa087b84eba0acc345aa639828a5b1be9acbed7b3f5"
+        }
+      ]
+    }
+  ],
+  "publication_policy": "Visible catalogue reference, with requires_quote=true. ASSO must confirm final price and availability before an order can be paid."
+}

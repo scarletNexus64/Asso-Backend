@@ -106,6 +106,9 @@ class OrderService
                 if (! in_array($product->status, ['published', 'active'])) {
                     throw new \Exception(__('orders.product_unavailable', ['product' => $product->name]));
                 }
+                if ($product->requires_quote) {
+                    throw new \Exception(__('orders.quote_required', ['product' => $product->name]));
+                }
 
                 $variant = null;
                 if (! empty($item['variant_id'])) {
@@ -458,6 +461,9 @@ class OrderService
                 $orderedProducts[] = $product;
                 if (! $product->is_wholesale || $product->status !== 'active') {
                     throw new \Exception(__('orders.wholesale_unavailable', ['product' => $product->name]));
+                }
+                if ($product->requires_quote) {
+                    throw new \Exception(__('orders.quote_required', ['product' => $product->name]));
                 }
 
                 $tiers = ProductPriceTier::where('product_id', $product->id)->where('is_active', true)->get();

@@ -38,5 +38,9 @@ Thumbs.db
 !/storage/logs/.gitkeep
 /storage/app/private/firebase/service-account.json
 
+# Python maintenance scripts
+__pycache__/
+*.py[cod]
+
 # Notes / SQL ElgioPay contenant des clés live : ne jamais committer
 /elgiopay

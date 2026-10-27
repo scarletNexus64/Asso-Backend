@@ -144,6 +144,7 @@ class ProductController extends Controller
             'sizes.*' => 'string|in:'.implode(',', Product::AVAILABLE_SIZES),
             'stock' => 'required|integer|min:0',
             'status' => 'required|in:active,inactive',
+            'requires_quote' => 'sometimes|boolean',
             'images' => 'nullable|array|max:15',
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
 
@@ -310,6 +311,7 @@ class ProductController extends Controller
             'sizes.*' => 'string|in:'.implode(',', Product::AVAILABLE_SIZES),
             'stock' => 'required|integer|min:0',
             'status' => 'required|in:active,inactive',
+            'requires_quote' => 'sometimes|boolean',
             'images' => 'nullable|array|max:15',
             'images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
 

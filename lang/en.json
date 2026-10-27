@@ -1,4 +1,5 @@
 {
+  "Prix et disponibilité à confirmer": "Price and availability pending confirmation",
   "transport": {"destination_country_mismatch": "The recipient country must match the destination hub country."},
   "landlord_upload": {
     "id_document_type": "Choose an ID card or passport.",
@@ -1012,6 +1013,7 @@
         "insufficient_stock": "Insufficient stock for ':product'. Available: :available",
         "product_conversion_unavailable_retry": "Conversion :currency → XAF unavailable for ':product'. Please try again later.",
         "wholesale_unavailable": "The product ':product' is not available wholesale.",
+        "quote_required": "ASSO must confirm the final price and availability of ':product' before you can order.",
         "wholesale_price_missing": "The product ':product' does not have a wholesale price yet.",
         "wholesale_minimum_not_reached": "Minimum quantity not reached for ':product': minimum :minimum.",
         "product_conversion_unavailable": "Conversion :currency → XAF unavailable for ':product'.",

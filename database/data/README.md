@@ -88,3 +88,75 @@ Scripts de collecte : `research_international_carrier_agencies.py` et
 Le lot embarqué comprend aussi les deux adresses européennes vérifiées individuellement ;
 les protections et limites des annuaires peuvent rendre une nouvelle collecte partielle.
 La seed ne contacte jamais les annuaires.
+
+## Catalogue import du 27 octobre 2026
+
+`wholesale-catalog-2026-10-27.json` contient 10 références complémentaires :
+4 Chine, 3 Turquie et 3 filière Dubaï/Émirats, avec 29 photos sélectionnées
+dans les galeries Alibaba et Amazon.ae. Les liens sources, prix d'origine,
+taux ASSO utilisés, paliers, dates et empreintes des photos sont conservés.
+Les produits Amazon portent un prix de détail de référence, sans remise de gros
+inventée. Les prix XAF sont indicatifs, arrondis au multiple de 50 supérieur,
+hors transport, droits et taxes ; le stock reste à zéro jusqu'à confirmation.
+Les fiches sont visibles avec `requires_quote=true` : ASSO confirme le prix final
+et l'approvisionnement avant paiement. Le contrôle est appliqué aux commandes
+locales et aux commandes en gros, car un stock à zéro ne bloque pas le gros.
+Les poids estimatifs et les poids nets sans emballage sont signalés dans les fiches.
+
+Prévisualisation puis application, uniquement avec les images déjà vérifiées
+présentes dans `storage/app/private/catalog-imports/sourcing-2026-10-27/images/` :
+
+```sh
+php scripts/import_sourced_wholesale_catalog.php
+php scripts/import_sourced_wholesale_catalog.php --apply
+```
+
+Le script ne télécharge rien et ne modifie aucune fiche existante. Une référence
+stable par annonce source empêche les doublons lors des relances. Chaque application
+sauvegarde les tables du catalogue dans l'archive privée et compare chaque ligne
+préexistante avant validation de la transaction. Les fiches créées appartiennent à
+l'entrepôt ASSO configuré ; les photos sont copiées localement sans écrasement.
+L'archive privée conserve aussi les pages sources et les rapports de vérification.
+
+Le lot complet comporte **3 000 références, 1 000 par pays**, dont les dix du
+premier lot, avec **8 749 photos** et **6 746 paliers de prix**. Les 401 produits
+présents avant cette opération sont conservés. Les fiches possèdent une catégorie
+ASSO, une sous-catégorie lorsque le classement le permet, une description et les
+caractéristiques déclarées par le fournisseur. La hiérarchie de catégorie réelle
+du fournisseur est conservée et utilisée pour classer 2 989 des 2 990 références
+du second lot ; la référence restante utilise les données de liste disponibles.
+Un âge, un poids, un conditionnement ou une disponibilité inconnus ne sont pas inventés.
+
+Les sources, images, manifestes par cent fiches, sauvegardes et contrôles sont dans
+`storage/app/private/catalog-imports/sourcing-3000-2026-10-27/`.
+L'index versionné `wholesale-catalog-3000-2026-10-27-index.json` identifie les sources.
+Collecte reprenable : `source_wholesale_catalog.py` ; préparation et classement :
+`build_sourced_wholesale_manifests.py` et `sourced_catalog_categories.py`.
+La sélection finale est figée dans l'archive pour empêcher l'ajout de variantes
+artificielles lors d'une relance. Application d'un manifeste déjà vérifié :
+
+```sh
+php scripts/import_sourced_wholesale_catalog.php --manifest=/chemin/du/manifeste.json --apply
+php scripts/validate_sourced_wholesale_catalog.php
+python3 -m unittest discover -s scripts -p test_catalog_sourcing.py
+```
+
+API utilisée par le frontend :
+
+```text
+GET /api/v1/import/CN/products?page=1&per_page=20
+GET /api/v1/import/TR/products?page=1&per_page=20
+GET /api/v1/import/AE/products?page=1&per_page=20
+GET /api/v1/import/products/{id}
+```
+
+Les listes acceptent `category_id` et `subcategory_id`. Chaque fiche expose la
+catégorie, la sous-catégorie, `requires_quote`, `price_is_indicative` et le libellé
+de disponibilité. Le catalogue local et les routes locales récents/proximité
+conservent leur périmètre. Les données existantes d'import restent dans les listes :
+le contrôle en ligne compte donc 1 004 références Chine, 1 230 Turquie et 1 001 Dubaï.
+Les 67 pages ont été parcourues sans doublon, avec les 3 000 nouvelles références.
+
+Le gestionnaire peut confirmer une offre dans l'édition du produit, après mise à
+jour du prix et des informations d'approvisionnement, en décochant « Prix et
+disponibilité à confirmer ». Les autres produits ne changent pas de comportement.

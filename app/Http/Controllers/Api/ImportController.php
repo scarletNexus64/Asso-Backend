@@ -34,13 +34,19 @@ class ImportController extends Controller
      */
     public function products(Request $request, string $code)
     {
+        $request->validate([
+            'category_id' => 'nullable|integer|exists:categories,id',
+            'subcategory_id' => 'nullable|integer|exists:subcategories,id',
+        ]);
         $code = strtoupper($code);
         $targetCurrency = $this->targetCurrency($request);
         $country = ImportCountry::where('code', $code)->where('is_active', true)->firstOrFail();
 
         $query = $this->catalogQuery($request->input('q'))
             ->where('origin_country', $code)
-            ->with(['priceTiers', 'primaryImage', 'images', 'variants', 'video', 'shop'])
+            ->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))
+            ->when($request->filled('subcategory_id'), fn ($q) => $q->where('subcategory_id', $request->integer('subcategory_id')))
+            ->with(['priceTiers', 'primaryImage', 'images', 'variants', 'video', 'shop', 'category', 'subcategory'])
             // Ordre stable d'une page à l'autre, même pour des produits créés à la même seconde.
             ->latest()
             ->orderByDesc('id');
@@ -120,7 +126,7 @@ class ImportController extends Controller
         $product = Product::where('is_wholesale', true)
             ->where('status', 'active')
             ->whereHas('shop', fn ($query) => $query->where('status', 'active'))
-            ->with(['priceTiers', 'images', 'variants', 'video', 'shop'])
+            ->with(['priceTiers', 'images', 'variants', 'video', 'shop', 'category', 'subcategory'])
             ->findOrFail($id);
 
         return response()->json([
@@ -333,6 +339,13 @@ class ImportController extends Controller
             // Le poids est renseigné par l'équipe/le vendeur, jamais par le client.
             'unit_weight_kg' => $p->weightKg(),
             'stock' => $p->stock,
+            'requires_quote' => (bool) $p->requires_quote,
+            'price_is_indicative' => (bool) $p->requires_quote,
+            'availability_label' => $p->requires_quote ? __('Prix et disponibilité à confirmer') : null,
+            'category_id' => $p->category_id,
+            'subcategory_id' => $p->subcategory_id,
+            'category' => $p->category ? ['id' => $p->category->id, 'name' => $p->category->name] : null,
+            'subcategory' => $p->subcategory ? ['id' => $p->subcategory->id, 'name' => $p->subcategory->name] : null,
             // Livraison gratuite offerte par le vendeur : course SOLEX offerte.
             'free_delivery' => $p->hasFreeDelivery(),
             // Vente avec acompte (deposit_enabled, deposit_rate).
