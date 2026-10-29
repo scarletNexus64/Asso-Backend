@@ -61,8 +61,9 @@
 @endpush
 
 @section('content')
+@php $slugLocked = \App\Models\LegalPage::isRequiredSlug($legalPage->slug); @endphp
 <div class="max-w-4xl">
-    <form action="{{ route('admin.legal-pages.update', $legalPage) }}" method="POST">
+    <form action="{{ route('admin.legal-pages.update', $legalPage) }}" method="POST" enctype="multipart/form-data">
         @csrf
         @method('PUT')
 
@@ -82,16 +83,23 @@
                         </span>
                         <input type="text" name="slug" id="slug"
                                value="{{ old('slug', $legalPage->slug) }}"
-                               class="flex-1 px-4 py-2 bg-dark-50 border border-dark-300 rounded-r-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                               class="flex-1 px-4 py-2 bg-dark-50 border border-dark-300 rounded-r-lg text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent {{ $slugLocked ? 'opacity-60 cursor-not-allowed' : '' }}"
+                               @if($slugLocked) readonly @endif
                                required>
                     </div>
-                    <p class="mt-1 text-xs text-gray-400">URL unique pour accéder à cette page (ex: conditions-generales-utilisation)</p>
+                    @if($slugLocked)
+                        <p class="mt-1 text-xs text-amber-400"><i class="fas fa-lock mr-1"></i>Slug figé : l'application demande cette page pour l'acceptation obligatoire.</p>
+                    @else
+                        <p class="mt-1 text-xs text-gray-400">URL unique pour accéder à cette page (ex: conditions-generales-utilisation)</p>
+                    @endif
                     @error('slug')
                         <p class="mt-1 text-sm text-red-500">{{ $message }}</p>
                     @enderror
                 </div>
 
                 <!-- Content -->
+                @include('admin.legal-pages._document', ['documents' => $documents ?? []])
+
                 @include('admin.legal-pages._content', ['legalPage' => $legalPage])
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

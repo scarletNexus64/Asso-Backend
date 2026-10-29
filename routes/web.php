@@ -384,6 +384,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Legal Pages
         Route::resource('legal-pages', LegalPageController::class)->except(['show']);
         Route::patch('/legal-pages/{legalPage}/toggle', [LegalPageController::class, 'toggle'])->name('legal-pages.toggle');
+        Route::post('/legal-pages/{legalPage}/document', [LegalPageController::class, 'uploadDocument'])->name('legal-pages.document');
 
         // Banners
         Route::resource('banners', BannerController::class);

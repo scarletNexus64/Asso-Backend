@@ -62,7 +62,7 @@
 
 @section('content')
 <div class="max-w-4xl">
-    <form action="{{ route('admin.legal-pages.store') }}" method="POST">
+    <form action="{{ route('admin.legal-pages.store') }}" method="POST" enctype="multipart/form-data">
         @csrf
 
         <div class="bg-dark-100 rounded-lg shadow-sm border border-dark-200 p-6">
@@ -91,6 +91,8 @@
                 </div>
 
                 <!-- Content -->
+                @include('admin.legal-pages._document', ['documents' => []])
+
                 @include('admin.legal-pages._content', ['legalPage' => null])
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

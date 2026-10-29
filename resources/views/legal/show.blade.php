@@ -18,6 +18,7 @@
         .content h1, .content h2, .content h3 { line-height: 1.3; margin: 1.6em 0 .5em; }
         .content h2 { font-size: 1.25rem; }
         .content h3 { font-size: 1.1rem; }
+        .content h4 { font-size: 1rem; margin: 1.3em 0 .4em; }
         .content a, nav a { color: var(--accent); }
         .content ul, .content ol { padding-left: 1.4em; }
         .content img { max-width: 100%; height: auto; }

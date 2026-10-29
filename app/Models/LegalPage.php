@@ -10,6 +10,31 @@ class LegalPage extends Model
 {
     use HasTranslations;
 
+    /**
+     * Documents que l'utilisateur doit accepter avant une action dans l'application.
+     * contexte => [libellé, slugs des pages requises].
+     *
+     * Filtre de l'API : GET /api/v1/legal-pages?context=registration
+     */
+    public const CONTEXTS = [
+        'registration' => [
+            'label' => 'Création de compte',
+            'slugs' => ['conditions-generales-utilisation', 'charte-confiance-securite'],
+        ],
+        'purchase' => [
+            'label' => 'Achat',
+            'slugs' => ['conditions-generales-achat'],
+        ],
+        'vendor' => [
+            'label' => 'Création du compte vendeur',
+            'slugs' => ['charte-vendeurs'],
+        ],
+        'delivery_partner' => [
+            'label' => 'Inscription partenaire livreur',
+            'slugs' => ['charte-livreurs-partenaires'],
+        ],
+    ];
+
     /** Champs traduisibles (voir HasTranslations). */
     protected array $translatable = ['title', 'content'];
 
@@ -90,6 +115,22 @@ class LegalPage extends Model
     public static function getAllActive()
     {
         return self::active()->ordered()->get();
+    }
+
+    /**
+     * Contextes où la page doit être acceptée (registration, purchase…).
+     *
+     * @return array<int, string>
+     */
+    public static function contextsFor(string $slug): array
+    {
+        return array_keys(array_filter(self::CONTEXTS, fn ($context) => in_array($slug, $context['slugs'], true)));
+    }
+
+    /** Vrai quand l'application s'appuie sur ce slug : il ne doit pas changer. */
+    public static function isRequiredSlug(string $slug): bool
+    {
+        return self::contextsFor($slug) !== [];
     }
 
     /**
