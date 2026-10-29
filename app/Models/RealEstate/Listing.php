@@ -267,6 +267,21 @@ class Listing extends Model
         return $this->isLand() || ! $this->owner_id;
     }
 
+    /** Acompte d'un morceau : montant payé maintenant et solde restant au cabinet. */
+    private function lotPaymentApi(RealEstatePricingService $pricing, Unit $unit): array
+    {
+        $quote = $pricing->quote($this, $unit);
+
+        return [
+            'lot_price' => $quote['unit_price'],
+            'deposit_percent' => $quote['deposit_percent'],
+            'deposit_amount' => $quote['base_amount'],
+            'fees' => $quote['platform_amount'] + $quote['commission'],
+            'total_to_pay' => $quote['total'],
+            'balance_due' => max(0, $quote['unit_price'] - $quote['base_amount']),
+        ];
+    }
+
     /** Carte de liste. */
     public function toCardApi(?User $viewer = null, array $favoriteIds = []): array
     {
@@ -312,12 +327,48 @@ class Listing extends Model
             'available_now' => ! $this->available_from || ! $this->available_from->isFuture(),
             'units_available' => $available,
             'low_stock' => $available > 0 && $available <= $threshold && $this->unitsTotal() > 1,
+            // Terrain : vendu en bloc ou morceau par morceau (null pour une maison).
+            'subdivision' => $this->isLand() ? $this->subdivisionApi() : null,
             'amenities' => ($this->relationLoaded('amenities') ? $this->amenities : collect())
                 ->where('kind', '!=', 'service')->take(3)->pluck('name')->values()->all(),
             'cabinet' => $this->cabinet?->toApi($viewer),
             'commission_cabinet' => $commissionCabinet?->toApi($viewer),
             'is_favorite' => in_array($this->id, $favoriteIds, true),
             'published_at' => $this->published_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Morcellement d'un terrain, pour l'application : le client paie l'acompte
+     * d'un seul morceau (lot), jamais le terrain entier sauf vente en bloc.
+     */
+    public function subdivisionApi(): array
+    {
+        $pricing = app(RealEstatePricingService::class);
+        $units = $this->relationLoaded('units') ? $this->units : $this->units()->get();
+        $lotsTotal = (int) $units->sum('units_total');
+        $lotsAvailable = (int) $units->sum('units_available');
+        $exact = $units->isNotEmpty() && $units->every(
+            fn (Unit $u) => $u->surface_min && (! $u->surface_max || $u->surface_max == $u->surface_min)
+        );
+        $surfaces = $units->flatMap(fn (Unit $u) => [$u->surface_min, $u->surface_max])->filter();
+        $open = $units->where('units_available', '>', 0);
+
+        return [
+            'is_subdivided' => $lotsTotal > 1,
+            // per_lot : le client choisit un morceau (unit_id) et paie l'acompte de ce morceau.
+            'sale_mode' => $lotsTotal > 1 ? 'per_lot' : 'whole',
+            'total_surface_m2' => $exact ? (int) $units->sum(fn (Unit $u) => $u->surface_min * $u->units_total) : $this->surface_m2,
+            'lots_total' => $lotsTotal,
+            'lots_available' => $lotsAvailable,
+            'lots_sold' => max(0, $lotsTotal - $lotsAvailable),
+            'lot_surface_min' => $surfaces->min(),
+            'lot_surface_max' => $surfaces->max(),
+            'lot_price_from' => $open->isNotEmpty() ? $pricing->displayed((int) $open->min('net_price'), $this->type) : null,
+            'total_price' => $units->isNotEmpty()
+                ? (int) $units->sum(fn (Unit $u) => $pricing->displayed((int) $u->net_price, $this->type) * $u->units_total)
+                : $pricing->displayed((int) $this->net_price, $this->type),
+            'deposit_percent' => (float) ($this->deposit_percent ?: RealEstatePricingService::setting('immo_land_default_deposit_percent')),
         ];
     }
 
@@ -401,7 +452,11 @@ class Listing extends Model
                 'serviced' => (bool) $u->serviced,
                 'units_total' => $u->units_total,
                 'units_available' => $u->units_available,
+                'units_sold' => max(0, $u->units_total - $u->units_available),
+                'is_available' => $u->units_available > 0,
                 'available_from' => $u->available_from?->toDateString(),
+                // Terrain : ce que le client paie pour réserver UN morceau de ce lot.
+                'payment' => $this->isLand() ? $this->lotPaymentApi($pricing, $u) : null,
             ])->values()->all(),
             'rooms_tour' => ($this->relationLoaded('tourRooms') ? $this->tourRooms : $this->tourRooms()->get())->map(fn (Room $r) => [
                 'id' => $r->id,

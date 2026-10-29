@@ -287,6 +287,8 @@ class ListingController extends Controller
                 'kitchen' => $u['kitchen'] ?? null,
                 'units_total' => (int) ($u['units_total'] ?? 1),
                 'units_available' => (int) ($u['units_available'] ?? ($u['units_total'] ?? 1)),
+                // Stock affiché à l'ouverture du formulaire (voir ListingEditor::syncUnits).
+                'units_available_was' => isset($u['units_available_was']) && $u['units_available_was'] !== '' ? (int) $u['units_available_was'] : null,
             ], fn ($v) => $v !== null && $v !== '') + [
                 'furnished' => ! empty($u['furnished']),
                 'serviced' => ! empty($u['serviced']),

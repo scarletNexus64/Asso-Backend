@@ -10,7 +10,10 @@
     $kinds = array_merge(\App\Models\RealEstate\Listing::RENT_KINDS, \App\Models\RealEstate\Listing::LAND_KINDS);
     $kindLabels = ['house' => 'Maison', 'villa' => 'Villa', 'apartment' => 'Appartement', 'studio' => 'Studio', 'room' => 'Chambre', 'duplex' => 'Duplex', 'residence' => 'Résidence / cité',
         'building_land' => 'Terrain constructible', 'farm_land' => 'Terrain agricole', 'commercial_land' => 'Terrain commercial'];
-    $units = old('units', $exists ? $listing->units->map(fn ($u) => $u->only(['id', 'label', 'surface_min', 'surface_max', 'net_price', 'old_net_price', 'capacity', 'kitchen', 'furnished', 'serviced', 'units_total', 'units_available']))->values()->all() : []);
+    $units = old('units', $exists ? $listing->units->map(fn ($u) => $u->only(['id', 'label', 'surface_min', 'surface_max', 'net_price', 'old_net_price', 'capacity', 'kitchen', 'furnished', 'serviced', 'units_total', 'units_available']) + ['units_available_was' => $u->units_available])->values()->all() : []);
+    // Lots liés à une réservation : jamais supprimés (id => nombre de réservations).
+    $reservedUnits = $exists ? \App\Models\RealEstate\Reservation::where('listing_id', $listing->id)->whereNotNull('unit_id')
+        ->selectRaw('unit_id, count(*) as n')->groupBy('unit_id')->pluck('n', 'unit_id')->all() : [];
     $selectedAmenities = old('amenity_ids', $exists ? $listing->amenities->pluck('id')->all() : []);
     $missing = $missing ?? [];
     $val = fn ($f) => old($f, $listing->$f);
@@ -234,23 +237,66 @@
         @endunless
 
         <!-- Logements ou lots -->
-        <div class="{{ $card }}" x-data="{ units: @js(array_values($units)) }">
+        <div class="{{ $card }}" x-data="listingUnits(@js(array_values($units)), @js((object) $reservedUnits), @js($isLand ? ['surface' => $val('surface_m2'), 'pieces' => null, 'mode' => 'total', 'price' => null, 'numbered' => false] : null))">
             <div class="flex items-center justify-between mb-2">
-                <h2 class="text-lg font-semibold text-white"><i class="fas fa-th-large mr-2 text-primary-400"></i>{{ $isLand ? 'Lots de surface' : 'Types de logement' }}</h2>
+                <h2 class="text-lg font-semibold text-white"><i class="fas fa-th-large mr-2 text-primary-400"></i>{{ $isLand ? 'Lots / morceaux du terrain' : 'Types de logement' }}</h2>
                 <button type="button" @click="units.push({units_total: 1})" class="px-3 py-1.5 text-sm bg-dark-200 text-white rounded-lg"><i class="fas fa-plus mr-1"></i>Ajouter</button>
             </div>
-            <p class="text-sm text-gray-400 mb-4">{{ $isLand ? 'Une ligne par surface exacte proposée (300 m², 500 m²…), avec le prix total du lot. Le client voit le prix au m², calculé automatiquement.' : 'Pour une cité ou une résidence : une ligne par type (chambre, studio…). Une maison simple peut rester sans ligne.' }}</p>
+            <p class="text-sm text-gray-400 mb-4">{{ $isLand ? 'Le client choisit un morceau et paie l\'acompte de ce morceau seulement. Une ligne par surface proposée, avec le prix d\'UN morceau et le nombre de morceaux identiques (colonne Total). Une seule ligne avec Total = 1 = vente en bloc.' : 'Pour une cité ou une résidence : une ligne par type (chambre, studio…). Une maison simple peut rester sans ligne.' }}</p>
+
+            @if($isLand)
+                <!-- Morcellement : 1 000 m² en 5 morceaux → 5 lots de 200 m² -->
+                <div class="rounded-lg border border-primary-500/30 bg-primary-500/5 p-4 mb-4">
+                    <h3 class="text-white font-semibold mb-1"><i class="fas fa-object-ungroup mr-2 text-primary-400"></i>Morceler le terrain</h3>
+                    <p class="text-xs text-gray-400 mb-3">Indiquez la surface totale et le nombre de morceaux : les lots sont calculés automatiquement. Vérifiez puis cliquez sur Enregistrer.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                        <div>
+                            <label class="{{ $label }}">Surface totale (m²)</label>
+                            <input name="surface_m2" type="number" min="1" x-model.number="split.surface" class="{{ $in }}" placeholder="1000">
+                        </div>
+                        <div>
+                            <label class="{{ $label }}">Nombre de morceaux</label>
+                            <input type="number" min="2" max="1000" x-model.number="split.pieces" class="{{ $in }}" placeholder="5">
+                        </div>
+                        <div>
+                            <label class="{{ $label }}">Le prix saisi est</label>
+                            <select x-model="split.mode" class="{{ $in }}">
+                                <option value="total">Prix total du terrain</option>
+                                <option value="per_m2">Prix au m²</option>
+                                <option value="per_lot">Prix d'un morceau</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="{{ $label }}">Prix (FCFA)</label>
+                            <input type="number" min="1" x-model.number="split.price" class="{{ $in }}">
+                        </div>
+                        <button type="button" @click="generate()" :disabled="!plan().ok"
+                                class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fas fa-magic mr-1"></i>Générer les lots
+                        </button>
+                    </div>
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-300 mt-3">
+                        <input type="checkbox" x-model="split.numbered" class="rounded"> Une ligne par morceau (Morceau 1, 2…), pour fixer ensuite un prix différent à chacun
+                    </label>
+                    <p class="text-sm mt-2" :class="plan().ok ? 'text-primary-200' : 'text-gray-500'" x-text="plan().text"></p>
+                </div>
+            @endif
+
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead><tr class="text-gray-400 text-left">
-                        <th class="py-2 pr-2">Libellé</th><th class="py-2 pr-2">Surface min</th><th class="py-2 pr-2">Surface max</th><th class="py-2 pr-2">Prix de référence</th>
+                        <th class="py-2 pr-2">Libellé</th><th class="py-2 pr-2">Surface min</th><th class="py-2 pr-2">Surface max</th><th class="py-2 pr-2">{{ $isLand ? 'Prix d\'un morceau' : 'Prix de référence' }}</th>
                         @unless($isLand)<th class="py-2 pr-2">Pers.</th><th class="py-2 pr-2">Cuisine</th><th class="py-2 pr-2">Meublé</th>@else<th class="py-2 pr-2">Viabilisé</th>@endunless
                         <th class="py-2 pr-2">Total</th><th class="py-2 pr-2">Dispo.</th><th></th>
                     </tr></thead>
                     <tbody>
                     <template x-for="(u, i) in units" :key="i">
                         <tr>
-                            <td class="py-1 pr-2"><input type="hidden" :name="`units[${i}][id]`" :value="u.id"><input :name="`units[${i}][label]`" x-model="u.label" class="{{ $in }}"></td>
+                            <td class="py-1 pr-2">
+                                <input type="hidden" :name="`units[${i}][id]`" :value="u.id">
+                                <input type="hidden" :name="`units[${i}][units_available_was]`" :value="u.units_available_was ?? ''">
+                                <input :name="`units[${i}][label]`" x-model="u.label" class="{{ $in }}">
+                            </td>
                             <td class="py-1 pr-2"><input type="number" min="1" :name="`units[${i}][surface_min]`" x-model="u.surface_min" class="{{ $in }}"></td>
                             <td class="py-1 pr-2"><input type="number" min="1" :name="`units[${i}][surface_max]`" x-model="u.surface_max" class="{{ $in }}"></td>
                             <td class="py-1 pr-2"><input type="number" min="0" :name="`units[${i}][net_price]`" x-model="u.net_price" class="{{ $in }}"></td>
@@ -263,12 +309,22 @@
                             @endunless
                             <td class="py-1 pr-2"><input type="number" min="1" :name="`units[${i}][units_total]`" x-model="u.units_total" class="{{ $in }}"></td>
                             <td class="py-1 pr-2"><input type="number" min="0" :name="`units[${i}][units_available]`" x-model="u.units_available" class="{{ $in }}"></td>
-                            <td class="py-1"><button type="button" @click="units.splice(i, 1)" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button></td>
+                            <td class="py-1 whitespace-nowrap">
+                                <template x-if="isReserved(u)">
+                                    <span class="text-amber-400 text-xs" :title="`${reserved[u.id]} réservation(s) : ce lot est conservé (contrat, facture). Mettez Dispo. à 0 pour le fermer.`"><i class="fas fa-lock mr-1"></i>Réservé</span>
+                                </template>
+                                <template x-if="!isReserved(u)">
+                                    <button type="button" @click="units.splice(i, 1)" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                </template>
+                            </td>
                         </tr>
                     </template>
                     </tbody>
                 </table>
             </div>
+            @if($isLand)
+                <p class="text-xs text-gray-400 mt-3" x-text="summary()"></p>
+            @endif
         </div>
 
         @unless($isLand)
@@ -344,4 +400,62 @@
         @endforeach
     @endif
 </div>
+
+<script>
+    // Lots d'une annonce, et morcellement d'un terrain en N morceaux.
+    function listingUnits(units, reserved, split) {
+        const fmt = n => Number(n || 0).toLocaleString('fr-FR');
+        return {
+            units, reserved, split,
+            isReserved(u) { return u.id && this.reserved[u.id] > 0; },
+            // 1 000 m² en 3 : 1 morceau de 334 m² et 2 de 333 m², la somme reste exacte.
+            plan() {
+                const s = this.split || {};
+                const S = parseInt(s.surface), N = parseInt(s.pieces), P = parseInt(s.price);
+                if (!(S > 0) || !(N >= 2) || !(P > 0)) return { ok: false, text: 'Renseignez la surface totale, au moins 2 morceaux et un prix.' };
+                if (N > S) return { ok: false, text: 'Plus de morceaux que de m² : vérifiez les valeurs.' };
+                const base = Math.floor(S / N), extra = S % N;
+                const price = m2 => s.mode === 'per_m2' ? m2 * P : (s.mode === 'per_lot' ? P : Math.round(P * m2 / S));
+                const groups = [{ m2: base + 1, count: extra }, { m2: base, count: N - extra }].filter(g => g.count > 0)
+                    .map(g => ({ ...g, price: price(g.m2) }));
+                const total = groups.reduce((t, g) => t + g.price * g.count, 0);
+                const text = groups.map(g => `${g.count} morceau${g.count > 1 ? 'x' : ''} de ${fmt(g.m2)} m² à ${fmt(g.price)} FCFA`).join(' + ')
+                    + ` — total ${fmt(total)} FCFA (${fmt(Math.round(total / S))} FCFA/m²)`;
+                return { ok: true, groups, text };
+            },
+            generate() {
+                const p = this.plan();
+                if (!p.ok) return;
+                const kept = this.units.filter(u => this.isReserved(u)).map(u => ({ ...u, units_available: 0 }));
+                const replaced = this.units.length - kept.length;
+                if (replaced > 0 && !confirm(`Les ${replaced} lot(s) actuel(s) sans réservation seront remplacés par ces morceaux`
+                    + (kept.length ? ` ; ${kept.length} lot(s) réservé(s) sont conservés et fermés à la vente` : '')
+                    + '. Rien n\'est enregistré avant de cliquer sur Enregistrer. Continuer ?')) return;
+                const rows = [];
+                let n = 0;
+                const N = p.groups.reduce((t, g) => t + g.count, 0);
+                for (const g of p.groups) {
+                    if (this.split.numbered) {
+                        for (let k = 0; k < g.count; k++) {
+                            n++;
+                            rows.push({ label: `Morceau ${n}/${N} — ${fmt(g.m2)} m²`, surface_min: g.m2, surface_max: g.m2, net_price: g.price, units_total: 1, units_available: 1 });
+                        }
+                    } else {
+                        rows.push({ label: `Morceau de ${fmt(g.m2)} m²`, surface_min: g.m2, surface_max: g.m2, net_price: g.price, units_total: g.count, units_available: g.count });
+                    }
+                }
+                this.units = [...kept, ...rows];
+            },
+            summary() {
+                const open = this.units.filter(u => u.label && u.net_price);
+                const total = open.reduce((t, u) => t + (parseInt(u.units_total) || 0), 0);
+                const avail = open.reduce((t, u) => t + (parseInt(u.units_available) || 0), 0);
+                if (!total) return 'Aucun lot : ajoutez au moins une ligne ou morcelez le terrain.';
+                return total > 1
+                    ? `Vente au morceau : ${total} morceaux, ${avail} disponible(s). Le client paie l'acompte d'un seul morceau.`
+                    : 'Vente en bloc : le client paie l\'acompte sur le terrain entier.';
+            },
+        };
+    }
+</script>
 @endsection

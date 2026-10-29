@@ -5,6 +5,7 @@ namespace App\Services\RealEstate;
 use App\Models\RealEstate\Cabinet;
 use App\Models\RealEstate\Listing;
 use App\Models\RealEstate\Media;
+use App\Models\RealEstate\Reservation;
 use App\Models\RealEstate\Room;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -83,6 +84,7 @@ class ListingEditor
             'units.*.serviced' => ['nullable', 'boolean'],
             'units.*.units_total' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'units.*.units_available' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'units.*.units_available_was' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'units.*.available_from' => ['nullable', 'date'],
             'rooms_tour' => ['nullable', 'array', 'max:40'],
             'rooms_tour.*.id' => ['nullable', 'integer'],
@@ -126,17 +128,30 @@ class ListingEditor
         $keep = [];
         foreach (array_values($units) as $position => $u) {
             $total = (int) ($u['units_total'] ?? 1);
+            $unit = ! empty($u['id']) ? $listing->units()->whereKey($u['id'])->lockForUpdate()->first() : null;
+            $available = (int) ($u['units_available'] ?? $total);
+
+            // Le formulaire renvoie le stock lu à son ouverture : on n'applique que
+            // la modification saisie, sans écraser les ventes faites entre-temps.
+            if ($unit && isset($u['units_available_was'])) {
+                $available = (int) $unit->units_available + $available - (int) $u['units_available_was'];
+            }
+
             $attrs = Arr::only($u, ['label', 'surface_min', 'surface_max', 'net_price', 'old_net_price', 'capacity',
                 'kitchen', 'furnished', 'serviced', 'available_from']) + [
                     'units_total' => $total,
-                    'units_available' => min($total, (int) ($u['units_available'] ?? $total)),
+                    'units_available' => max(0, min($total, $available)),
                     'position' => $position,
                 ];
-            $unit = ! empty($u['id']) ? $listing->units()->whereKey($u['id'])->first() : null;
             $unit ? $unit->update($attrs) : $unit = $listing->units()->create($attrs);
             $keep[] = $unit->id;
         }
-        $listing->units()->whereNotIn('id', $keep)->delete();
+
+        // Un lot lié à une réservation n'est jamais supprimé (contrat, facture,
+        // litiges) : retiré du formulaire, il est seulement fermé à la vente.
+        $reserved = Reservation::where('listing_id', $listing->id)->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
+        $listing->units()->whereNotIn('id', $keep)->whereIn('id', $reserved)->update(['units_available' => 0]);
+        $listing->units()->whereNotIn('id', $keep)->whereNotIn('id', $reserved)->delete();
 
         // Le prix « à partir de » de l'annonce suit le logement le moins cher.
         if ($keep) {
