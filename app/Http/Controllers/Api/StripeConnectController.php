@@ -395,6 +395,9 @@ class StripeConnectController extends Controller
     /** Page de statut aux couleurs d'ASSO (« success » ou « expired »). */
     private function statusPage(string $variant)
     {
+        // Page ouverte dans le navigateur du téléphone : on suit sa langue.
+        app()->setLocale(request()->getPreferredLanguage(['fr', 'en']) ?? 'fr');
+
         $key = $variant === 'success' ? 'return_page' : 'refresh_page';
         $t = fn (string $k) => __("payments.stripe_connect.{$key}.{$k}");
 
