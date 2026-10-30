@@ -149,7 +149,7 @@ class ListingEditor
 
         // Un lot lié à une réservation n'est jamais supprimé (contrat, facture,
         // litiges) : retiré du formulaire, il est seulement fermé à la vente.
-        $reserved = Reservation::where('listing_id', $listing->id)->whereNotNull('unit_id')->distinct()->pluck('unit_id')->all();
+        $reserved = array_keys(Reservation::reservedUnitCounts($listing->id));
         $listing->units()->whereNotIn('id', $keep)->whereIn('id', $reserved)->update(['units_available' => 0]);
         $listing->units()->whereNotIn('id', $keep)->whereNotIn('id', $reserved)->delete();
 

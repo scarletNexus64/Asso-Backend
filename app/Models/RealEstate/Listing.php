@@ -268,9 +268,9 @@ class Listing extends Model
     }
 
     /** Acompte d'un morceau : montant payé maintenant et solde restant au cabinet. */
-    private function lotPaymentApi(RealEstatePricingService $pricing, Unit $unit): array
+    private function lotPaymentApi(RealEstatePricingService $pricing, ?Unit $unit, ?array $lots = null): array
     {
-        $quote = $pricing->quote($this, $unit);
+        $quote = $pricing->quote($this, $unit, null, $lots);
 
         return [
             'lot_price' => $quote['unit_price'],
@@ -340,7 +340,7 @@ class Listing extends Model
 
     /**
      * Morcellement d'un terrain, pour l'application : le client paie l'acompte
-     * d'un seul morceau (lot), jamais le terrain entier sauf vente en bloc.
+     * d'un ou plusieurs morceaux, ou de tout ce qui reste du terrain.
      */
     public function subdivisionApi(): array
     {
@@ -356,7 +356,7 @@ class Listing extends Model
 
         return [
             'is_subdivided' => $lotsTotal > 1,
-            // per_lot : le client choisit un morceau (unit_id) et paie l'acompte de ce morceau.
+            // per_lot : le client choisit un morceau (unit_id) et une quantité, ou tout le terrain (whole).
             'sale_mode' => $lotsTotal > 1 ? 'per_lot' : 'whole',
             'total_surface_m2' => $exact ? (int) $units->sum(fn (Unit $u) => $u->surface_min * $u->units_total) : $this->surface_m2,
             'lots_total' => $lotsTotal,
@@ -369,6 +369,11 @@ class Listing extends Model
                 ? (int) $units->sum(fn (Unit $u) => $pricing->displayed((int) $u->net_price, $this->type) * $u->units_total)
                 : $pricing->displayed((int) $this->net_price, $this->type),
             'deposit_percent' => (float) ($this->deposit_percent ?: RealEstatePricingService::setting('immo_land_default_deposit_percent')),
+            // « Tout acheter » : tous les morceaux encore en vente, en une seule réservation.
+            'can_buy_whole' => $lotsAvailable > 1,
+            'whole_payment' => $lotsAvailable > 1
+                ? $this->lotPaymentApi($pricing, null, $pricing->selection($this, null, 1, true))
+                : null,
         ];
     }
 

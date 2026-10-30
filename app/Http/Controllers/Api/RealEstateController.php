@@ -236,12 +236,25 @@ class RealEstateController extends Controller
         $data = $request->validate([
             'unit_id' => 'nullable|integer',
             'advance_months' => 'nullable|integer|min:1|max:36',
+            'quantity' => 'nullable|integer|min:1|max:1000',
+            'whole' => 'nullable|boolean',
         ]);
         $listing = Listing::published()->with('units')->findOrFail($id);
         abort_if($listing->isSale(), 422, 'Contactez ASSO pour cette maison en vente.');
         $unit = isset($data['unit_id']) ? $listing->units->firstWhere('id', $data['unit_id']) : $listing->units->sortBy('net_price')->first();
+        $whole = (bool) ($data['whole'] ?? false);
+        $lots = $this->pricing->selection($listing, $unit, (int) ($data['quantity'] ?? 1), $whole);
+        // Plusieurs morceaux demandés : il faut assez de stock (un seul lot reste
+        // chiffré comme avant, pour les versions de l'app déjà installées).
+        if ($listing->isLand() && $listing->units->isNotEmpty() && ($whole || (int) ($data['quantity'] ?? 1) > 1)) {
+            $short = $lots === [] || collect($lots)->contains(fn ($l) => $l['quantity'] > $l['unit']->units_available);
+            if ($short) {
+                return response()->json(['success' => false, 'code' => 'lots_unavailable',
+                    'message' => __('real_estate.reservation.lots_unavailable')], 422);
+            }
+        }
 
-        $quote = $this->pricing->quote($listing, $unit, $data['advance_months'] ?? null);
+        $quote = $this->pricing->quote($listing, $unit, $data['advance_months'] ?? null, $lots);
         $netAmount = $quote['owner_amount'];
         unset($quote['owner_amount']);
         $cabinet = $this->pricing->commissionCabinet($listing);
@@ -251,7 +264,8 @@ class RealEstateController extends Controller
             'net_payee_kind' => $listing->isManagedByCabinet() ? 'cabinet' : 'landlord',
             'partner_commission_amount' => $quote['commission'],
             'commission_cabinet' => $cabinet?->toApi($this->viewer($request)),
-            'unit_id' => $unit?->id,
+            'unit_id' => count($quote['lots']) === 1 ? $quote['lots'][0]['unit_id'] : ($whole ? null : $unit?->id),
+            'whole' => $whole && $listing->isLand(),
             'currency' => 'XAF',
         ]]);
     }

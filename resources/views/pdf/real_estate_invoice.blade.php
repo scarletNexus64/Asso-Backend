@@ -28,7 +28,7 @@
     <table class="amounts">
         <tr><th style="text-align:left">Désignation</th><th class="right">Montant</th></tr>
         @if($isLand)
-            <tr><td>Acompte{{ $additionalFees ? ' au cabinet' : '' }} de {{ $pct($r->deposit_percent) }} % sur {{ $r->unit?->label ?? 'le terrain' }} (prix {{ $fmt($r->displayed_unit_price) }})</td><td class="right">{{ $fmt($r->base_amount) }}</td></tr>
+            <tr><td>Acompte{{ $additionalFees ? ' au cabinet' : '' }} de {{ $pct($r->deposit_percent) }} % sur {{ $r->lotsLabel() ?? 'le terrain' }} (prix {{ $fmt($r->displayed_unit_price) }})</td><td class="right">{{ $fmt($r->base_amount) }}</td></tr>
         @else
             <tr><td>Avance de loyer{{ $additionalFees ? ' au '.($cabinetPayee ? 'cabinet' : 'bailleur') : '' }} : {{ $r->advance_months }} mois {{ $additionalFees ? '(hors frais)' : '(part ASSO incluse)' }}</td><td class="right">{{ $fmt($r->base_amount) }}</td></tr>
         @endif

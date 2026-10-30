@@ -42,6 +42,10 @@ class RealEstatePartnerSetupTest extends TestCase
         $this->assertSame(5, (int) Setting::get('immo_partner_commission_rate'));
         $this->assertSame($cabinet->id, $listing->fresh()->cabinet_id);
         $this->assertSame($owner->id, app(RealEstateReservationService::class)->payee($listing->fresh())->id);
-        $this->assertSame($before, $reservation->fresh()->getRawOriginal());
+        // Mêmes valeurs ; SQLite peut réordonner les colonnes recréées par la migration.
+        $after = $reservation->fresh()->getRawOriginal();
+        ksort($before);
+        ksort($after);
+        $this->assertSame($before, $after);
     }
 }

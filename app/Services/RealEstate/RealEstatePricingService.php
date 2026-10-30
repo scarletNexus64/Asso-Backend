@@ -62,14 +62,45 @@ class RealEstatePricingService
     }
 
     /**
-     * Décomposition d'un paiement. Tous les montants sont en FCFA.
+     * Morceaux achetés sur un terrain : un lot × [quantity], ou tout ce qui
+     * reste en vente ([whole]). Une maison réserve toujours une seule place.
      *
-     * @return array{unit_price:int, advance_months:?int, base_amount:int, commission:int,
-     *               total:int, owner_amount:int, platform_amount:int, deposit_percent:?float}
+     * @return list<array{unit: Unit, quantity: int}>
      */
-    public function quote(Listing $listing, ?Unit $unit = null, ?int $advanceMonths = null): array
+    public function selection(Listing $listing, ?Unit $unit, int $quantity = 1, bool $whole = false): array
     {
-        $net = (int) ($unit?->net_price ?? $listing->net_price);
+        if (! $listing->isLand()) {
+            return $unit ? [['unit' => $unit, 'quantity' => 1]] : [];
+        }
+        if ($whole) {
+            $units = $listing->relationLoaded('units') ? $listing->units : $listing->units()->get();
+
+            return $units->where('units_available', '>', 0)->sortBy('id')
+                ->map(fn (Unit $u) => ['unit' => $u, 'quantity' => (int) $u->units_available])
+                ->values()->all();
+        }
+
+        return $unit ? [['unit' => $unit, 'quantity' => max(1, $quantity)]] : [];
+    }
+
+    /**
+     * Décomposition d'un paiement. Tous les montants sont en FCFA.
+     * [$lots] (voir [selection]) : prix des morceaux additionnés pour un terrain.
+     *
+     * @param  list<array{unit: Unit, quantity: int}>|null  $lots
+     * @return array{unit_price:int, advance_months:?int, base_amount:int, commission:int,
+     *               total:int, owner_amount:int, platform_amount:int, deposit_percent:?float,
+     *               quantity:int, lots:list<array{unit_id:int, label:string, quantity:int, unit_price:int}>}
+     */
+    public function quote(Listing $listing, ?Unit $unit = null, ?int $advanceMonths = null, ?array $lots = null): array
+    {
+        if ($lots === null || ! $listing->isLand()) {
+            $lots = $unit ? [['unit' => $unit, 'quantity' => 1]] : [];
+        }
+        $multi = $listing->isLand() && $lots !== [];
+        $net = $multi
+            ? (int) array_sum(array_map(fn ($l) => (int) $l['unit']->net_price * $l['quantity'], $lots))
+            : (int) ($unit?->net_price ?? $listing->net_price);
         $unitPrice = $this->displayed($net, $listing->type);
 
         if ($listing->type === Listing::TYPE_LAND) {
@@ -97,6 +128,13 @@ class RealEstatePricingService
             'total' => $total,
             'owner_amount' => $owner,
             'platform_amount' => $platform,
+            'quantity' => $lots === [] ? 1 : (int) array_sum(array_column($lots, 'quantity')),
+            'lots' => array_map(fn ($l) => [
+                'unit_id' => $l['unit']->id,
+                'label' => $l['unit']->label,
+                'quantity' => $l['quantity'],
+                'unit_price' => $this->displayed((int) $l['unit']->net_price, $listing->type),
+            ], $lots),
         ];
     }
 }

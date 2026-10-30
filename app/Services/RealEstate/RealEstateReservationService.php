@@ -29,7 +29,8 @@ use Illuminate\Support\Str;
  *    séparément et ne sont jamais remboursées ;
  *  - la part du bailleur (ou du cabinet) est créditée sur son Wallet puis
  *    bloquée, le temps de la visite ;
- *  - une place est retirée au logement, contrat et facture sont générés.
+ *  - une place est retirée au logement (ou les morceaux achetés au terrain),
+ *    contrat et facture sont générés.
  * La part bloquée est débloquée à la confirmation du locataire, ou à la fin
  * du délai sans litige (commande immo:auto-release).
  *
@@ -49,7 +50,7 @@ class RealEstateReservationService
     /**
      * Contrôles avant paiement ; lance une exception au message affichable.
      */
-    public function assertBookable(User $tenant, Listing $listing, ?Unit $unit, array $data): void
+    public function assertBookable(User $tenant, Listing $listing, ?Unit $unit, array $data, ?array $lots = null): void
     {
         if ($listing->isSale() || $listing->status !== Listing::STATUS_PUBLISHED) {
             throw new \DomainException(__('real_estate.reservation.not_available'));
@@ -57,7 +58,20 @@ class RealEstateReservationService
         if ($listing->owner_id === $tenant->id || $this->pricing->commissionCabinet($listing)?->user_id === $tenant->id) {
             throw new \DomainException(__('real_estate.reservation.own_listing'));
         }
-        if ($listing->units()->exists()) {
+        if ($listing->isLand() && $lots !== null && $listing->units()->exists()) {
+            // Terrain : un lot × quantité, ou tout ce qui reste.
+            if ($lots === []) {
+                throw new \DomainException(__(! empty($data['whole']) ? 'real_estate.reservation.lots_unavailable' : 'real_estate.reservation.unit_required'));
+            }
+            foreach ($lots as $lot) {
+                if ($lot['unit']->listing_id !== $listing->id) {
+                    throw new \DomainException(__('real_estate.reservation.unit_required'));
+                }
+                if ($lot['quantity'] > $lot['unit']->units_available) {
+                    throw new \DomainException(__($lot['unit']->units_available > 0 ? 'real_estate.reservation.lots_unavailable' : 'real_estate.reservation.unit_full'));
+                }
+            }
+        } elseif ($listing->units()->exists()) {
             if (! $unit || $unit->listing_id !== $listing->id) {
                 throw new \DomainException(__('real_estate.reservation.unit_required'));
             }
@@ -81,16 +95,36 @@ class RealEstateReservationService
             : $listing->owner;
     }
 
-    public function create(User $tenant, Listing $listing, ?Unit $unit, array $data, string $method): Reservation
+    /**
+     * @param  list<array{unit: Unit, quantity: int}>|null  $lots  morceaux d'un terrain (voir RealEstatePricingService::selection)
+     */
+    public function create(User $tenant, Listing $listing, ?Unit $unit, array $data, string $method, ?array $lots = null): Reservation
     {
-        $this->assertBookable($tenant, $listing, $unit, $data);
-        $quote = $this->pricing->quote($listing, $unit, $data['advance_months'] ?? null);
+        $this->assertBookable($tenant, $listing, $unit, $data, $lots);
+        $quote = $this->pricing->quote($listing, $unit, $data['advance_months'] ?? null, $lots);
         $partnerCabinet = $this->pricing->commissionCabinet($listing);
+        $lines = $listing->isLand() ? $quote['lots'] : [];
+        // Un seul lot : unit_id le désigne ; plusieurs lots différents : voir lots.
+        $unitId = count($lines) === 1 ? $lines[0]['unit_id'] : ($lines === [] ? $unit?->id : null);
 
+        return DB::transaction(function () use ($tenant, $listing, $data, $method, $quote, $partnerCabinet, $lines, $unitId) {
+            $reservation = $this->createRow($tenant, $listing, $data, $method, $quote, $partnerCabinet, $unitId);
+            foreach ($lines as $line) {
+                $reservation->lots()->create($line);
+            }
+
+            return $reservation;
+        });
+    }
+
+    private function createRow(User $tenant, Listing $listing, array $data, string $method, array $quote, $partnerCabinet, ?int $unitId): Reservation
+    {
         return Reservation::create([
             'reference' => 'IMMO-'.now()->format('ymd').'-'.Str::upper(Str::random(5)),
             'listing_id' => $listing->id,
-            'unit_id' => $unit?->id,
+            'unit_id' => $unitId,
+            'quantity' => $quote['quantity'],
+            'whole' => $listing->isLand() && ! empty($data['whole']),
             'tenant_id' => $tenant->id,
             'payee_id' => $this->payee($listing)->id,
             'partner_cabinet_id' => $partnerCabinet->id,
@@ -252,11 +286,15 @@ class RealEstateReservationService
             }
             $wallet = app(WalletService::class);
 
-            // Le dernier logement a pu partir pendant le paiement Mobile Money :
-            // l'argent est encaissé, on le rend en entier sur le Wallet.
-            if ($r->unit_id) {
-                $unit = Unit::whereKey($r->unit_id)->lockForUpdate()->first();
-                if (! $unit || $unit->units_available <= 0) {
+            // Le dernier logement (ou un des morceaux) a pu partir pendant le paiement
+            // Mobile Money : l'argent est encaissé, on le rend en entier sur le Wallet.
+            $quantities = $r->lotQuantities();
+            if ($quantities) {
+                $units = Unit::whereIn('id', array_keys($quantities))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+                $short = collect($quantities)->contains(
+                    fn (int $quantity, int $unitId) => ! $units->has($unitId) || $units[$unitId]->units_available < $quantity
+                );
+                if ($short) {
                     $wallet->credit($r->tenant, (float) $r->total_amount, null,
                         WalletTransaction::label('immo_reservation_refunded', ['reference' => $r->reference]),
                         ['reference_type' => 'real_estate_reservation', 'reference_id' => $r->id]);
@@ -265,7 +303,9 @@ class RealEstateReservationService
 
                     return;
                 }
-                $unit->decrement('units_available');
+                foreach ($quantities as $unitId => $quantity) {
+                    $units[$unitId]->decrement('units_available', $quantity);
+                }
             }
 
             $listing = $r->listing;

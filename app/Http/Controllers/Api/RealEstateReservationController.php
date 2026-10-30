@@ -26,6 +26,8 @@ class RealEstateReservationController extends Controller
     {
         $data = $request->validate([
             'unit_id' => ['nullable', 'integer'],
+            'quantity' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'whole' => ['nullable', 'boolean'],
             'advance_months' => ['nullable', 'integer', 'min:1', 'max:36'],
             'months' => ['nullable', 'integer', 'min:0', 'max:120'],
             'move_in_date' => ['nullable', 'date', 'after_or_equal:today'],
@@ -47,16 +49,20 @@ class RealEstateReservationController extends Controller
         if (! $unit && $listing->units->count() === 1) {
             $unit = $listing->units->first();
         }
+        $pricing = app(\App\Services\RealEstate\RealEstatePricingService::class);
+        // Terrain : un lot × quantité, ou tout ce qui reste (whole).
+        $lots = $listing->isLand()
+            ? $pricing->selection($listing, $unit, (int) ($data['quantity'] ?? 1), (bool) ($data['whole'] ?? false))
+            : null;
 
         try {
-            $this->service->assertBookable($tenant, $listing, $unit, $data);
+            $this->service->assertBookable($tenant, $listing, $unit, $data, $lots);
         } catch (\DomainException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
 
         $mode = $data['payment_mode'];
-        $quoteTotal = app(\App\Services\RealEstate\RealEstatePricingService::class)
-            ->quote($listing, $unit, $data['advance_months'] ?? null)['total'];
+        $quoteTotal = $pricing->quote($listing, $unit, $data['advance_months'] ?? null, $lots)['total'];
         if (isset($data['expected_total']) && (int) $data['expected_total'] !== $quoteTotal) {
             return response()->json([
                 'success' => false, 'code' => 'quote_changed',
@@ -75,7 +81,7 @@ class RealEstateReservationController extends Controller
             }
         }
 
-        $reservation = $this->service->create($tenant, $listing, $unit, $data, $mode);
+        $reservation = $this->service->create($tenant, $listing, $unit, $data, $mode, $lots);
 
         try {
             if ($mode === 'wallet') {
@@ -105,7 +111,7 @@ class RealEstateReservationController extends Controller
     {
         $reservations = Reservation::where('tenant_id', $request->user()->id)
             ->whereNotIn('status', ['cancelled'])
-            ->with(['listing.media', 'listing.units', 'unit'])
+            ->with(['listing.media', 'listing.units', 'unit', 'lots'])
             ->latest()->get();
 
         return response()->json(['success' => true, 'data' => $reservations->map(fn ($r) => $this->payload($r, $request))->values()]);
@@ -116,7 +122,7 @@ class RealEstateReservationController extends Controller
     {
         $reservations = Reservation::where('payee_id', $request->user()->id)
             ->whereIn('status', Reservation::PAID_STATUSES)
-            ->with(['listing.media', 'listing.units', 'unit', 'tenant'])
+            ->with(['listing.media', 'listing.units', 'unit', 'lots', 'tenant'])
             ->latest()->get();
 
         return response()->json(['success' => true, 'data' => $reservations->map(fn ($r) => $this->payload($r, $request))->values()]);
@@ -125,7 +131,7 @@ class RealEstateReservationController extends Controller
     private function find(Request $request, int $id, bool $payeeAllowed = false): Reservation
     {
         $user = $request->user();
-        $r = Reservation::with(['listing.media', 'listing.units', 'listing.owner', 'listing.cabinet', 'unit'])->findOrFail($id);
+        $r = Reservation::with(['listing.media', 'listing.units', 'listing.owner', 'listing.cabinet', 'unit', 'lots'])->findOrFail($id);
         abort_unless($r->tenant_id === $user->id || ($payeeAllowed && $r->payee_id === $user->id), 404);
 
         return $r;
@@ -232,7 +238,10 @@ class RealEstateReservationController extends Controller
             'kind' => $r->kind,
             'status' => $r->status,
             'listing' => $listing ? $listing->toConversationApi() : null,
-            'unit_label' => $r->unit?->label,
+            'unit_label' => $r->lotsLabel(),
+            'quantity' => $r->quantity ?? 1,
+            'whole' => (bool) $r->whole,
+            'lots' => $r->lots->map->toApi()->values()->all(),
             'move_in_date' => $r->move_in_date?->toDateString(),
             'months' => $r->months,
             'advance_months' => $r->advance_months,

@@ -38,13 +38,13 @@
     <h2>Le bien</h2>
     <p><b>{{ $listing->title }}</b> ({{ $listing->reference }})<br>
         {{ $listing->district ? $listing->district.', ' : '' }}{{ $listing->city }}{{ $listing->address ? ' — '.$listing->address : '' }}
-        @if($r->unit)<br>{{ $isLand ? 'Lot' : 'Logement' }} : {{ $r->unit->label }}@endif
+        @if($label = $r->lotsLabel())<br>{{ $isLand ? (($r->quantity ?? 1) > 1 ? 'Morceaux' : 'Lot') : 'Logement' }} : {{ $label }}@endif
     </p>
 
     <h2>Conditions</h2>
     <table class="amounts">
         @if($isLand)
-            <tr><td>Prix du lot</td><td class="right">{{ $fmt($r->displayed_unit_price) }}</td></tr>
+            <tr><td>{{ ($r->quantity ?? 1) > 1 ? 'Prix des '.$r->quantity.' morceaux' : 'Prix du lot' }}</td><td class="right">{{ $fmt($r->displayed_unit_price) }}</td></tr>
             <tr><td>Acompte{{ $additionalFees ? ' au cabinet' : '' }} ({{ rtrim(rtrim(number_format((float) $r->deposit_percent, 2, ',', ''), '0'), ',') }} %)</td><td class="right">{{ $fmt($r->base_amount) }}</td></tr>
         @else
             <tr><td>Loyer mensuel</td><td class="right">{{ $fmt($r->displayed_unit_price) }}</td></tr>

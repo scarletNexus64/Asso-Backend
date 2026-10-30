@@ -12,8 +12,7 @@
         'building_land' => 'Terrain constructible', 'farm_land' => 'Terrain agricole', 'commercial_land' => 'Terrain commercial'];
     $units = old('units', $exists ? $listing->units->map(fn ($u) => $u->only(['id', 'label', 'surface_min', 'surface_max', 'net_price', 'old_net_price', 'capacity', 'kitchen', 'furnished', 'serviced', 'units_total', 'units_available']) + ['units_available_was' => $u->units_available])->values()->all() : []);
     // Lots liés à une réservation : jamais supprimés (id => nombre de réservations).
-    $reservedUnits = $exists ? \App\Models\RealEstate\Reservation::where('listing_id', $listing->id)->whereNotNull('unit_id')
-        ->selectRaw('unit_id, count(*) as n')->groupBy('unit_id')->pluck('n', 'unit_id')->all() : [];
+    $reservedUnits = $exists ? \App\Models\RealEstate\Reservation::reservedUnitCounts($listing->id) : [];
     $selectedAmenities = old('amenity_ids', $exists ? $listing->amenities->pluck('id')->all() : []);
     $missing = $missing ?? [];
     $val = fn ($f) => old($f, $listing->$f);

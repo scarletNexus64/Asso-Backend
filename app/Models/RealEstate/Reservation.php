@@ -5,6 +5,7 @@ namespace App\Models\RealEstate;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
@@ -32,7 +33,7 @@ class Reservation extends Model
     }
 
     protected $fillable = [
-        'reference', 'listing_id', 'unit_id', 'tenant_id', 'payee_id', 'partner_cabinet_id', 'partner_payee_id',
+        'reference', 'listing_id', 'unit_id', 'quantity', 'whole', 'tenant_id', 'payee_id', 'partner_cabinet_id', 'partner_payee_id',
         'partner_commission_amount', 'partner_cabinet_name', 'net_payee_kind', 'kind', 'move_in_date',
         'months', 'occupants', 'applicant_status', 'school_or_employer', 'message',
         'displayed_unit_price', 'base_amount', 'commission_amount', 'deposit_percent', 'advance_months', 'owner_amount', 'platform_amount', 'total_amount',
@@ -42,6 +43,8 @@ class Reservation extends Model
 
     protected $casts = [
         'occupants' => 'array',
+        'quantity' => 'integer',
+        'whole' => 'boolean',
         'move_in_date' => 'date',
         'contract_accepted_at' => 'datetime',
         'paid_at' => 'datetime',
@@ -58,6 +61,70 @@ class Reservation extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /** Morceaux achetés (terrain) : lot × quantité. */
+    public function lots(): HasMany
+    {
+        return $this->hasMany(ReservationLot::class);
+    }
+
+    /**
+     * Places retirées au paiement (et rendues en cas de remboursement),
+     * unit_id => quantité. Les anciennes réservations n'ont que unit_id.
+     *
+     * @return array<int, int>
+     */
+    public function lotQuantities(): array
+    {
+        $lots = $this->relationLoaded('lots') ? $this->lots : $this->lots()->get();
+        if ($lots->isNotEmpty()) {
+            return $lots->whereNotNull('unit_id')
+                ->groupBy('unit_id')
+                ->map(fn ($rows) => (int) $rows->sum('quantity'))
+                ->all();
+        }
+
+        return $this->unit_id ? [(int) $this->unit_id => 1] : [];
+    }
+
+    /** « Parcelle », « 3 × Parcelle 1 000 m² » ou « Tout le terrain (3 morceaux) ». */
+    public function lotsLabel(): ?string
+    {
+        $lots = $this->relationLoaded('lots') ? $this->lots : $this->lots()->get();
+        $count = (int) $lots->sum('quantity');
+        if ($this->whole && $count > 1) {
+            return "Tout le terrain ({$count} morceaux)";
+        }
+        if ($lots->count() > 1) {
+            return $lots->map(fn (ReservationLot $l) => ($l->quantity > 1 ? $l->quantity.' × ' : '').$l->label)->implode(' + ');
+        }
+        $lot = $lots->first();
+        if ($lot && $lot->quantity > 1) {
+            return $lot->quantity.' × '.$lot->label;
+        }
+
+        return $lot?->label ?? $this->unit?->label;
+    }
+
+    /**
+     * Lots liés à une réservation d'une annonce (unit_id => nombre de réservations) :
+     * ils ne sont jamais supprimés (contrat, facture, litiges).
+     *
+     * @return array<int, int>
+     */
+    public static function reservedUnitCounts(int $listingId): array
+    {
+        $counts = self::where('listing_id', $listingId)->whereNotNull('unit_id')
+            ->selectRaw('unit_id, count(*) as n')->groupBy('unit_id')->pluck('n', 'unit_id')->all();
+        $lots = ReservationLot::whereNotNull('unit_id')
+            ->whereHas('reservation', fn ($q) => $q->where('listing_id', $listingId))
+            ->selectRaw('unit_id, count(*) as n')->groupBy('unit_id')->pluck('n', 'unit_id')->all();
+        foreach ($lots as $unitId => $n) {
+            $counts[$unitId] = max((int) ($counts[$unitId] ?? 0), (int) $n);
+        }
+
+        return $counts;
     }
 
     public function tenant(): BelongsTo

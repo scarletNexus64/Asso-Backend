@@ -103,8 +103,8 @@ class RealEstateDisputeService
                 $wallet->credit($r->tenant, $amount, null,
                     WalletTransaction::label('immo_dispute_refund', ['reference' => $r->reference]),
                     ['reference_type' => 'real_estate_reservation', 'reference_id' => $r->id]);
-                if ($r->unit_id) {
-                    Unit::whereKey($r->unit_id)->increment('units_available');
+                foreach ($r->lotQuantities() as $unitId => $quantity) {
+                    Unit::whereKey($unitId)->increment('units_available', $quantity);
                 }
                 $r->update(['status' => 'refunded']);
                 $d->update(['status' => 'refunded']);
