@@ -38,6 +38,8 @@ class StripeWithdrawalTest extends TestCase
         ])->saveQuietly();
 
         $user->creditKpay('EUR', $balance);
+        // Fonds encaissés par carte : virables automatiquement vers l'IBAN.
+        \App\Models\WalletBalance::addCardFunds($user->id, 'EUR', $balance);
 
         return $user;
     }
@@ -194,6 +196,7 @@ class StripeWithdrawalTest extends TestCase
         ])->saveQuietly();
 
         $user->creditKpay('XAF', $balance);
+        \App\Models\WalletBalance::addCardFunds($user->id, 'XAF', $balance);
 
         return $user;
     }

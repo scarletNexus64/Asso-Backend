@@ -309,6 +309,34 @@ class Order extends Model
      *
      * @return array{wallet: float, direct: float}
      */
+    /**
+     * Part de l'encaissement payée par carte (Stripe), entre 0 et 1. La part vendeur
+     * libérée en hérite : elle se vire alors automatiquement vers un IBAN Stripe.
+     */
+    public function cardPaidRatio(): float
+    {
+        $card = 0.0;
+        $total = 0.0;
+
+        if ($this->payment_status === self::PAYMENT_PAID) {
+            $upfront = $this->upfrontAmount();
+            $total += $upfront;
+            if ($this->payment_method === 'stripe_direct') {
+                $card += $upfront;
+            }
+        }
+
+        if ($this->isDepositOrder() && $this->balance_status === self::BALANCE_PAID) {
+            $balance = (float) $this->balance_amount;
+            $total += $balance;
+            if (str_contains((string) $this->balance_payment_method, 'stripe')) {
+                $card += $balance;
+            }
+        }
+
+        return $total > 0 ? min(1.0, $card / $total) : 0.0;
+    }
+
     public function collectedAmounts(): array
     {
         $amounts = ['wallet' => 0.0, 'direct' => 0.0];

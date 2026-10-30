@@ -518,6 +518,18 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::delete('/{id}', [OtpBypassController::class, 'destroy'])->name('destroy');
         });
 
+        // Retraits vendeurs / acheteurs : demandes (automatiques et manuelles ≈ 48 h),
+        // comptes de retrait enregistrés (Mobile Money, IBAN) et frais par méthode.
+        Route::prefix('payouts')->name('payouts.')->controller(App\Http\Controllers\Admin\WithdrawalRequestController::class)->group(function () {
+            Route::get('/requests', 'index')->name('requests');
+            Route::get('/accounts', 'accounts')->name('accounts');
+            Route::post('/fees', 'updateFees')->name('fees');
+            Route::post('/requests/{withdrawal}/take', 'take')->name('take');
+            Route::post('/requests/{withdrawal}/execute', 'execute')->name('execute');
+            Route::post('/requests/{withdrawal}/complete', 'complete')->name('complete');
+            Route::post('/requests/{withdrawal}/reject', 'reject')->name('reject');
+        });
+
         // Stripe Connect - Validation des comptes de virement (IBAN) vendeurs
         Route::prefix('stripe/accounts')->name('stripe.accounts.')->group(function () {
             Route::get('/', [App\Http\Controllers\Admin\StripeConnectController::class, 'indexWeb'])->name('index');

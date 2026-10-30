@@ -613,6 +613,18 @@
             "body": "Votre dépôt de :amount FCFA a échoué. Raison: :reason",
             "unknown_reason": "Erreur inconnue"
         },
+        "wallet_withdrawal_requested": {
+            "title": "Demande de retrait enregistrée",
+            "body": "Votre demande de :amount est enregistrée. ASSO la traite sous :hours h en moyenne."
+        },
+        "wallet_withdrawal_request_completed": {
+            "title": "Retrait effectué",
+            "body": ":amount ont été envoyés à :account."
+        },
+        "wallet_withdrawal_rejected": {
+            "title": "Demande de retrait refusée",
+            "body": "Votre demande de :amount a été refusée et le montant recrédité sur votre portefeuille. Motif : :reason"
+        },
         "wallet_withdrawal_completed": {
             "title": "Retrait effectué",
             "body": "Votre retrait de :amount FCFA a été envoyé avec succès à :account."
@@ -1368,6 +1380,33 @@
         "withdrawal_not_found": "Retrait non trouvé",
         "status_check_error": "Erreur lors de la vérification du statut",
         "history_fetch_error": "Erreur lors de la récupération de l'historique",
+        "iban": {
+            "invalid_format": "IBAN invalide : il commence par 2 lettres (pays) et 2 chiffres, sans caractères spéciaux.",
+            "invalid_length": "IBAN invalide : un IBAN :country compte :length caractères.",
+            "invalid_checksum": "IBAN invalide : la clé de contrôle ne correspond pas. Vérifiez chaque caractère.",
+            "stripe_unsupported": "IBAN valide, mais votre banque n'est pas prise en charge pour les virements automatiques.",
+            "stripe_supported": "IBAN valide et compatible avec les virements automatiques.",
+            "manual_notice": "Les retraits vers cet IBAN sont traités à la main par ASSO : comptez :hours h en moyenne. Pour un retrait immédiat, nous vous conseillons Mobile Money.",
+            "saved_manual": "IBAN enregistré. Vos retraits vers ce compte seront traités sous :hours h en moyenne.",
+            "deleted": "IBAN supprimé.",
+            "bic_invalid": "BIC invalide : 8 ou 11 caractères (ex. AFRICMCX)."
+        },
+        "withdrawal_policy": {
+            "amount_below_fee": "Le montant est trop faible pour couvrir les frais de retrait.",
+            "no_bank_account": "Ajoutez d'abord un IBAN pour recevoir vos virements.",
+            "no_mobile_account": "Ajoutez d'abord un numéro Mobile Money.",
+            "minimum": "Le minimum de retrait est de :amount.",
+            "minimum_manual_bank": "Le minimum d'un virement bancaire est de :amount.",
+            "request_saved": "Demande enregistrée : vous recevrez :amount sous :hours h en moyenne.",
+            "cannot_cancel": "Cette demande est déjà en cours de traitement et ne peut plus être annulée.",
+            "cancelled_by_user": "Demande annulée : le montant a été recrédité sur votre portefeuille.",
+            "reasons": {
+                "card_funds_to_mobile": "Ces fonds ont été encaissés par carte : leur envoi vers Mobile Money est traité par ASSO sous :hours h en moyenne.",
+                "mobile_funds_to_bank": "Ces fonds ont été encaissés par Mobile Money : leur virement vers votre IBAN est traité par ASSO sous :hours h en moyenne.",
+                "iban_not_stripe": "Votre banque n'est pas prise en charge pour les virements automatiques : ASSO traite le virement sous :hours h en moyenne.",
+                "rail_unavailable": "Le service de retrait automatique est momentanément indisponible : ASSO traite votre demande sous :hours h en moyenne."
+            }
+        },
         "payout_account": {
             "provider_unsupported": "Opérateur Mobile Money non pris en charge.",
             "phone_invalid": "Numéro invalide : saisissez uniquement des chiffres, indicatif pays inclus.",
@@ -1425,6 +1464,11 @@
             "boost_refund_missing_product": "Remboursement sponsoring — article introuvable",
             "topup_kpay": "Recharge wallet via KPay (:currency)",
             "topup_card": "Recharge wallet par carte bancaire (Stripe)",
+            "withdrawal_request_mobile": "Demande de retrait Mobile Money vers :account",
+            "withdrawal_request_bank": "Demande de virement vers :account",
+            "withdrawal_request_cancelled": "Demande de retrait annulée (réf. :reference)",
+            "withdrawal_request_rejected": "Demande de retrait refusée — montant recrédité (réf. :reference)",
+            "withdrawal_fee": "Frais de retrait (réf. :reference)",
             "withdrawal_mobile": "Retrait :method vers :phone",
             "bank_transfer": "Virement IBAN ****:last4",
             "bank_transfer_converted": "Virement IBAN ****:last4 (:amount :currency)",
@@ -1880,6 +1924,8 @@
             "revenue": "Revenus ASSO",
             "withdrawals": "Retraits des fonds ASSO",
             "transactions": "Transactions",
+            "payout_requests": "Demandes de retrait",
+            "payout_accounts": "Comptes de retrait",
             "stripe_accounts": "Comptes de virement",
             "disputes": "Litiges commandes",
             "support": "Assistance client",

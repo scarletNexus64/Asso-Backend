@@ -88,6 +88,7 @@ return [
             'documents' => 'Documents',
             'fcm_tokens' => 'FCM Tokens',
             'stripe' => 'Comptes de virement',
+            'payouts' => 'Retraits vendeurs (demandes, comptes, frais)',
         ],
     ],
 
@@ -155,6 +156,7 @@ return [
         'admin.documents.*' => 'documents',
         'admin.fcm-tokens.*' => 'fcm_tokens',
         'admin.stripe.*' => 'stripe',
+        'admin.payouts.*' => 'payouts',
         'admin.legal-pages.*' => 'legal_pages',
     ],
 

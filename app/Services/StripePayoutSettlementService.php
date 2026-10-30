@@ -96,6 +96,7 @@ class StripePayoutSettlementService
             if ($user) {
                 $balanceBefore = $user->kpayBalanceFor($currency);
                 $user->creditKpay($currency, $amount);
+                \App\Services\WithdrawalPolicy::restoreCardFunds($withdrawal);
 
                 WalletTransaction::create([
                     'user_id' => $user->id,

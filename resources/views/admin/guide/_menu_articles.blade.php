@@ -4,6 +4,14 @@ const MENU_ARTICLES = {
     lead:'Les commandes des boutiques détenues par ASSO, à traiter par l’équipe.',
     body:()=>steps(['Recherchez la commande par numéro, client ou téléphone.','Ouvrez le dossier dans son étape actuelle et vérifiez les articles et le paiement.','Effectuez l’action proposée pour confirmer, préparer ou suivre la livraison.'])
   },
+  payout_requests: {
+    lead:'Tous les retraits des vendeurs et acheteurs. Les demandes manuelles (≈ 48 h) sont réglées ici.',
+    body:()=>`<p>Un retrait part tout seul quand les fonds restent sur leur rail (carte → IBAN Stripe, Mobile Money → numéro). Sinon c’est une demande : le portefeuille est déjà débité, il reste à verser le net au vendeur.</p>${steps(['Filtrez par statut, méthode (Mobile Money ou virement) et mode (automatique ou manuel).','Pour une demande, choisissez « Envoyer via le prestataire » si les fonds sont disponibles, ou faites le virement vous-même puis « Marquer payé » avec la référence.','En cas de refus, indiquez le motif : le montant est recrédité au vendeur.','Réglez les frais par méthode dans le bloc « Frais de retrait » : ils s’appliquent aux nouveaux retraits.'])}`
+  },
+  payout_accounts: {
+    lead:'Les comptes de retrait enregistrés : numéros Mobile Money, IBAN Stripe et IBAN manuels.',
+    body:()=>steps(['Filtrez par numéro Mobile Money, type d’IBAN, ou vendeurs / acheteurs.','Vérifiez qu’un vendeur dispose d’un moyen de retrait avant de lui verser des fonds.','Un IBAN manuel correspond à une banque que Stripe ne prend pas en charge : ses retraits sont toujours traités à la main.'])
+  },
   asso_products: {
     lead:'La vue du catalogue limitée aux boutiques ASSO.',
     body:()=>`<p>Cette entrée ouvre la même gestion des produits avec le filtre ASSO. Pour les administrateurs, « Tous les produits » donne la vue complète. Les gestionnaires restent limités au périmètre ASSO.</p>${steps(['Recherchez le produit ou choisissez une boutique ASSO.','Ouvrez sa fiche pour consulter ou modifier les informations selon vos droits.','Utilisez les champs FR et EN pour les textes présentés aux clients.'])}`

@@ -132,7 +132,10 @@ class StripeWithdrawalService
      * la conversion vers la devise du compte bancaire (ex. EUR) est faite ici, au
      * taux du moment, et conservée sur le retrait pour l'audit.
      *
-     * @param array{notes?:?string, ip?:?string, user_agent?:?string, admin_id?:?int, metadata?:array} $context
+     * `$context['fee']` (devise du portefeuille) est retenu sur le montant : l'IBAN
+     * reçoit l'équivalent de `$amount - fee`.
+     *
+     * @param array{notes?:?string, ip?:?string, user_agent?:?string, admin_id?:?int, metadata?:array, fee?:float, fee_rate?:float} $context
      * @return array{withdrawal:PlatformWithdrawal, wallet_transaction:WalletTransaction, currency:string, payout_amount:float, payout_currency:string, rate:float, iban_last4:string, balance_before:float}
      *
      * @throws StripeWithdrawalException message prêt à afficher + statut HTTP
@@ -165,12 +168,14 @@ class StripeWithdrawalService
         $sourceCurrency = $source['currency'];
         $rate = $source['rate'];
         $amount = round($amount, 2);                                  // débité au Wallet
-        $payoutAmount = round($amount * $rate, 2);                    // versé sur l'IBAN
+        $fee = round(min(max(0.0, (float) ($context['fee'] ?? 0)), $amount), 2); // frais ASSO
+        $netAmount = round($amount - $fee, 2);
+        $payoutAmount = round($netAmount * $rate, 2);                 // versé sur l'IBAN
 
         // 4) Minimum, exprimé dans la devise du virement.
         $minWithdrawalAmount = (float) Setting::get('min_stripe_withdrawal_amount', 5);
         if ($payoutAmount < $minWithdrawalAmount) {
-            $minSource = $rate > 0 ? ceil($minWithdrawalAmount / $rate) : null;
+            $minSource = $rate > 0 ? ceil($minWithdrawalAmount / $rate + $fee) : null;
             throw new StripeWithdrawalException($minSource
                 ? __('wallet.amount_too_low_with_source', [
                     'amount' => number_format($minWithdrawalAmount, 2, ',', ' '),
@@ -235,6 +240,8 @@ class StripeWithdrawalService
             }
 
             $currentBalance = $walletBalance ? (float) $walletBalance->balance : 0.0;
+            // Part encaissée par carte consommée en premier (fonds déjà chez Stripe).
+            $cardPart = $walletBalance ? round(min($amount, $walletBalance->card_available), 2) : 0.0;
             $ibanLast4 = $user->stripe_external_last4 ?? '****';
             $holder = $user->stripe_account_holder_name ?? $user->name;
 
@@ -263,27 +270,33 @@ class StripeWithdrawalService
                     'payout_currency' => $payoutCurrency,
                     'payout_amount' => $payoutAmount,
                     'exchange_rate' => $rate,
+                    'fee' => $fee,
                     'stripe_account_id' => $user->stripe_account_id,
                     'initiated_at' => now()->toIso8601String(),
                 ], $context['metadata'] ?? []),
             ]);
 
             // Débit immédiat (fonds bloqués).
+            WalletBalance::useCardFunds($user->id, $sourceCurrency, $cardPart);
             $user->debitKpay($sourceCurrency, $amount);
 
             $withdrawal = PlatformWithdrawal::create([
                 'user_id' => $user->id,
                 'admin_id' => $context['admin_id'] ?? null,
                 'amount_requested' => $amount,
-                'commission_rate' => 0,
-                'commission_amount' => 0,
-                'amount_sent' => $amount,
+                'commission_rate' => (float) ($context['fee_rate'] ?? 0),
+                'commission_amount' => $fee,
+                'amount_sent' => $netAmount,
                 'currency' => $sourceCurrency,
                 'payout_amount' => $payoutAmount,
                 'payout_currency' => $payoutCurrency,
                 'exchange_rate' => $rate,
                 'provider' => 'stripe',
                 'payment_method' => 'stripe_connect',
+                'method' => PlatformWithdrawal::METHOD_BANK_TRANSFER,
+                'processing_mode' => PlatformWithdrawal::MODE_AUTOMATIC,
+                'funds_origin' => WithdrawalPolicy::originLabel($amount, $cardPart),
+                'card_funds_used' => $cardPart,
                 'payment_account' => "IBAN ****{$ibanLast4}",
                 'payment_account_name' => $holder,
                 'status' => 'pending',
@@ -389,6 +402,8 @@ class StripeWithdrawalService
             'rate' => $rate,
             'iban_last4' => $ibanLast4,
             'balance_before' => $currentBalance,
+            'fee' => $fee,
+            'net_amount' => $netAmount,
         ];
     }
 

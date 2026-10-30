@@ -317,6 +317,7 @@ class ProcessWithdrawalStatusJob implements ShouldQueue
 
             // Créditer le wallet de l'utilisateur dans la bonne devise
             $user->creditKpay($currency, $refundAmount);
+            \App\Services\WithdrawalPolicy::restoreCardFunds($withdrawal);
 
             Log::info('💰 [PROCESS-WITHDRAWAL] Withdrawal refunded to user wallet', [
                 'withdrawal_id' => $withdrawal->id,

@@ -421,6 +421,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/payout-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'upsert']);
             Route::delete('/payout-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'destroy']);
             Route::get('/withdrawal-status/{withdrawalId}', [WalletController::class, 'checkWithdrawalStatus']);
+
+            // Retraits par méthode : aperçu (frais, automatique ou demande ≈ 48 h),
+            // virement bancaire (IBAN Stripe ou IBAN manuel), annulation d'une demande.
+            Route::post('/withdraw/preview', [WalletController::class, 'previewWithdrawal']);
+            Route::post('/withdraw/bank', [WalletController::class, 'initiateStripeWithdrawal']);
+            Route::post('/withdrawals/{withdrawalId}/cancel', [WalletController::class, 'cancelWithdrawal'])->whereNumber('withdrawalId');
+
+            // IBAN : contrôle (format + compatibilité Stripe) et IBAN viré à la main.
+            Route::post('/iban/check', [App\Http\Controllers\Api\PayoutAccountController::class, 'checkIban'])->middleware('throttle:30,1');
+            Route::get('/bank-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'showBank']);
+            Route::put('/bank-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'upsertBank']);
+            Route::delete('/bank-account', [App\Http\Controllers\Api\PayoutAccountController::class, 'destroyBank']);
         });
 
         // Product creation (for vendors)

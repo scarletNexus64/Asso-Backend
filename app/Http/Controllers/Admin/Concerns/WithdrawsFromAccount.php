@@ -157,11 +157,14 @@ trait WithdrawsFromAccount
     {
         $resolver = $request->getUserResolver();
         $request->setUserResolver(fn () => $account);
+        // Compte interne retiré par l'admin : ni frais ni demande manuelle (WithdrawalPolicy).
+        $request->attributes->set('withdrawal_admin_acting', true);
 
         try {
             $response = $action($request);
         } finally {
             $request->setUserResolver($resolver);
+            $request->attributes->remove('withdrawal_admin_acting');
         }
 
         return $response instanceof JsonResponse ? (array) $response->getData(true) : [];

@@ -189,6 +189,7 @@ class CleanupStaleTransactionsJob implements ShouldQueue
 
             // Créditer le wallet de l'utilisateur dans la bonne devise
             $user->creditKpay($currency, $refundAmount);
+            \App\Services\WithdrawalPolicy::restoreCardFunds($withdrawal);
 
             Log::info('💰 [CLEANUP] Timed-out withdrawal refunded to user wallet', [
                 'withdrawal_id' => $withdrawal->id,

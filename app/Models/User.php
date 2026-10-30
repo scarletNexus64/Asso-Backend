@@ -489,6 +489,12 @@ class User extends Authenticatable implements HasLocalePreference
 
     // ==================== Soldes wallet multi-devise (KPay) ====================
 
+    /** Coordonnées de retrait enregistrées (Mobile Money, IBAN manuel). */
+    public function payoutAccounts(): HasMany
+    {
+        return $this->hasMany(PayoutAccount::class);
+    }
+
     /** Soldes KPay par devise. */
     public function walletBalances(): HasMany
     {

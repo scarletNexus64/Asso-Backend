@@ -11,6 +11,8 @@ use App\Services\ExchangeRateService;
 use App\Services\StripeService;
 use App\Services\FirebaseMessagingService;
 use App\Services\StripeWithdrawalService;
+use App\Services\WithdrawalPolicy;
+use App\Models\PayoutAccount;
 use App\Exceptions\StripeWithdrawalException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -466,6 +468,11 @@ class WalletController extends Controller
             $stripePayoutSupported = $stripeConfigured
                 && $stripeService->platformSupportsCurrency($stripeCurrency);
 
+            $policy = $this->policy();
+            $mobileAccount = PayoutAccount::where('user_id', $user->id)->where('type', PayoutAccount::TYPE_MOBILE_MONEY)->first();
+            $bankAccount = PayoutAccount::where('user_id', $user->id)->where('type', PayoutAccount::TYPE_BANK_TRANSFER)->first();
+            $bankType = $stripeReady ? 'stripe' : ($bankAccount ? 'manual' : null);
+
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -509,6 +516,30 @@ class WalletController extends Controller
                             'iban_last4' => $user->stripe_external_last4,
                         ],
                     ],
+                    // Origine des fonds par devise : `card` part automatiquement vers un
+                    // IBAN Stripe, `mobile_money` vers un numéro ; le reste = demande (≈ 48 h).
+                    'funds' => $policy->fundsSummary($user),
+                    'fees' => WithdrawalPolicy::feeConfig(),
+                    'manual_delay_hours' => WithdrawalPolicy::manualDelayHours(),
+                    'min_manual_bank_amount' => (float) Setting::get('min_manual_bank_withdrawal_amount', 5000),
+                    'payout_methods' => [
+                        'mobile_money' => [
+                            'configured' => $mobileAccount !== null,
+                            'gateway_ready' => $kpayConfigured,
+                            'account' => $mobileAccount?->toApiArray(),
+                        ],
+                        'bank_transfer' => [
+                            // stripe : virement automatique ; manual : IBAN viré à la main par ASSO.
+                            'type' => $bankType,
+                            'configured' => $bankType !== null,
+                            'automatic' => $bankType === 'stripe' && $stripePayoutSupported,
+                            'stripe_status' => $user->stripe_account_status,
+                            'iban_last4' => $stripeReady ? $user->stripe_external_last4 : $bankAccount?->iban_last4,
+                            'manual_account' => $bankAccount?->toApiArray(),
+                        ],
+                        // Mobile Money conseillé tant qu'aucun IBAN automatique n'est prêt.
+                        'recommended' => ($bankType === 'stripe') ? null : 'mobile_money',
+                    ],
                 ],
             ]);
         } catch (\Exception $e) {
@@ -536,12 +567,19 @@ class WalletController extends Controller
 
         $minWithdrawalAmount = Setting::get('min_withdrawal_amount', 100);
 
+        if (is_string($request->input('phone'))) {
+            $request->merge(['phone' => preg_replace('/[\s+\-().]/', '', $request->input('phone'))]);
+        }
+
         $validator = Validator::make($request->all(), [
             'amount' => 'required|numeric|min:' . $minWithdrawalAmount,
             // provider = code opérateur KPay bénéficiaire (ex. MTN_MOMO_CMR)
             'provider' => 'required|string',
-            'phone' => 'required|string',
+            // Numéro international sans « + » (indicatif + numéro local).
+            'phone' => ['required', 'string', 'regex:/^\d{8,15}$/'],
             'notes' => 'nullable|string|max:500',
+        ], [
+            'phone.regex' => __('wallet.payout_account.phone_invalid'),
         ]);
 
         if ($validator->fails()) {
@@ -563,6 +601,41 @@ class WalletController extends Controller
         // Le montant est déjà saisi dans cette devise (conversion faite côté mobile).
         $currency = \App\Services\KPayCatalog::currencyForProvider($provider);
         $amount = (float) round($baseAmount);
+
+        // Frais + origine des fonds (sauf retrait fait par l'admin pour un compte interne).
+        $adminActing = WithdrawalPolicy::adminActing($request);
+        $fee = $adminActing ? 0.0 : $this->policy()->fee(PlatformWithdrawal::METHOD_MOBILE_MONEY, $amount, $currency);
+        $netAmount = $amount - $fee;
+        if ($netAmount <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => __('wallet.withdrawal_policy.amount_below_fee'),
+            ], 422);
+        }
+
+        if (!$adminActing) {
+            $gatewayReady = app(\App\Services\MobileMoneyGateway::class)->isConfigured();
+            $mode = $this->policy()->mode($user, PlatformWithdrawal::METHOD_MOBILE_MONEY, $amount, $currency, $gatewayReady);
+
+            if ($mode['mode'] === PlatformWithdrawal::MODE_MANUAL && $amount <= $user->kpayAvailableFor($currency)) {
+                try {
+                    $withdrawal = $this->policy()->createManualRequest($user, PlatformWithdrawal::METHOD_MOBILE_MONEY, $amount, $currency, [
+                        'payment_method' => $provider,
+                        'payment_account' => $phone,
+                        'payment_account_name' => $user->name,
+                    ], [
+                        'notes' => $notes,
+                        'ip' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'reason' => $mode['reason'],
+                    ]);
+                } catch (StripeWithdrawalException $e) {
+                    return response()->json(['success' => false, 'message' => $e->getMessage()], $e->status);
+                }
+
+                return $this->manualRequestResponse($withdrawal, $user, $mode['reason']);
+            }
+        }
 
         // Pré-contrôle rapide (non autoritatif) pour répondre vite en cas de solde manifestement insuffisant.
         // La vérification AUTORITATIVE se fait sous verrou de ligne dans la transaction ci-dessous.
@@ -630,6 +703,8 @@ class WalletController extends Controller
                     'phone' => $phone,
                     'payment_method' => $paymentMethod,
                     'currency' => $currency,
+                    'fee' => $fee,
+                    'net_amount' => $netAmount,
                     'initiated_at' => now()->toIso8601String(),
                 ],
             ]);
@@ -648,11 +723,14 @@ class WalletController extends Controller
                 'user_id' => $user->id,
                 'admin_id' => null,
                 'amount_requested' => $amount,
-                'commission_rate' => 0,
-                'commission_amount' => 0,
-                'amount_sent' => $amount,
+                'commission_rate' => $fee > 0 ? (WithdrawalPolicy::feeConfig()['mobile_money']['percent'] ?? 0) : 0,
+                'commission_amount' => $fee,
+                'amount_sent' => $netAmount,
                 'currency' => $currency,
                 'provider' => 'kpay',
+                'method' => PlatformWithdrawal::METHOD_MOBILE_MONEY,
+                'processing_mode' => PlatformWithdrawal::MODE_AUTOMATIC,
+                'funds_origin' => 'mobile_money',
                 'payment_method' => $paymentMethod,
                 'payment_account' => $phone,
                 'payment_account_name' => $user->name,
@@ -678,7 +756,7 @@ class WalletController extends Controller
             $kpayService = app(\App\Services\MobileMoneyGateway::class);
 
             $disbursementResult = $kpayService->initiateDisbursement([
-                'amount' => $amount,
+                'amount' => $netAmount,
                 'provider' => $provider,
                 'phone_number' => $phone,
                 'description' => "Retrait wallet #{$withdrawal->id}",
@@ -762,8 +840,12 @@ class WalletController extends Controller
                     'wallet_transaction_id' => $walletTransaction->id,
                     'transaction_reference' => $withdrawal->transaction_reference,
                     'amount' => $withdrawal->amount_requested,
+                    'fee' => $fee,
+                    'net_amount' => $netAmount,
                     'currency' => $currency,
                     'status' => 'processing',
+                    'processing_mode' => PlatformWithdrawal::MODE_AUTOMATIC,
+                    'method' => PlatformWithdrawal::METHOD_MOBILE_MONEY,
                     'new_balance' => $user->kpayBalanceFor($currency), // Nouveau solde après débit
                     'balance_before' => $currentBalance, // Solde avant retrait
                 ],
@@ -839,7 +921,9 @@ class WalletController extends Controller
             ? round((float) $request->input('amount'), 2)
             : $source['available'];
 
-        $payoutAmount = round($sourceAmount * $source['rate'], 2);
+        $fee = $this->policy()->fee(PlatformWithdrawal::METHOD_BANK_TRANSFER, $sourceAmount, $source['currency']);
+        $payoutAmount = round(max(0, $sourceAmount - $fee) * $source['rate'], 2);
+        $mode = $this->policy()->mode($user, PlatformWithdrawal::METHOD_BANK_TRANSFER, $sourceAmount, $source['currency'], StripeWithdrawalService::isReady($user));
         $minPayout = (float) Setting::get('min_stripe_withdrawal_amount', 5);
         $minSource = $source['rate'] > 0 ? ceil($minPayout / $source['rate']) : null;
 
@@ -870,6 +954,9 @@ class WalletController extends Controller
                 'amount' => $sourceAmount,
                 'currency' => $source['currency'],
                 'payout_amount' => $payoutAmount,
+                'fee' => $fee,
+                'processing_mode' => $mode['mode'],
+                'reason_message' => WithdrawalPolicy::reasonMessage($mode['reason']),
                 'rate' => $source['rate'],
                 'minimum' => [
                     'payout_amount' => $minPayout,
@@ -909,18 +996,83 @@ class WalletController extends Controller
         }
 
         $user = $request->user();
+        $amount = (float) $request->input('amount');
+        $requestedCurrency = $request->filled('currency') ? strtoupper($request->input('currency')) : null;
+        $context = [
+            'notes' => $request->input('notes'),
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ];
+
+        // Virement fait par l'admin pour un compte interne (ASSO, partenaire) : inchangé.
+        if (WithdrawalPolicy::adminActing($request)) {
+            return $this->stripeWithdrawalResponse($withdrawals, $user, $amount, $requestedCurrency, $context);
+        }
+
+        $policy = $this->policy();
+        $method = PlatformWithdrawal::METHOD_BANK_TRANSFER;
+        $stripeReady = StripeWithdrawalService::isReady($user) && app(StripeService::class)->isConfigured();
+        $bankAccount = PayoutAccount::where('user_id', $user->id)->where('type', PayoutAccount::TYPE_BANK_TRANSFER)->first();
+
+        if (!$stripeReady && !$bankAccount) {
+            return response()->json([
+                'success' => false,
+                'message' => __('wallet.withdrawal_policy.no_bank_account'),
+            ], 422);
+        }
+
+        // Devise débitée : celle demandée, sinon celle du plus gros solde disponible.
+        $currency = $requestedCurrency ?? $this->defaultWithdrawCurrency($user);
+
+        if ($stripeReady) {
+            $mode = $policy->mode($user, $method, $amount, $currency, true);
+            if ($mode['mode'] === PlatformWithdrawal::MODE_AUTOMATIC) {
+                $fee = $policy->fee($method, $amount, $currency);
+                return $this->stripeWithdrawalResponse($withdrawals, $user, $amount, $currency, $context + [
+                    'fee' => $fee,
+                    'fee_rate' => WithdrawalPolicy::feeConfig()[$method]['percent'] ?? 0,
+                ]);
+            }
+            $destination = [
+                'payment_method' => 'stripe_connect',
+                'payment_account' => 'IBAN ****' . ($user->stripe_external_last4 ?? '????'),
+                'payment_account_name' => $user->stripe_account_holder_name ?? $user->name,
+                'payout_currency' => $withdrawals->payoutCurrency($user->stripe_bank_country),
+            ];
+        } else {
+            $mode = ['mode' => PlatformWithdrawal::MODE_MANUAL, 'reason' => 'iban_not_stripe'];
+            $destination = [
+                'payment_method' => 'iban',
+                'payment_account' => \App\Services\IbanValidator::format((string) $bankAccount->iban),
+                'payment_account_name' => $bankAccount->account_holder ?? $user->name,
+                'payout_currency' => $bankAccount->currency,
+            ];
+        }
+
+        $min = (float) Setting::get('min_manual_bank_withdrawal_amount', 5000);
+        if ($currency === 'XAF' && $amount < $min) {
+            return response()->json([
+                'success' => false,
+                'message' => __('wallet.withdrawal_policy.minimum_manual_bank', ['amount' => $policy->money($min, 'XAF')]),
+            ], 422);
+        }
 
         try {
-            $result = $withdrawals->withdraw(
-                $user,
-                (float) $request->input('amount'),
-                $request->filled('currency') ? $request->input('currency') : null,
-                [
-                    'notes' => $request->input('notes'),
-                    'ip' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                ]
-            );
+            $withdrawal = $policy->createManualRequest($user, $method, $amount, $currency, $destination, $context + [
+                'reason' => $mode['reason'],
+            ]);
+        } catch (StripeWithdrawalException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->status);
+        }
+
+        return $this->manualRequestResponse($withdrawal, $user, $mode['reason']);
+    }
+
+    /** Virement IBAN automatique (Stripe) et réponse JSON historique de l'endpoint. */
+    private function stripeWithdrawalResponse(StripeWithdrawalService $withdrawals, User $user, float $amount, ?string $currency, array $context)
+    {
+        try {
+            $result = $withdrawals->withdraw($user, $amount, $currency, $context);
         } catch (StripeWithdrawalException $e) {
             return response()->json([
                 'success' => false,
@@ -941,16 +1093,174 @@ class WalletController extends Controller
                 'wallet_transaction_id' => $result['wallet_transaction']->id,
                 'transaction_reference' => $withdrawal->transaction_reference,
                 'amount' => $withdrawal->amount_requested,
+                'fee' => $result['fee'],
+                'net_amount' => $result['net_amount'],
                 'currency' => $result['currency'],
                 'payout_amount' => $result['payout_amount'],
                 'payout_currency' => $result['payout_currency'],
                 'exchange_rate' => $result['rate'],
                 'status' => 'processing',
+                'processing_mode' => PlatformWithdrawal::MODE_AUTOMATIC,
+                'method' => PlatformWithdrawal::METHOD_BANK_TRANSFER,
                 'iban_last4' => $result['iban_last4'],
                 'new_balance' => $user->kpayBalanceFor($result['currency']),
                 'balance_before' => $result['balance_before'],
             ],
         ]);
+    }
+
+    /** Réponse commune d'une demande de retrait traitée à la main par ASSO. */
+    private function manualRequestResponse(PlatformWithdrawal $withdrawal, User $user, ?string $reason)
+    {
+        $hours = WithdrawalPolicy::manualDelayHours();
+
+        return response()->json([
+            'success' => true,
+            'message' => __('wallet.withdrawal_policy.request_saved', [
+                'amount' => $this->policy()->money((float) $withdrawal->amount_sent, $withdrawal->currency),
+                'hours' => $hours,
+            ]),
+            'data' => [
+                'withdrawal_id' => $withdrawal->id,
+                'transaction_reference' => $withdrawal->transaction_reference,
+                'amount' => $withdrawal->amount_requested,
+                'fee' => (float) $withdrawal->commission_amount,
+                'net_amount' => (float) $withdrawal->amount_sent,
+                'currency' => $withdrawal->currency,
+                'status' => $withdrawal->status,
+                'processing_mode' => PlatformWithdrawal::MODE_MANUAL,
+                'method' => $withdrawal->method,
+                'reason' => $reason,
+                'reason_message' => WithdrawalPolicy::reasonMessage($reason),
+                'delay_hours' => $hours,
+                'expected_by' => $withdrawal->expected_by?->toIso8601String(),
+                'new_balance' => $user->fresh()->kpayBalanceFor($withdrawal->currency),
+            ],
+        ]);
+    }
+
+    /**
+     * Aperçu d'un retrait AVANT confirmation : frais, net reçu, et s'il part tout de
+     * suite ou sous forme de demande (≈ 48 h).
+     *
+     * POST /api/v1/wallet/withdraw/preview { method, amount, currency?, provider? }
+     */
+    public function previewWithdrawal(Request $request)
+    {
+        $validated = $request->validate([
+            'method' => 'required|in:mobile_money,bank_transfer',
+            'amount' => 'required|numeric|min:0',
+            'currency' => 'nullable|string|size:3',
+            'provider' => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+        $policy = $this->policy();
+        $method = $validated['method'];
+        $amount = (float) $validated['amount'];
+
+        if ($method === PlatformWithdrawal::METHOD_MOBILE_MONEY && !empty($validated['provider'])) {
+            $currency = \App\Services\KPayCatalog::currencyForProvider($validated['provider']);
+        } else {
+            $currency = isset($validated['currency']) ? strtoupper($validated['currency']) : $this->defaultWithdrawCurrency($user);
+        }
+
+        $funds = $policy->funds($user, $currency);
+        $fee = $policy->fee($method, $amount, $currency);
+        $net = max(0.0, round($amount - $fee, 2));
+        $reasons = [];
+
+        if ($method === PlatformWithdrawal::METHOD_MOBILE_MONEY) {
+            $railReady = app(\App\Services\MobileMoneyGateway::class)->isConfigured();
+            $min = (float) Setting::get('min_withdrawal_amount', 100);
+            $configured = PayoutAccount::where('user_id', $user->id)->where('type', PayoutAccount::TYPE_MOBILE_MONEY)->exists();
+        } else {
+            $stripeReady = StripeWithdrawalService::isReady($user) && app(StripeService::class)->isConfigured();
+            $railReady = $stripeReady;
+            $configured = $stripeReady || PayoutAccount::where('user_id', $user->id)->where('type', PayoutAccount::TYPE_BANK_TRANSFER)->exists();
+            $min = $currency === 'XAF' ? (float) Setting::get('min_manual_bank_withdrawal_amount', 5000) : 0.0;
+        }
+
+        $mode = $policy->mode($user, $method, $amount, $currency, $railReady);
+
+        if ($amount > $funds['available'] + 0.009) {
+            $reasons[] = __('wallet.insufficient_balance_short');
+        }
+        if ($amount > 0 && $net <= 0) {
+            $reasons[] = __('wallet.withdrawal_policy.amount_below_fee');
+        }
+        // Le minimum du virement automatique Stripe est contrôlé à l'envoi (devise du compte).
+        if ($min > 0 && $amount < $min && !($method === PlatformWithdrawal::METHOD_BANK_TRANSFER && $mode['mode'] === PlatformWithdrawal::MODE_AUTOMATIC)) {
+            $reasons[] = __('wallet.withdrawal_policy.minimum', ['amount' => $policy->money($min, $currency)]);
+        }
+        if (!$configured) {
+            $reasons[] = $method === PlatformWithdrawal::METHOD_MOBILE_MONEY
+                ? __('wallet.withdrawal_policy.no_mobile_account')
+                : __('wallet.withdrawal_policy.no_bank_account');
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'method' => $method,
+                'amount' => $amount,
+                'currency' => $currency,
+                'fee' => $fee,
+                'net_amount' => $net,
+                'fees' => WithdrawalPolicy::feeConfig()[$method],
+                'funds' => $funds,
+                'processing_mode' => $mode['mode'],
+                'reason' => $mode['reason'],
+                'reason_message' => WithdrawalPolicy::reasonMessage($mode['reason']),
+                'delay_hours' => $mode['mode'] === PlatformWithdrawal::MODE_MANUAL ? WithdrawalPolicy::manualDelayHours() : 0,
+                'can_withdraw' => empty($reasons) && $amount > 0,
+                'message' => empty($reasons) ? null : implode(' ', $reasons),
+            ],
+        ]);
+    }
+
+    /**
+     * Le vendeur annule une demande manuelle pas encore prise en charge par ASSO.
+     *
+     * POST /api/v1/wallet/withdrawals/{withdrawalId}/cancel
+     */
+    public function cancelWithdrawal(Request $request, $withdrawalId)
+    {
+        $withdrawal = PlatformWithdrawal::where('id', $withdrawalId)->where('user_id', $request->user()->id)->first();
+        if (!$withdrawal) {
+            return response()->json(['success' => false, 'message' => __('wallet.withdrawal_not_found')], 404);
+        }
+
+        if (!$this->policy()->cancelByUser($withdrawal)) {
+            return response()->json(['success' => false, 'message' => __('wallet.withdrawal_policy.cannot_cancel')], 409);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => __('wallet.withdrawal_policy.cancelled_by_user'),
+            'data' => [
+                'withdrawal_id' => $withdrawal->id,
+                'status' => 'cancelled',
+                'new_balance' => $request->user()->fresh()->kpayBalanceFor($withdrawal->currency),
+            ],
+        ]);
+    }
+
+    /** Devise du plus gros solde disponible (XAF si aucun). */
+    private function defaultWithdrawCurrency(User $user): string
+    {
+        $best = $user->walletBalances()->get()
+            ->sortByDesc(fn ($b) => (float) $b->balance - (float) $b->locked_balance)
+            ->first();
+
+        return $best && ((float) $best->balance - (float) $best->locked_balance) > 0
+            ? strtoupper($best->currency)
+            : 'XAF';
+    }
+
+    private function policy(): WithdrawalPolicy
+    {
+        return app(WithdrawalPolicy::class);
     }
 
     /**
@@ -993,8 +1303,14 @@ class WalletController extends Controller
                     'withdrawal_id' => $withdrawal->id,
                     'transaction_reference' => $withdrawal->transaction_reference,
                     'amount' => $withdrawal->amount_requested,
+                    'fee' => (float) $withdrawal->commission_amount,
+                    'net_amount' => (float) $withdrawal->amount_sent,
+                    'currency' => $withdrawal->currency,
                     'provider' => $withdrawal->provider,
                     'payment_method' => $withdrawal->payment_method,
+                    'method' => $withdrawal->method,
+                    'processing_mode' => $withdrawal->processing_mode,
+                    'expected_by' => $withdrawal->expected_by?->toIso8601String(),
                     'status' => $withdrawal->status,
                     'created_at' => $withdrawal->created_at->toIso8601String(),
                     'completed_at' => $withdrawal->completed_at?->toIso8601String(),
@@ -1071,6 +1387,7 @@ class WalletController extends Controller
                 }
 
                 $user->creditKpay((string) $withdrawal->currency, (float) $withdrawal->amount_requested);
+                \App\Services\WithdrawalPolicy::restoreCardFunds($withdrawal);
                 \App\Models\WalletTransaction::create([
                     'user_id' => $user->id,
                     'type' => 'credit',
@@ -1267,6 +1584,8 @@ class WalletController extends Controller
             // Le montant à créditer est en XAF (le champ `amount` de la transaction).
             $creditXaf = (float) $locked->amount;
             $user->creditKpay('XAF', $creditXaf);
+            // Recharge par carte : ces fonds sont chez Stripe, virables vers un IBAN.
+            \App\Models\WalletBalance::addCardFunds($user->id, 'XAF', $creditXaf);
 
             $locked->update([
                 'status' => 'completed',

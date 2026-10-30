@@ -40,7 +40,27 @@ class PlatformWithdrawal extends Model
         'completed_at',
         'ip_address',
         'user_agent',
+        // Méthode (mobile_money | bank_transfer) et mode de traitement : un retrait
+        // automatique part chez le prestataire, une demande manuelle est réglée par ASSO.
+        'method',
+        'processing_mode',
+        'funds_origin',
+        'card_funds_used',
+        'expected_by',
+        'processed_by',
+        'processed_at',
+        'payout_reference',
+        'fee_credited_at',
     ];
+
+    public const METHOD_MOBILE_MONEY = 'mobile_money';
+    public const METHOD_BANK_TRANSFER = 'bank_transfer';
+
+    public const MODE_AUTOMATIC = 'automatic';
+    public const MODE_MANUAL = 'manual';
+
+    /** Prestataire d'une demande en attente de traitement par ASSO. */
+    public const PROVIDER_MANUAL = 'manual';
 
     protected $casts = [
         'amount_requested' => 'decimal:2',
@@ -52,7 +72,32 @@ class PlatformWithdrawal extends Model
         'stripe_response' => 'array',
         'payout_amount' => 'decimal:2',
         'completed_at' => 'datetime',
+        'card_funds_used' => 'decimal:2',
+        'expected_by' => 'datetime',
+        'processed_at' => 'datetime',
+        'fee_credited_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // Frais de retrait : acquis à ASSO une fois le versement réglé, quel que soit
+        // le chemin qui conclut le retrait (job KPay, webhook Stripe, admin...).
+        static::updated(function (PlatformWithdrawal $withdrawal) {
+            if ($withdrawal->wasChanged('status') && $withdrawal->status === 'completed') {
+                app(\App\Services\WithdrawalPolicy::class)->creditFee($withdrawal);
+            }
+        });
+    }
+
+    public function isManual(): bool
+    {
+        return $this->processing_mode === self::MODE_MANUAL;
+    }
+
+    public function processor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'processed_by');
+    }
 
     /**
      * Get the user who initiated the withdrawal (for user withdrawals)

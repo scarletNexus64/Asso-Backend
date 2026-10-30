@@ -1675,6 +1675,8 @@ class OrderService
                     ['vendor_funds' => true, 'reason' => $reason],
                     'kpay'
                 );
+                // Vente payée par carte : la part libérée est virable automatiquement vers un IBAN.
+                \App\Models\WalletBalance::addCardFunds($vendor->id, 'XAF', $amount * $locked->cardPaidRatio());
             }
 
             $locked->update([

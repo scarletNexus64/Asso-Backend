@@ -65,6 +65,8 @@ return [
             ['id' => 'revenue', 'route' => 'admin.revenue.index', 'icon' => 'fa-coins', 'match' => ['admin.revenue.index', 'admin.revenue.show', 'admin.revenue.export']],
             ['id' => 'withdrawals', 'route' => 'admin.revenue.withdrawal', 'icon' => 'fa-money-bill-transfer', 'match' => ['admin.revenue.withdrawal', 'admin.revenue.withdrawal.*']],
             ['id' => 'transactions', 'route' => 'admin.transactions.index', 'icon' => 'fa-exchange-alt', 'match' => ['admin.transactions.*']],
+            ['id' => 'payout_requests', 'route' => 'admin.payouts.requests', 'icon' => 'fa-hand-holding-dollar', 'match' => ['admin.payouts.requests', 'admin.payouts.take', 'admin.payouts.execute', 'admin.payouts.complete', 'admin.payouts.reject', 'admin.payouts.fees']],
+            ['id' => 'payout_accounts', 'route' => 'admin.payouts.accounts', 'icon' => 'fa-address-card', 'match' => ['admin.payouts.accounts']],
             ['id' => 'stripe_accounts', 'route' => 'admin.stripe.accounts.index', 'icon' => 'fa-university', 'match' => ['admin.stripe.accounts.*'], 'badge' => 'pendingStripeAccounts'],
         ],
     ],

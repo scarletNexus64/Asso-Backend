@@ -613,6 +613,18 @@
             "body": "Your deposit of :amount FCFA failed. Reason: :reason",
             "unknown_reason": "Unknown error"
         },
+        "wallet_withdrawal_requested": {
+            "title": "Withdrawal request received",
+            "body": "Your request for :amount has been received. ASSO processes it within :hours h on average."
+        },
+        "wallet_withdrawal_request_completed": {
+            "title": "Withdrawal sent",
+            "body": ":amount has been sent to :account."
+        },
+        "wallet_withdrawal_rejected": {
+            "title": "Withdrawal request declined",
+            "body": "Your request for :amount was declined and the amount returned to your wallet. Reason: :reason"
+        },
         "wallet_withdrawal_completed": {
             "title": "Withdrawal completed",
             "body": "Your withdrawal of :amount FCFA has been sent successfully to :account."
@@ -1368,6 +1380,33 @@
         "withdrawal_not_found": "Withdrawal not found",
         "status_check_error": "Error while checking the status",
         "history_fetch_error": "Error while fetching the history",
+        "iban": {
+            "invalid_format": "Invalid IBAN: it starts with 2 letters (country) and 2 digits, with no special characters.",
+            "invalid_length": "Invalid IBAN: a :country IBAN has :length characters.",
+            "invalid_checksum": "Invalid IBAN: the check digits don't match. Check each character.",
+            "stripe_unsupported": "Valid IBAN, but your bank isn't supported for automatic transfers.",
+            "stripe_supported": "Valid IBAN, compatible with automatic transfers.",
+            "manual_notice": "Withdrawals to this IBAN are processed manually by ASSO: allow :hours h on average. For an instant withdrawal, we recommend Mobile Money.",
+            "saved_manual": "IBAN saved. Withdrawals to this account will be processed within :hours h on average.",
+            "deleted": "IBAN removed.",
+            "bic_invalid": "Invalid BIC: 8 or 11 characters (e.g. AFRICMCX)."
+        },
+        "withdrawal_policy": {
+            "amount_below_fee": "The amount is too low to cover the withdrawal fee.",
+            "no_bank_account": "Add an IBAN first to receive bank transfers.",
+            "no_mobile_account": "Add a Mobile Money number first.",
+            "minimum": "The minimum withdrawal is :amount.",
+            "minimum_manual_bank": "The minimum bank transfer is :amount.",
+            "request_saved": "Request saved: you will receive :amount within :hours h on average.",
+            "cannot_cancel": "This request is already being processed and can no longer be cancelled.",
+            "cancelled_by_user": "Request cancelled: the amount has been returned to your wallet.",
+            "reasons": {
+                "card_funds_to_mobile": "These funds were collected by card: sending them to Mobile Money is processed by ASSO within :hours h on average.",
+                "mobile_funds_to_bank": "These funds were collected by Mobile Money: the transfer to your IBAN is processed by ASSO within :hours h on average.",
+                "iban_not_stripe": "Your bank isn't supported for automatic transfers: ASSO processes the transfer within :hours h on average.",
+                "rail_unavailable": "Automatic withdrawals are temporarily unavailable: ASSO processes your request within :hours h on average."
+            }
+        },
         "payout_account": {
             "provider_unsupported": "Mobile Money operator not supported.",
             "phone_invalid": "Invalid number: enter digits only, including the country code.",
@@ -1425,6 +1464,11 @@
             "boost_refund_missing_product": "Sponsorship refund — item not found",
             "topup_kpay": "Wallet top-up via KPay (:currency)",
             "topup_card": "Wallet top-up by bank card (Stripe)",
+            "withdrawal_request_mobile": "Mobile Money withdrawal request to :account",
+            "withdrawal_request_bank": "Bank transfer request to :account",
+            "withdrawal_request_cancelled": "Withdrawal request cancelled (ref. :reference)",
+            "withdrawal_request_rejected": "Withdrawal request declined — amount returned (ref. :reference)",
+            "withdrawal_fee": "Withdrawal fee (ref. :reference)",
             "withdrawal_mobile": ":method withdrawal to :phone",
             "bank_transfer": "IBAN transfer ****:last4",
             "bank_transfer_converted": "IBAN transfer ****:last4 (:amount :currency)",
@@ -1880,6 +1924,8 @@
             "revenue": "ASSO revenue",
             "withdrawals": "ASSO fund withdrawals",
             "transactions": "Transactions",
+            "payout_requests": "Withdrawal requests",
+            "payout_accounts": "Payout details",
             "stripe_accounts": "Payout accounts",
             "disputes": "Order disputes",
             "support": "Customer support",
