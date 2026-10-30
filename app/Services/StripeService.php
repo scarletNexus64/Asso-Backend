@@ -430,10 +430,22 @@ class StripeService
         return $name !== '' ? $name : null;
     }
 
-    /** Ferme un compte connecté (désynchronisation de l'IBAN par le vendeur). */
+    /**
+     * Ferme un compte connecté (désynchronisation de l'IBAN par le vendeur).
+     *
+     * Stripe exige de citer exactement les configurations du compte
+     * (sinon : configs_must_match_to_close) ; on les relit avant de fermer.
+     */
     public function closeAccount(string $accountId): void
     {
-        $this->withoutStripeNotices(fn () => $this->client()->v2->core->accounts->close($accountId));
+        $this->withoutStripeNotices(function () use ($accountId) {
+            $account = $this->client()->v2->core->accounts->retrieve($accountId);
+            $configs = array_values(array_filter((array) ($account->applied_configurations ?? [])));
+
+            $this->client()->v2->core->accounts->close($accountId, [
+                'applied_configurations' => $configs ?: ['recipient'],
+            ]);
+        });
     }
 
     /**
