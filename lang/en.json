@@ -642,6 +642,10 @@
             "title": "Transfer in progress",
             "body": "Your transfer request of :amount :currency to your IBAN ****:iban_last4 is being processed."
         },
+        "wallet_withdrawal_queued_bank": {
+            "title": "Transfer request saved",
+            "body": "Your :amount :currency transfer request to IBAN ****:iban_last4 is saved. You will be notified when it is sent."
+        },
         "wallet_deposit_success_card": {
             "title": "Card top-up successful",
             "body": "Your wallet has been credited with :amount FCFA by bank card."
@@ -1370,6 +1374,7 @@
         "amount_too_low_with_source": "Amount too low: the minimum is :amount :currency (:source_amount :source_currency).",
         "amount_too_low": "Amount too low: the minimum is :amount :currency.",
         "bank_withdrawal_processing": "Transfer of :amount :currency being processed. The funds will reach your account within 1 to 3 business days.",
+        "bank_withdrawal_queued": "Your :amount :currency transfer request is saved. It will be sent to your IBAN as soon as possible; your balance is reserved meanwhile.",
         "bank_withdrawal_initiation_failed": "The transfer could not be initiated at the moment. Your balance has not been debited. Please try again later.",
         "stripe_unavailable": {
             "account_not_ready": "Your payout account has not been activated by our banking partner yet. Check your details under “Payout account” or try again shortly.",

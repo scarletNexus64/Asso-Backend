@@ -80,16 +80,14 @@ class StripeWithdrawalTest extends TestCase
         $this->assertEqualsWithDelta(80.0, $user->fresh()->kpayBalanceFor('EUR'), 0.001);
     }
 
-    /** Devise absente du solde plateforme : refus AVANT toute écriture. */
-    public function test_withdrawal_refused_when_platform_lacks_currency(): void
+    /** Solde Stripe d'ASSO insuffisant : la demande est enregistrée, pas refusée. */
+    public function test_withdrawal_is_queued_when_platform_lacks_funds(): void
     {
+        $this->silenceFcm();
         $this->mock(StripeService::class, function ($mock) {
             $mock->shouldReceive('isConfigured')->andReturn(true);
             $mock->shouldReceive('assertPayoutPossible')->once()->andThrow(
-                new StripePayoutUnavailableException(
-                    'currency_unavailable',
-                    'Solde plateforme Stripe insuffisant en EUR.',
-                )
+                new StripePayoutUnavailableException('platform_funds', 'Fonds plateforme insuffisants.')
             );
             $mock->shouldReceive('payoutToVendor')->never();
         });
@@ -98,11 +96,48 @@ class StripeWithdrawalTest extends TestCase
 
         $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/wallet/withdraw/stripe', ['amount' => 20])
-            ->assertStatus(503)
-            ->assertJsonPath('success', false);
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.queued', true);
 
-        $this->assertSame(0, PlatformWithdrawal::where('user_id', $user->id)->count());
-        $this->assertEqualsWithDelta(100.0, $user->fresh()->kpayBalanceFor('EUR'), 0.001);
+        $withdrawal = PlatformWithdrawal::where('user_id', $user->id)->firstOrFail();
+        $this->assertSame('pending', $withdrawal->status);
+        $this->assertNull($withdrawal->stripe_transfer_id);
+        // Solde réservé (débité) en attendant le versement.
+        $this->assertEqualsWithDelta(80.0, $user->fresh()->kpayBalanceFor('EUR'), 0.001);
+    }
+
+    /** La tâche planifiée verse la demande dès que les fonds sont là. */
+    public function test_queued_withdrawal_is_sent_when_funds_arrive(): void
+    {
+        $this->silenceFcm();
+        $calls = 0;
+        $this->mock(StripeService::class, function ($mock) use (&$calls) {
+            $mock->shouldReceive('isConfigured')->andReturn(true);
+            $mock->shouldReceive('assertPayoutPossible')->andReturnUsing(function () use (&$calls) {
+                if ($calls++ === 0) {
+                    throw new StripePayoutUnavailableException('platform_funds', 'Fonds plateforme insuffisants.');
+                }
+            });
+            $mock->shouldReceive('payoutToVendor')->once()->andReturn([
+                'transfer_id' => 'tr_q',
+                'payout_id' => 'po_q',
+            ]);
+        });
+
+        $user = $this->approvedSeller();
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/wallet/withdraw/stripe', ['amount' => 20])
+            ->assertOk();
+
+        $this->artisan('stripe:process-queued-withdrawals')->assertSuccessful();
+
+        $withdrawal = PlatformWithdrawal::where('user_id', $user->id)->firstOrFail();
+        $this->assertSame('processing', $withdrawal->status);
+        $this->assertSame('tr_q', $withdrawal->stripe_transfer_id);
+        $this->assertSame('po_q', $withdrawal->stripe_payout_id);
+        // Débité une seule fois.
+        $this->assertEqualsWithDelta(80.0, $user->fresh()->kpayBalanceFor('EUR'), 0.001);
     }
 
     /** Compte vendeur non activé par Stripe : 422 explicite, solde intact. */

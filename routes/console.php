@@ -74,6 +74,11 @@ Schedule::command('stripe:reconcile-payouts')
     ->everyFifteenMinutes()
     ->withoutOverlapping(300);
 
+// Retraits IBAN enregistrés faute de fonds sur le solde Stripe d'ASSO.
+Schedule::command('stripe:process-queued-withdrawals')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping(300);
+
 /**
  * =====================================================
  * KPAY — FRAIS RÉELLEMENT PRÉLEVÉS

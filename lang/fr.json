@@ -642,6 +642,10 @@
             "title": "Virement en cours",
             "body": "Votre demande de virement de :amount :currency vers votre IBAN ****:iban_last4 est en cours de traitement."
         },
+        "wallet_withdrawal_queued_bank": {
+            "title": "Demande de virement enregistrée",
+            "body": "Votre demande de virement de :amount :currency vers votre IBAN ****:iban_last4 est enregistrée. Vous serez prévenu dès son envoi."
+        },
         "wallet_deposit_success_card": {
             "title": "Recharge par carte réussie",
             "body": "Votre wallet a été crédité de :amount FCFA par carte bancaire."
@@ -1370,6 +1374,7 @@
         "amount_too_low_with_source": "Montant trop faible : le minimum est de :amount :currency (:source_amount :source_currency).",
         "amount_too_low": "Montant trop faible : le minimum est de :amount :currency.",
         "bank_withdrawal_processing": "Virement de :amount :currency en cours de traitement. Les fonds arriveront sur votre compte sous 1 à 3 jours ouvrés.",
+        "bank_withdrawal_queued": "Votre demande de virement de :amount :currency est enregistrée. Elle sera envoyée sur votre IBAN dès que possible ; votre solde est réservé en attendant.",
         "bank_withdrawal_initiation_failed": "Le virement n'a pas pu être initié pour le moment. Votre solde n'a pas été débité. Réessayez plus tard.",
         "stripe_unavailable": {
             "account_not_ready": "Votre compte de virement n'est pas encore activé par notre partenaire bancaire. Vérifiez vos informations dans « Compte de virement » ou réessayez sous peu.",

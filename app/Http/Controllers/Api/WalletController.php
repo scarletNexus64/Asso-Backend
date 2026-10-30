@@ -506,7 +506,9 @@ class WalletController extends Controller
                             'currency' => 'XAF',
                         ],
                         'stripe' => [
-                            'configured' => $stripeConfigured && $stripePayoutSupported,
+                            // Fonds plateforme insuffisants : l'option reste ouverte, la
+                            // demande est enregistrée puis versée dès que possible.
+                            'configured' => $stripeConfigured,
                             'eligible' => $stripeReady,
                             'payout_supported' => $stripePayoutSupported,
                             'status' => $user->stripe_account_status,
@@ -1081,10 +1083,11 @@ class WalletController extends Controller
         }
 
         $withdrawal = $result['withdrawal'];
+        $queued = $result['queued'] ?? false;
 
         return response()->json([
             'success' => true,
-            'message' => __('wallet.bank_withdrawal_processing', [
+            'message' => __($queued ? 'wallet.bank_withdrawal_queued' : 'wallet.bank_withdrawal_processing', [
                 'amount' => number_format($result['payout_amount'], 2, ',', ' '),
                 'currency' => $result['payout_currency'],
             ]),
@@ -1099,7 +1102,8 @@ class WalletController extends Controller
                 'payout_amount' => $result['payout_amount'],
                 'payout_currency' => $result['payout_currency'],
                 'exchange_rate' => $result['rate'],
-                'status' => 'processing',
+                'status' => $queued ? 'pending' : 'processing',
+                'queued' => $queued,
                 'processing_mode' => PlatformWithdrawal::MODE_AUTOMATIC,
                 'method' => PlatformWithdrawal::METHOD_BANK_TRANSFER,
                 'iban_last4' => $result['iban_last4'],

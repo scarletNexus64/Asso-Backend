@@ -206,16 +206,28 @@ class StripeWithdrawalService
         // Pré-contrôle Stripe AVANT toute écriture : compte réellement activé et
         // solde plateforme disponible DANS CETTE DEVISE. Sans lui, on débitait le
         // wallet pour ensuite tout annuler par rollback sur une erreur Stripe opaque.
+        // Seule exception : le solde Stripe d'ASSO ne couvre pas encore le virement.
+        // La demande est alors enregistrée (solde réservé) et versée dès que les
+        // fonds sont disponibles (stripe:process-queued-withdrawals).
+        $queued = false;
         try {
             $this->stripe->assertPayoutPossible($user->stripe_account_id, $payoutAmount, $payoutCurrency);
         } catch (StripePayoutUnavailableException $e) {
-            Log::error('[StripeWithdrawal] Virement IBAN impossible (pré-contrôle)', [
-                'user_id' => $user->id,
-                'reason' => $e->reason,
-                'detail' => $e->getMessage(),
-                'context' => $e->context,
-            ]);
-            throw $this->unavailable($e);
+            if (in_array($e->reason, self::QUEUEABLE_REASONS, true)) {
+                $queued = true;
+                Log::warning('[StripeWithdrawal] Fonds plateforme insuffisants : demande mise en attente', [
+                    'user_id' => $user->id,
+                    'detail' => $e->getMessage(),
+                ]);
+            } else {
+                Log::error('[StripeWithdrawal] Virement IBAN impossible (pré-contrôle)', [
+                    'user_id' => $user->id,
+                    'reason' => $e->reason,
+                    'detail' => $e->getMessage(),
+                    'context' => $e->context,
+                ]);
+                throw $this->unavailable($e);
+            }
         }
 
         try {
@@ -308,6 +320,18 @@ class StripeWithdrawalService
 
             $walletTransaction->reference_id = $withdrawal->id;
             $walletTransaction->save();
+
+            if ($queued) {
+                $withdrawal->stripe_response = [
+                    'queued_reason' => 'platform_funds',
+                    'queued_at' => now()->toIso8601String(),
+                ];
+                $withdrawal->save();
+                DB::commit();
+
+                return $this->queuedResult($user, $withdrawal, $walletTransaction, $sourceCurrency, $payoutAmount, $payoutCurrency, $rate, $ibanLast4, $currentBalance)
+                    + ['fee' => $fee, 'net_amount' => $netAmount];
+            }
 
             // Appel Stripe : transfer (autoritatif) + payout IBAN, dans la devise du compte.
             $result = $this->stripe->payoutToVendor($user->stripe_account_id, $payoutAmount, $payoutCurrency);
@@ -404,7 +428,118 @@ class StripeWithdrawalService
             'balance_before' => $currentBalance,
             'fee' => $fee,
             'net_amount' => $netAmount,
+            'queued' => false,
         ];
+    }
+
+    /** Raisons pour lesquelles une demande est mise en attente plutôt que refusée. */
+    private const QUEUEABLE_REASONS = ['platform_funds', 'currency_unavailable'];
+
+    /** Demande enregistrée sans appel Stripe : le vendeur est prévenu. */
+    private function queuedResult(User $user, PlatformWithdrawal $withdrawal, WalletTransaction $walletTransaction, string $sourceCurrency, float $payoutAmount, string $payoutCurrency, float $rate, string $ibanLast4, float $currentBalance): array
+    {
+        $user->refresh();
+
+        try {
+            $this->fcm->sendToUser(
+                $user,
+                $user->localized('notifications.wallet_withdrawal_queued_bank.title'),
+                $user->localized('notifications.wallet_withdrawal_queued_bank.body', [
+                    'amount' => number_format($payoutAmount, 2, ',', ' '),
+                    'currency' => $payoutCurrency,
+                    'iban_last4' => $ibanLast4,
+                ]),
+                [
+                    'type' => 'wallet_withdrawal_processing',
+                    'provider' => 'stripe',
+                    'withdrawal_id' => $withdrawal->id,
+                    'transaction_reference' => $withdrawal->transaction_reference,
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('[StripeWithdrawal] Notification FCM non envoyée : ' . $e->getMessage());
+        }
+
+        return [
+            'withdrawal' => $withdrawal,
+            'wallet_transaction' => $walletTransaction,
+            'currency' => $sourceCurrency,
+            'payout_amount' => $payoutAmount,
+            'payout_currency' => $payoutCurrency,
+            'rate' => $rate,
+            'iban_last4' => $ibanLast4,
+            'balance_before' => $currentBalance,
+            'queued' => true,
+        ];
+    }
+
+    /**
+     * Verse une demande mise en attente faute de fonds plateforme.
+     *
+     * @return string 'sent' | 'waiting' (fonds toujours insuffisants ou compte pas prêt) | 'skipped'
+     */
+    public function processQueued(PlatformWithdrawal $withdrawal): string
+    {
+        return DB::transaction(function () use ($withdrawal) {
+            $locked = PlatformWithdrawal::whereKey($withdrawal->id)->lockForUpdate()->first();
+            if (!$locked || $locked->status !== 'pending' || $locked->provider !== 'stripe' || $locked->stripe_transfer_id) {
+                return 'skipped';
+            }
+
+            $user = $locked->user;
+            if (!$user || empty($user->stripe_account_id)) {
+                return 'waiting';
+            }
+
+            $amount = (float) $locked->payout_amount;
+            $currency = (string) $locked->payout_currency;
+
+            try {
+                $this->stripe->assertPayoutPossible($user->stripe_account_id, $amount, $currency);
+                $result = $this->stripe->payoutToVendor($user->stripe_account_id, $amount, $currency);
+            } catch (StripePayoutUnavailableException $e) {
+                Log::info('[StripeWithdrawal] Demande en attente toujours non versable', [
+                    'withdrawal_id' => $locked->id,
+                    'reason' => $e->reason,
+                ]);
+                return 'waiting';
+            }
+
+            $locked->payout_amount = (float) ($result['payout_amount'] ?? $amount);
+            $locked->stripe_transfer_id = $result['transfer_id'] ?? null;
+            $locked->stripe_payout_id = $result['payout_id'] ?? null;
+            $locked->stripe_response = array_merge((array) $locked->stripe_response, $result, ['released_at' => now()->toIso8601String()]);
+            $locked->status = 'processing';
+            $locked->save();
+
+            Log::info('[StripeWithdrawal] Demande en attente versée', [
+                'withdrawal_id' => $locked->id,
+                'transfer_id' => $locked->stripe_transfer_id,
+                'payout_id' => $locked->stripe_payout_id,
+            ]);
+
+            try {
+                $this->fcm->sendToUser(
+                    $user,
+                    $user->localized('notifications.wallet_withdrawal_processing_bank.title'),
+                    $user->localized('notifications.wallet_withdrawal_processing_bank.body', [
+                        'amount' => number_format((float) $locked->payout_amount, 2, ',', ' '),
+                        'currency' => $currency,
+                        'iban_last4' => $user->stripe_external_last4 ?? '****',
+                    ]),
+                    [
+                        'type' => 'wallet_withdrawal_processing',
+                        'provider' => 'stripe',
+                        'withdrawal_id' => $locked->id,
+                        'transaction_reference' => $locked->transaction_reference,
+                    ]
+                );
+            } catch (\Exception $e) {
+                Log::error('[StripeWithdrawal] Notification FCM non envoyée : ' . $e->getMessage());
+            }
+
+            return 'sent';
+        });
     }
 
     private function unavailable(StripePayoutUnavailableException $e): StripeWithdrawalException
