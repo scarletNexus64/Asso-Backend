@@ -69,96 +69,67 @@ class StripeConnectController extends Controller
     }
 
     /**
-     * Lien vers la page d'inscription Stripe (création du compte au premier appel).
-     * POST /v1/stripe/connect/onboarding   { country: "FR" }
+     * Session de l'inscription INTÉGRÉE dans l'application (composant Stripe
+     * « account onboarding » des SDK natifs) : le vendeur saisit identité et IBAN
+     * dans un écran aux couleurs d'ASSO. Création du compte au premier appel.
+     * Rappelée par le SDK quand la session expire.
+     * POST /v1/stripe/connect/account-session   { country: "FR" }
      */
-    public function onboarding(Request $request)
+    public function accountSession(Request $request)
     {
-        if (!$this->stripe->isConfigured()) {
+        if ($unavailable = $this->unavailableResponse()) {
+            return $unavailable;
+        }
+        if ($this->stripe->keysProblem() !== null) {
+            Log::critical('[StripeConnectController] Inscription intégrée impossible : ' . $this->stripe->keysProblem());
+
             return response()->json([
                 'success' => false,
-                'message' => __('wallet.stripe_withdrawal_unavailable'),
+                'message' => __('payments.stripe_connect.error_unavailable'),
             ], 503);
-        }
-
-        $countryInput = $request->input('country');
-        if (is_string($countryInput)) {
-            $request->merge(['country' => strtoupper(trim($countryInput))]);
         }
 
         $user = $request->user();
 
         try {
-            // Compte créé avec une autre clé (test → live) : on repart de zéro.
-            if (!empty($user->stripe_account_id)
-                && ($this->stripe->accountState($user->stripe_account_id)['missing'] ?? false)) {
-                Log::warning('[StripeConnectController] Compte Connect introuvable avec la clé actuelle — recréation', [
-                    'user_id' => $user->id,
-                    'old_account_id' => $user->stripe_account_id,
-                    'mode' => $this->stripe->mode(),
-                ]);
-                $this->forgetAccount($user);
+            if ($error = $this->prepareAccount($request, $user)) {
+                return $error;
             }
 
-            if (empty($user->stripe_account_id)) {
-                $validated = Validator::make($request->all(), [
-                    'country' => ['bail', 'required', 'string', 'regex:/^[A-Z]{2}$/'],
-                ], [
-                    'country.required' => __('payments.stripe_connect.validation.country_required'),
-                    'country.regex' => __('payments.stripe_connect.validation.country_size'),
-                ])->validate();
+            $session = $this->stripe->createOnboardingSession($user->stripe_account_id);
 
-                $country = $validated['country'];
-                $currency = $this->stripe->payoutCurrencyForCountry($country);
-                if ($currency === null) {
-                    $message = __('payments.stripe_connect.error_country_unsupported');
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'client_secret' => $session['client_secret'],
+                    'expires_at' => $session['expires_at'],
+                    'publishable_key' => $this->stripe->publishableKey(),
+                    'status' => $this->formatStatus($user->fresh()),
+                ],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            return $this->stripeFailure($e, $user, 'Échec de la session d\'inscription Stripe Connect');
+        }
+    }
 
-                    return response()->json([
-                        'success' => false,
-                        'message' => $message,
-                        'errors' => ['country' => [$message]],
-                    ], 422);
-                }
+    /**
+     * Lien vers la page d'inscription hébergée par Stripe (secours si l'écran
+     * intégré ne peut pas s'ouvrir sur l'appareil). Création du compte au premier appel.
+     * POST /v1/stripe/connect/onboarding   { country: "FR" }
+     */
+    public function onboarding(Request $request)
+    {
+        if ($unavailable = $this->unavailableResponse()) {
+            return $unavailable;
+        }
 
-                $accountId = $this->stripe->createHostedAccount([
-                    'country' => $country,
-                    'currency' => $currency,
-                    'email' => $user->email ?: null,
-                    'display_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: null,
-                    'user_id' => $user->id,
-                ]);
+        $user = $request->user();
 
-                $user->update([
-                    'stripe_account_id' => $accountId,
-                    'stripe_account_status' => null,
-                    'stripe_rejection_reason' => null,
-                    'stripe_submitted_at' => null,
-                    'stripe_verified_at' => null,
-                    'stripe_external_last4' => null,
-                    'stripe_bank_country' => $country,
-                    'stripe_account_holder_name' => null,
-                ]);
-
-                Log::info('[StripeConnectController] Compte Connect créé (inscription hébergée)', [
-                    'user_id' => $user->id,
-                    'account_id' => $accountId,
-                    'country' => $country,
-                    'mode' => $this->stripe->mode(),
-                ]);
-            } elseif ($user->stripe_account_status === 'approved'
-                && ($this->stripe->accountState($user->stripe_account_id)['ready'] ?? false)) {
-                // Compte validé et opérationnel : pas de nouvelle inscription.
-                return response()->json([
-                    'success' => false,
-                    'message' => __('payments.stripe_connect.already_validated'),
-                ], 422);
-            } elseif ($user->stripe_account_status === 'rejected') {
-                // Le vendeur corrige son dossier chez Stripe : il repassera en revue
-                // dès que l'inscription sera de nouveau complète.
-                $user->update([
-                    'stripe_account_status' => null,
-                    'stripe_rejection_reason' => null,
-                ]);
+        try {
+            if ($error = $this->prepareAccount($request, $user)) {
+                return $error;
             }
 
             $link = $this->stripe->createOnboardingLink(
@@ -181,6 +152,105 @@ class StripeConnectController extends Controller
         } catch (\Throwable $e) {
             return $this->stripeFailure($e, $user, 'Échec du lien d\'inscription Stripe Connect');
         }
+    }
+
+    private function unavailableResponse()
+    {
+        if ($this->stripe->isConfigured()) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => __('wallet.stripe_withdrawal_unavailable'),
+        ], 503);
+    }
+
+    /**
+     * Garantit un compte Stripe utilisable pour l'inscription : le crée au premier
+     * appel (pays obligatoire), le recrée s'il n'existe pas pour la clé actuelle,
+     * rouvre un dossier refusé. Renvoie une réponse d'erreur, ou null si tout va bien.
+     */
+    private function prepareAccount(Request $request, User $user)
+    {
+        $countryInput = $request->input('country');
+        if (is_string($countryInput)) {
+            $request->merge(['country' => strtoupper(trim($countryInput))]);
+        }
+
+        // Compte créé avec une autre clé (test → live) : on repart de zéro.
+        if (!empty($user->stripe_account_id)
+            && ($this->stripe->accountState($user->stripe_account_id)['missing'] ?? false)) {
+            Log::warning('[StripeConnectController] Compte Connect introuvable avec la clé actuelle — recréation', [
+                'user_id' => $user->id,
+                'old_account_id' => $user->stripe_account_id,
+                'mode' => $this->stripe->mode(),
+            ]);
+            $this->forgetAccount($user);
+        }
+
+        if (empty($user->stripe_account_id)) {
+            $validated = Validator::make($request->all(), [
+                'country' => ['bail', 'required', 'string', 'regex:/^[A-Z]{2}$/'],
+            ], [
+                'country.required' => __('payments.stripe_connect.validation.country_required'),
+                'country.regex' => __('payments.stripe_connect.validation.country_size'),
+            ])->validate();
+
+            $country = $validated['country'];
+            $currency = $this->stripe->payoutCurrencyForCountry($country);
+            if ($currency === null) {
+                $message = __('payments.stripe_connect.error_country_unsupported');
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'errors' => ['country' => [$message]],
+                ], 422);
+            }
+
+            $accountId = $this->stripe->createHostedAccount([
+                'country' => $country,
+                'currency' => $currency,
+                'email' => $user->email ?: null,
+                'display_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: null,
+                'user_id' => $user->id,
+            ]);
+
+            $user->update([
+                'stripe_account_id' => $accountId,
+                'stripe_account_status' => null,
+                'stripe_rejection_reason' => null,
+                'stripe_submitted_at' => null,
+                'stripe_verified_at' => null,
+                'stripe_external_last4' => null,
+                'stripe_bank_country' => $country,
+                'stripe_account_holder_name' => null,
+            ]);
+
+            Log::info('[StripeConnectController] Compte Connect créé (inscription hébergée)', [
+                'user_id' => $user->id,
+                'account_id' => $accountId,
+                'country' => $country,
+                'mode' => $this->stripe->mode(),
+            ]);
+        } elseif ($user->stripe_account_status === 'approved'
+            && ($this->stripe->accountState($user->stripe_account_id)['ready'] ?? false)) {
+            // Compte validé et opérationnel : pas de nouvelle inscription.
+            return response()->json([
+                'success' => false,
+                'message' => __('payments.stripe_connect.already_validated'),
+            ], 422);
+        } elseif ($user->stripe_account_status === 'rejected') {
+            // Le vendeur corrige son dossier chez Stripe : il repassera en revue
+            // dès que l'inscription sera de nouveau complète.
+            $user->update([
+                'stripe_account_status' => null,
+                'stripe_rejection_reason' => null,
+            ]);
+        }
+
+        return null;
     }
 
     /**

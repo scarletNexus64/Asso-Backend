@@ -347,6 +347,32 @@ class StripeService
     }
 
     /**
+     * Session du composant d'inscription intégré (SDK Stripe Connect iOS/Android) :
+     * le vendeur saisit identité et IBAN dans l'application, sous l'apparence
+     * d'ASSO. Stripe reste responsable de la collecte (obligation réglementaire),
+     * d'où l'authentification Stripe parfois demandée et non désactivable.
+     *
+     * @return array{client_secret:string, expires_at:?int}
+     */
+    public function createOnboardingSession(string $accountId): array
+    {
+        $session = $this->withoutStripeNotices(fn () => $this->client()->accountSessions->create([
+            'account' => $accountId,
+            'components' => [
+                'account_onboarding' => [
+                    'enabled' => true,
+                    'features' => ['external_account_collection' => true],
+                ],
+            ],
+        ]));
+
+        return [
+            'client_secret' => (string) $session->client_secret,
+            'expires_at' => isset($session->expires_at) ? (int) $session->expires_at : null,
+        ];
+    }
+
+    /**
      * IBAN enregistré par le vendeur sur la page Stripe (jamais le numéro complet).
      *
      * @return array{last4:?string, country:?string, holder:?string}|null null si aucun.

@@ -87,6 +87,59 @@ class StripeConnectOnboardingTest extends TestCase
         $this->assertSame('FR', $user->stripe_bank_country);
     }
 
+    public function test_account_session_creates_account_and_returns_client_secret(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('keysProblem')->andReturn(null);
+            $mock->shouldReceive('publishableKey')->andReturn('pk_test_asso');
+            $mock->shouldReceive('createHostedAccount')->once()->andReturn('acct_new');
+            $mock->shouldReceive('createOnboardingSession')->once()->with('acct_new')
+                ->andReturn(['client_secret' => 'accs_secret_123', 'expires_at' => 1798000000]);
+        });
+
+        $user = $this->vendor();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/stripe/connect/account-session', ['country' => 'FR'])
+            ->assertOk()
+            ->assertJsonPath('data.client_secret', 'accs_secret_123')
+            ->assertJsonPath('data.publishable_key', 'pk_test_asso')
+            ->assertJsonPath('data.status.has_account', true);
+
+        $this->assertSame('acct_new', $user->fresh()->stripe_account_id);
+    }
+
+    /** Session renouvelée par le SDK : pas de pays, compte réutilisé. */
+    public function test_account_session_refresh_reuses_account(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('keysProblem')->andReturn(null);
+            $mock->shouldReceive('publishableKey')->andReturn('pk_test_asso');
+            $mock->shouldReceive('accountState')->andReturn($this->state());
+            $mock->shouldReceive('createHostedAccount')->never();
+            $mock->shouldReceive('createOnboardingSession')->once()->with('acct_existing')
+                ->andReturn(['client_secret' => 'accs_secret_456', 'expires_at' => null]);
+        });
+
+        $this->actingAs($this->vendor(['stripe_account_id' => 'acct_existing']), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/account-session')
+            ->assertOk()
+            ->assertJsonPath('data.client_secret', 'accs_secret_456');
+    }
+
+    public function test_account_session_refused_when_keys_are_inconsistent(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('keysProblem')->andReturn('Clé publique Stripe (pk_…) manquante.');
+            $mock->shouldReceive('createHostedAccount')->never();
+        });
+
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/account-session', ['country' => 'FR'])
+            ->assertStatus(503)
+            ->assertJsonPath('message', __('payments.stripe_connect.error_unavailable'));
+    }
+
     public function test_onboarding_reuses_existing_account(): void
     {
         $this->mockStripe(function ($mock) {
