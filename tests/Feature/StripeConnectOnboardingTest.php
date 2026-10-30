@@ -237,17 +237,21 @@ class StripeConnectOnboardingTest extends TestCase
             ->assertStatus(503);
     }
 
-    public function test_onboarding_blocked_when_approved_and_operational(): void
+    public function test_approved_vendor_can_reopen_stripe_page_to_change_iban(): void
     {
         $this->mockStripe(function ($mock) {
             $mock->shouldReceive('accountState')->andReturn($this->state(['ready' => true, 'details_submitted' => true]));
-            $mock->shouldReceive('createOnboardingLink')->never();
+            $mock->shouldReceive('createOnboardingLink')->once()->andReturn(['url' => 'https://connect.stripe.com/c', 'expires_at' => null]);
         });
 
-        $this->actingAs($this->vendor(['stripe_account_id' => 'acct_ok', 'stripe_account_status' => 'approved']), 'sanctum')
+        $user = $this->vendor(['stripe_account_id' => 'acct_ok', 'stripe_account_status' => 'approved']);
+
+        $this->actingAs($user, 'sanctum')
             ->postJson('/api/v1/stripe/connect/onboarding')
-            ->assertStatus(422)
-            ->assertJsonPath('message', __('payments.stripe_connect.already_validated'));
+            ->assertOk();
+
+        // Reste validé tant que l'IBAN ne change pas (la synchro le repasse sinon en attente).
+        $this->assertSame('approved', $user->fresh()->stripe_account_status);
     }
 
     public function test_rejected_vendor_can_reopen_stripe_page(): void

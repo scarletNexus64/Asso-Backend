@@ -234,13 +234,6 @@ class StripeConnectController extends Controller
                 'country' => $country,
                 'mode' => $this->stripe->mode(),
             ]);
-        } elseif ($user->stripe_account_status === 'approved'
-            && ($this->stripe->accountState($user->stripe_account_id)['ready'] ?? false)) {
-            // Compte validé et opérationnel : pas de nouvelle inscription.
-            return response()->json([
-                'success' => false,
-                'message' => __('payments.stripe_connect.already_validated'),
-            ], 422);
         } elseif ($user->stripe_account_status === 'rejected') {
             // Le vendeur corrige son dossier chez Stripe : il repassera en revue
             // dès que l'inscription sera de nouveau complète.

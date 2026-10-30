@@ -332,7 +332,7 @@
             "not_activated": "Account not yet activated by Stripe.",
             "requirements_due": "Additional information requested by Stripe.",
             "status_unavailable": "Account status unavailable at the moment.",
-            "already_validated": "Your IBAN is already validated. To change it, unlink it first and then save the new one.",
+            "already_validated": "To change your IBAN, reopen the form: the new IBAN will be checked again by ASSO before your next transfers.",
             "saved": "Bank details saved. Your payout account will be verified within 24-48 hours.",
             "error_connection": "The bank transfer service is temporarily unavailable. Please try again in a few moments.",
             "error_invalid_iban": "The IBAN entered seems invalid. Check it and try again.",

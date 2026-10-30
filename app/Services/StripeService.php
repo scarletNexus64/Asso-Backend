@@ -409,8 +409,25 @@ class StripeService
         return [
             'last4' => $bank->last4 ?? null,
             'country' => isset($bank->country) ? strtoupper((string) $bank->country) : null,
-            'holder' => $bank->account_holder_name ?? null,
+            'holder' => ($bank->account_holder_name ?? null) ?: $this->individualName($accountId),
         ];
+    }
+
+    /**
+     * Nom saisi par le vendeur lors de son inscription : Stripe ne renseigne pas
+     * toujours le titulaire sur l'IBAN lui-même.
+     */
+    private function individualName(string $accountId): ?string
+    {
+        try {
+            $account = $this->withoutStripeNotices(fn () => $this->client()->accounts->retrieve($accountId));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $name = trim(($account->individual->first_name ?? '') . ' ' . ($account->individual->last_name ?? ''));
+
+        return $name !== '' ? $name : null;
     }
 
     /** Ferme un compte connecté (désynchronisation de l'IBAN par le vendeur). */

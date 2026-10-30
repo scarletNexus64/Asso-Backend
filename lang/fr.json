@@ -332,7 +332,7 @@
             "not_activated": "Compte pas encore activé par Stripe.",
             "requirements_due": "Informations complémentaires demandées par Stripe.",
             "status_unavailable": "État du compte indisponible pour le moment.",
-            "already_validated": "Votre IBAN est déjà validé. Pour en changer, désynchronisez-le d’abord puis enregistrez le nouveau.",
+            "already_validated": "Pour changer d’IBAN, rouvrez le formulaire : le nouvel IBAN sera de nouveau vérifié par ASSO avant vos prochains virements.",
             "saved": "Informations bancaires enregistrées. Votre compte de virement sera vérifié sous 24-48h.",
             "error_connection": "Le service de virement bancaire est momentanément indisponible. Veuillez réessayer dans quelques instants.",
             "error_invalid_iban": "L'IBAN saisi semble invalide. Vérifiez-le puis réessayez.",
