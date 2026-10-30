@@ -349,8 +349,10 @@
             "onboarding_incomplete": "Stripe registration to complete.",
             "unlink_balance_remaining": "Funds are still on your payout account. Wait for the transfer to finish before unlinking your IBAN.",
             "unlink_failed": "Unable to unlink your IBAN right now. Please try again later.",
-            "return_page": {"title": "Registration sent", "body": "You can close this page and return to the ASSO app: your payout account status will update."},
-            "refresh_page": {"title": "Link expired", "body": "This link is no longer valid. Go back to the ASSO app and open your payout account setup again."},
+            "return_page": {"title": "Registration sent", "body": "Thank you! Your information has been securely submitted.", "step1": "Our team reviews your file.", "step2": "You get notified as soon as your transfers are enabled.", "button": "Back to the app"},
+            "refresh_page": {"title": "This link has expired", "body": "For your security, this link is no longer valid. Reopen your payout account setup from the ASSO app.", "button": "Back to the app"},
+            "page_close_hint": "If the page doesn't close, tap “Done” at the top of the screen.",
+            "page_secure": "Data protected by our banking partner",
             "validation": {
                 "country_required": "Enter your bank's country.",
                 "country_size": "The country is written with 2 letters (e.g. FR, BE, DE).",

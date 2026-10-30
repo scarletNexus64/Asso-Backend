@@ -354,10 +354,7 @@ class StripeConnectController extends Controller
      */
     public function returnPage()
     {
-        return $this->simplePage(
-            __('payments.stripe_connect.return_page.title'),
-            __('payments.stripe_connect.return_page.body'),
-        );
+        return $this->statusPage('success');
     }
 
     /**
@@ -387,10 +384,7 @@ class StripeConnectController extends Controller
             }
         }
 
-        return $this->simplePage(
-            __('payments.stripe_connect.refresh_page.title'),
-            __('payments.stripe_connect.refresh_page.body'),
-        );
+        return $this->statusPage('expired');
     }
 
     private function refreshUrl(User $user): string
@@ -398,17 +392,21 @@ class StripeConnectController extends Controller
         return URL::temporarySignedRoute('stripe.connect.refresh', now()->addDay(), ['user' => $user->id]);
     }
 
-    private function simplePage(string $title, string $body)
+    /** Page de statut aux couleurs d'ASSO (« success » ou « expired »). */
+    private function statusPage(string $variant)
     {
-        $title = e($title);
-        $body = e($body);
+        $key = $variant === 'success' ? 'return_page' : 'refresh_page';
+        $t = fn (string $k) => __("payments.stripe_connect.{$key}.{$k}");
 
-        return response(
-            '<!doctype html><html lang="' . e(app()->getLocale()) . '"><head><meta charset="utf-8">'
-            . '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' . $title . '</title></head>'
-            . '<body style="font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:48px 24px;color:#1f2937">'
-            . '<h2>' . $title . '</h2><p style="font-size:17px;line-height:1.5">' . $body . '</p></body></html>'
-        );
+        return response()->view('stripe-connect.status-page', [
+            'variant' => $variant,
+            'title' => $t('title'),
+            'body' => $t('body'),
+            'steps' => $variant === 'success' ? [$t('step1'), $t('step2')] : [],
+            'button' => $t('button'),
+            'hint' => __('payments.stripe_connect.page_close_hint'),
+            'secure' => __('payments.stripe_connect.page_secure'),
+        ]);
     }
 
     /** Oublie le compte Stripe du vendeur (fermé, ou inexistant pour la clé actuelle). */

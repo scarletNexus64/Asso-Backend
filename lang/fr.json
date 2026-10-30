@@ -349,8 +349,10 @@
             "onboarding_incomplete": "Inscription Stripe à terminer.",
             "unlink_balance_remaining": "Des fonds sont encore sur votre compte de virement. Attendez la fin du virement avant de désynchroniser votre IBAN.",
             "unlink_failed": "Impossible de désynchroniser votre IBAN pour le moment. Réessayez plus tard.",
-            "return_page": {"title": "Inscription envoyée", "body": "Vous pouvez fermer cette page et revenir dans l'application ASSO : le statut de votre compte de virement va se mettre à jour."},
-            "refresh_page": {"title": "Lien expiré", "body": "Ce lien n'est plus valable. Revenez dans l'application ASSO et rouvrez la configuration de votre compte de virement."},
+            "return_page": {"title": "Inscription envoyée", "body": "Merci ! Vos informations ont bien été transmises de façon sécurisée.", "step1": "Notre équipe vérifie votre dossier.", "step2": "Vous êtes notifié dès que vos virements sont activés.", "button": "Revenir à l’application"},
+            "refresh_page": {"title": "Ce lien a expiré", "body": "Pour votre sécurité, ce lien n’est plus valable. Rouvrez la configuration de votre compte de virement depuis l’application ASSO.", "button": "Revenir à l’application"},
+            "page_close_hint": "Si la page ne se ferme pas, touchez « OK » ou « Terminé » en haut de l’écran.",
+            "page_secure": "Données protégées par notre partenaire bancaire",
             "validation": {
                 "country_required": "Indiquez le pays de votre banque.",
                 "country_size": "Le pays s’écrit avec 2 lettres (ex. FR, BE, DE).",
