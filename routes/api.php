@@ -180,6 +180,8 @@ Route::post('/v1/elgiopay/callback', [App\Http\Controllers\Api\ElgioPayWebhookCo
 // Webhook Stripe (no auth — protégé par vérification de signature Stripe).
 // Finalise les virements IBAN : payout.paid → completed ; payout.failed → refund.
 Route::post('/v1/stripe/webhook', [App\Http\Controllers\Api\StripeWebhookController::class, 'handle']);
+// Endpoint Stripe « ASSO IBAN » (comptes connectés) : même traitement, secret dédié.
+Route::post('/v1/stripe/connect/webhook', [App\Http\Controllers\Api\StripeWebhookController::class, 'handle']);
 
 // NOTE: Les routes /v1/currencies/* sont définies plus haut dans le groupe prefix('v1')
 // et servies par App\Http\Controllers\Api\CurrencyController (contrat mobile unifié +
