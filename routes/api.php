@@ -298,7 +298,8 @@ Route::middleware('auth:sanctum')->group(function () {
 //
         // Aperçu prix vendeur → prix client (commission ASSO incluse), saisie produit.
         // routes/api.php (dans le groupe /v1/payments, même middleware que /methods)
-Route::get('/payments/operator-availability', [PaymentMethodsController::class, 'operatorAvailability']);Route::get('/pricing/preview', [PaymentController::class, 'pricingPreview']);
+    Route::get('/payments/operator-availability', [PaymentController::class, 'operatorAvailability']);
+    Route::get('/pricing/preview', [PaymentController::class, 'pricingPreview']);
         Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
         Route::get('/payments/status/{reference}', [PaymentController::class, 'status']);
 
