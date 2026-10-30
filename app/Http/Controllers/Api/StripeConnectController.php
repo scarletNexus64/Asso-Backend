@@ -3,55 +3,63 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\StripeConnectSync;
 use App\Services\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * Onboarding Stripe Connect côté VENDEUR.
+ * Compte de virement (IBAN) du VENDEUR via Stripe Connect.
  *
- * Le vendeur soumet son pays + IBAN (+ titulaire) → on crée (ou met à jour) son
- * compte Stripe Connect « Custom-equivalent » et on attache l'IBAN comme compte
- * externe. Le statut interne ASSO passe alors à `pending` : un admin ASSO valide
- * ou rejette ensuite (porte interne, distincte de la vérification KYC de Stripe).
- *
- * Voir Admin\StripeConnectController pour la validation, et [[stripe-connect-state]].
+ * L'identité et l'IBAN sont saisis par le vendeur sur la page d'inscription
+ * HÉBERGÉE par Stripe : la réglementation française interdit à la plateforme de
+ * les collecter elle-même (« you can only create connected accounts using
+ * Stripe-hosted onboarding »). L'application demande un lien (onboarding), l'ouvre,
+ * puis relit le statut ; une fois l'inscription terminée, le dossier passe
+ * `pending` et un admin ASSO le valide (Admin\StripeConnectController).
  */
 class StripeConnectController extends Controller
 {
-    public function __construct(private StripeService $stripe)
-    {
+    public function __construct(
+        private StripeService $stripe,
+        private StripeConnectSync $sync,
+    ) {
     }
 
     /**
-     * Statut d'onboarding Stripe du vendeur connecté.
+     * Statut du compte de virement du vendeur connecté, relu chez Stripe.
      * GET /v1/stripe/connect/status
      */
     public function status(Request $request)
     {
         $user = $request->user();
+        $stripeBlock = null;
+
+        if (!empty($user->stripe_account_id) && $this->stripe->isConfigured()) {
+            $state = $this->sync->sync($user);
+            $user->refresh();
+
+            // Compte inexistant pour la clé actuelle (créé en mode test) : on repart
+            // de zéro au prochain lien d'inscription.
+            if ($state['missing'] ?? false) {
+                $this->forgetAccount($user);
+            } elseif ($state !== null) {
+                $stripeBlock = [
+                    'ready' => $state['ready'],
+                    'details_submitted' => $state['details_submitted'] ?? false,
+                    'verification' => $this->verificationLabel($state),
+                    'requirements_due' => $state['requirements_due'],
+                    'unavailable' => !($state['exists'] ?? false),
+                ];
+            }
+        }
 
         $data = $this->formatStatus($user);
-
-        // État RÉEL côté Stripe : un compte peut être `approved` chez nous mais encore
-        // bloqué par Stripe (vérification en cours ou pièce manquante). Le vendeur doit
-        // le savoir avant de tenter un virement qui échouerait.
-        if (!empty($user->stripe_account_id) && $this->stripe->isConfigured()) {
-            $state = $this->stripe->accountState($user->stripe_account_id);
-
-            // Compte inexistant pour la clé actuelle (créé en mode test) : le vendeur
-            // doit renvoyer son IBAN, qui créera un nouveau compte (voir submit()).
-            if ($state['missing'] ?? false) {
-                $data['has_account'] = false;
-                $data['status'] = null;
-            }
-
-            $data['stripe'] = [
-                'ready' => $state['ready'],
-                'verification' => $this->verificationLabel($state),
-                'requirements_due' => $state['requirements_due'],
-            ];
+        if ($stripeBlock !== null) {
+            $data['stripe'] = $stripeBlock;
         }
 
         return response()->json([
@@ -60,27 +68,11 @@ class StripeConnectController extends Controller
         ]);
     }
 
-    /** Libellé de l'état de vérification Stripe, affichable tel quel par le mobile. */
-    private function verificationLabel(array $state): string
-    {
-        if ($state['ready']) {
-            return __('payments.stripe_connect.verified');
-        }
-
-        return match ($state['transfers']) {
-            'pending' => __('payments.stripe_connect.pending'),
-            'inactive' => empty($state['requirements_due'])
-                ? __('payments.stripe_connect.not_activated')
-                : __('payments.stripe_connect.requirements_due'),
-            default => __('payments.stripe_connect.status_unavailable'),
-        };
-    }
-
     /**
-     * Soumet (ou met à jour) les informations bancaires du vendeur.
-     * POST /v1/stripe/connect/submit
+     * Lien vers la page d'inscription Stripe (création du compte au premier appel).
+     * POST /v1/stripe/connect/onboarding   { country: "FR" }
      */
-    public function submit(Request $request)
+    public function onboarding(Request $request)
     {
         if (!$this->stripe->isConfigured()) {
             return response()->json([
@@ -93,223 +85,132 @@ class StripeConnectController extends Controller
         if (is_string($countryInput)) {
             $request->merge(['country' => strtoupper(trim($countryInput))]);
         }
-        $ibanInput = $request->input('iban');
-        if (is_string($ibanInput)) {
-            $request->merge(['iban' => strtoupper(preg_replace('/\s+/', '', $ibanInput))]);
-        }
 
-        $validator = Validator::make($request->all(), [
-            'country' => ['bail', 'required', 'string', 'regex:/^[A-Z]{2}$/'],
-            // IBAN : 2 lettres pays + 2 chiffres clé + 11 à 30 caractères alphanum.
-            'iban' => ['bail', 'required', 'string', 'regex:/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/'],
-            'account_holder_name' => 'required|string|max:255',
-            'first_name' => 'nullable|string|max:255',
-            'last_name' => 'nullable|string|max:255',
-            // KYC EXIGÉ PAR STRIPE : sans ces informations le compte reste bloqué en
-            // `requirements.past_due` et AUCUN virement ne peut aboutir.
-            'birth_date' => 'required|date|before:-18 years',
-            'phone' => [
-                'bail',
-                'required',
-                'string',
-                'max:30',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (!is_string($value)
-                        || !preg_match('/^\+[1-9][0-9\s().-]*$/', $value)
-                        || strlen(preg_replace('/\D/', '', $value)) < 8
-                        || strlen(preg_replace('/\D/', '', $value)) > 15) {
-                        $fail(__('payments.stripe_connect.validation.phone_invalid'));
-                    }
-                },
-            ],
-            'address_line1' => 'required|string|max:255',
-            'address_line2' => 'nullable|string|max:255',
-            'address_city' => 'required|string|max:120',
-            'address_postal_code' => 'required|string|max:20',
-            'address_state' => 'nullable|string|max:120',
-        ], $this->validationMessages());
-
-        $validator->after(function ($validator): void {
-            $iban = $validator->getData()['iban'] ?? null;
-            $country = $validator->getData()['country'] ?? null;
-
-            if (!is_string($iban)
-                || !preg_match('/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/', $iban)
-                || $validator->errors()->has('iban')) {
-                return;
-            }
-
-            if (!$this->hasValidIbanChecksum($iban)) {
-                $validator->errors()->add(
-                    'iban',
-                    __('payments.stripe_connect.validation.iban_checksum'),
-                );
-            }
-
-            if (is_string($country)
-                && preg_match('/^[A-Z]{2}$/', $country)
-                && substr($iban, 0, 2) !== $country) {
-                $validator->errors()->add(
-                    'country',
-                    __('payments.stripe_connect.validation.country_iban_mismatch'),
-                );
-            }
-        });
-
-        $validated = $validator->validate();
         $user = $request->user();
 
-        // Compte Connect créé en mode test puis passage aux clés live : il n'existe pas
-        // pour la clé actuelle, et le remplacement d'IBAN échouerait indéfiniment
-        // (« does not have access to account »). On repart d'un nouveau compte.
-        if (!empty($user->stripe_account_id)
-            && ($this->stripe->accountState($user->stripe_account_id)['missing'] ?? false)) {
-            Log::warning('[StripeConnectController] Compte Connect introuvable avec la clé actuelle — recréation', [
-                'user_id' => $user->id,
-                'old_account_id' => $user->stripe_account_id,
-                'mode' => $this->stripe->mode(),
-            ]);
-            // Un compte « approved » sur un compte disparu est inutilisable : le
-            // vendeur doit pouvoir renvoyer son IBAN.
-            $user->stripe_account_id = null;
-            $user->stripe_account_status = null;
-        }
-
-        // Un compte déjà validé ne peut pas changer d'IBAN librement (sécurité).
-        if ($user->stripe_account_status === 'approved') {
-            return response()->json([
-                'success' => false,
-                'message' => __('payments.stripe_connect.already_validated'),
-            ], 422);
-        }
-
-        $iban = $validated['iban'];
-        $country = strtoupper($validated['country']);
-        $holder = $validated['account_holder_name'];
-
-        // Informations d'identité transmises à Stripe (jamais stockées chez nous).
-        $kyc = [
-            'country' => $country,
-            'first_name' => $validated['first_name'] ?? $user->first_name,
-            'last_name' => $validated['last_name'] ?? $user->last_name,
-            'email' => $user->email,
-            'birth_date' => $validated['birth_date'],
-            'phone' => '+' . preg_replace('/\D/', '', $validated['phone']),
-            'address_line1' => $validated['address_line1'],
-            'address_line2' => $validated['address_line2'] ?? null,
-            'address_city' => $validated['address_city'],
-            'address_postal_code' => $validated['address_postal_code'],
-            'address_state' => $validated['address_state'] ?? null,
-        ];
-
         try {
-            $currency = $this->stripe->payoutCurrencyForCountry($country);
-            if ($currency === null) {
-                $message = __('payments.stripe_connect.error_country_unsupported');
-
-                return response()->json([
-                    'success' => false,
-                    'message' => $message,
-                    'errors' => [
-                        'country' => [$this->fieldErrorMessage('country', $message)],
-                    ],
-                ], 422);
+            // Compte créé avec une autre clé (test → live) : on repart de zéro.
+            if (!empty($user->stripe_account_id)
+                && ($this->stripe->accountState($user->stripe_account_id)['missing'] ?? false)) {
+                Log::warning('[StripeConnectController] Compte Connect introuvable avec la clé actuelle — recréation', [
+                    'user_id' => $user->id,
+                    'old_account_id' => $user->stripe_account_id,
+                    'mode' => $this->stripe->mode(),
+                ]);
+                $this->forgetAccount($user);
             }
 
             if (empty($user->stripe_account_id)) {
-                // Premier envoi : créer le compte Connect + attacher l'IBAN.
-                $result = $this->stripe->createCustomAccountWithBank($kyc + [
-                    'iban' => $iban,
-                    'currency' => $currency,
-                    'account_holder_name' => $holder,
-                    'user_id' => $user->id,
-                    'tos_ip' => $request->ip(),
-                    'tos_date' => time(),
-                ]);
-                $accountId = $result['id'];
-            } else {
-                // Renvoi (compte rejeté ou en attente) : remplacer l'IBAN ET
-                // rafraîchir le KYC (il est souvent la cause du rejet).
-                $this->stripe->updateAccountKyc($user->stripe_account_id, $kyc);
-                $result = $this->stripe->replaceExternalAccount($user->stripe_account_id, [
+                $validated = Validator::make($request->all(), [
+                    'country' => ['bail', 'required', 'string', 'regex:/^[A-Z]{2}$/'],
+                ], [
+                    'country.required' => __('payments.stripe_connect.validation.country_required'),
+                    'country.regex' => __('payments.stripe_connect.validation.country_size'),
+                ])->validate();
+
+                $country = $validated['country'];
+                $currency = $this->stripe->payoutCurrencyForCountry($country);
+                if ($currency === null) {
+                    $message = __('payments.stripe_connect.error_country_unsupported');
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => $message,
+                        'errors' => ['country' => [$message]],
+                    ], 422);
+                }
+
+                $accountId = $this->stripe->createHostedAccount([
                     'country' => $country,
-                    'iban' => $iban,
                     'currency' => $currency,
-                    'account_holder_name' => $holder,
+                    'email' => $user->email ?: null,
+                    'display_name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: null,
+                    'user_id' => $user->id,
                 ]);
-                $accountId = $user->stripe_account_id;
+
+                $user->update([
+                    'stripe_account_id' => $accountId,
+                    'stripe_account_status' => null,
+                    'stripe_rejection_reason' => null,
+                    'stripe_submitted_at' => null,
+                    'stripe_verified_at' => null,
+                    'stripe_external_last4' => null,
+                    'stripe_bank_country' => $country,
+                    'stripe_account_holder_name' => null,
+                ]);
+
+                Log::info('[StripeConnectController] Compte Connect créé (inscription hébergée)', [
+                    'user_id' => $user->id,
+                    'account_id' => $accountId,
+                    'country' => $country,
+                    'mode' => $this->stripe->mode(),
+                ]);
+            } elseif ($user->stripe_account_status === 'approved'
+                && ($this->stripe->accountState($user->stripe_account_id)['ready'] ?? false)) {
+                // Compte validé et opérationnel : pas de nouvelle inscription.
+                return response()->json([
+                    'success' => false,
+                    'message' => __('payments.stripe_connect.already_validated'),
+                ], 422);
+            } elseif ($user->stripe_account_status === 'rejected') {
+                // Le vendeur corrige son dossier chez Stripe : il repassera en revue
+                // dès que l'inscription sera de nouveau complète.
+                $user->update([
+                    'stripe_account_status' => null,
+                    'stripe_rejection_reason' => null,
+                ]);
             }
 
-            $user->update([
-                'stripe_account_id' => $accountId,
-                'stripe_account_status' => 'pending',
-                'stripe_rejection_reason' => null,
-                'stripe_submitted_at' => now(),
-                'stripe_external_last4' => $result['external_last4'] ?? null,
-                'stripe_bank_country' => $result['bank_country'] ?? $country,
-                'stripe_account_holder_name' => $holder,
-            ]);
+            $link = $this->stripe->createOnboardingLink(
+                $user->stripe_account_id,
+                $this->refreshUrl($user),
+                route('stripe.connect.return'),
+            );
 
             return response()->json([
                 'success' => true,
-                'message' => __('payments.stripe_connect.saved'),
-                'data' => $this->formatStatus($user->fresh()),
+                'data' => [
+                    'url' => $link['url'],
+                    'expires_at' => $link['expires_at'],
+                    'return_url' => route('stripe.connect.return'),
+                    'status' => $this->formatStatus($user->fresh()),
+                ],
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            // Erreur de configuration de la plateforme (clé test en prod, profil
-            // Connect live non rempli…) : aucun vendeur ne peut passer, à corriger
-            // côté tableau de bord Stripe.
-            $platformError = StripeService::isPlatformConfigError($e);
-            Log::log($platformError ? 'critical' : 'error',
-                '[StripeConnectController] Échec soumission Stripe Connect', [
-                    'user_id' => $user->id,
-                    'mode' => $this->stripe->mode(),
-                    'exception' => $e::class,
-                    'stripe_code' => $e instanceof \Stripe\Exception\ApiErrorException
-                        ? $e->getStripeCode()
-                        : null,
-                    'stripe_param' => $e instanceof \Stripe\Exception\InvalidRequestException
-                        ? $e->getStripeParam()
-                        : null,
-                ]);
-
-            // Refus rattaché à un champ (IBAN, date de naissance, adresse…) : le
-            // message s'affiche sous ce champ dans l'app, comme une erreur de saisie.
-            $message = $this->friendlyErrorMessage($e);
-            $field = $this->fieldForStripeError($e);
-            $statusCode = $e instanceof \Stripe\Exception\InvalidRequestException && !$platformError
-                ? 422
-                : (($e instanceof \Stripe\Exception\ApiErrorException
-                    || $e instanceof \Stripe\Exception\ApiConnectionException
-                    || $e instanceof \RuntimeException
-                    || $platformError)
-                    ? 503
-                    : 500);
-
-            return response()->json(array_filter([
-                'success' => false,
-                'message' => $message,
-                'errors' => $field && $statusCode === 422
-                    ? [$field => [$this->fieldErrorMessage($field, $message)]]
-                    : null,
-            ]), $statusCode);
+            return $this->stripeFailure($e, $user, 'Échec du lien d\'inscription Stripe Connect');
         }
     }
 
     /**
-     * Désynchronise l'IBAN du compte : plus aucun virement vers ce compte bancaire
-     * tant qu'un nouvel IBAN n'a pas été envoyé puis validé par ASSO.
+     * Ancien envoi du formulaire IBAN (versions de l'app antérieures à l'inscription
+     * hébergée). La plateforme n'a plus le droit de collecter ces informations : on
+     * indique au vendeur de mettre l'application à jour, sans rien envoyer à Stripe.
+     * POST /v1/stripe/connect/submit
+     */
+    public function submit(Request $request)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => __('payments.stripe_connect.hosted_onboarding_required'),
+            'data' => ['onboarding_required' => true],
+        ], 422);
+    }
+
+    /**
+     * Désynchronise l'IBAN : le compte Stripe est fermé et le vendeur pourra en
+     * ouvrir un nouveau (nouvelle inscription). Refusé tant qu'un virement est en
+     * cours ou que des fonds restent sur le compte Stripe du vendeur.
      * DELETE /v1/stripe/connect
-     *
-     * Le compte Connect est conservé : un nouvel envoi y remplace l'IBAN
-     * (replaceExternalAccount) sans refaire tout l'onboarding Stripe.
-     * Refusé tant qu'un virement vers l'IBAN actuel est en cours.
      */
     public function unlink(Request $request)
     {
         $user = $request->user();
 
-        if (empty($user->stripe_account_status) && empty($user->stripe_external_last4)) {
+        if (empty($user->stripe_account_id)
+            && empty($user->stripe_account_status)
+            && empty($user->stripe_external_last4)) {
             return response()->json([
                 'success' => false,
                 'message' => __('payments.stripe_connect.nothing_to_unlink'),
@@ -327,15 +228,45 @@ class StripeConnectController extends Controller
             ], 422);
         }
 
-        $user->update([
-            'stripe_account_status' => null,
-            'stripe_rejection_reason' => null,
-            'stripe_submitted_at' => null,
-            'stripe_verified_at' => null,
-            'stripe_external_last4' => null,
-            'stripe_bank_country' => null,
-            'stripe_account_holder_name' => null,
-        ]);
+        if (!empty($user->stripe_account_id) && $this->stripe->isConfigured()) {
+            $state = $this->stripe->accountState($user->stripe_account_id);
+
+            if ($state['exists'] ?? false) {
+                if ($this->stripe->connectedHasFunds($user->stripe_account_id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => __('payments.stripe_connect.unlink_balance_remaining'),
+                    ], 422);
+                }
+
+                try {
+                    $this->stripe->closeAccount($user->stripe_account_id);
+                } catch (\Throwable $e) {
+                    if (!StripeService::isMissingAccountError($e)) {
+                        Log::error('[StripeConnectController] Fermeture du compte Connect échouée', [
+                            'user_id' => $user->id,
+                            'account_id' => $user->stripe_account_id,
+                            'exception' => $e::class,
+                            'stripe_code' => $e instanceof \Stripe\Exception\ApiErrorException ? $e->getStripeCode() : null,
+                            'stripe_message' => mb_substr($e->getMessage(), 0, 300),
+                        ]);
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => __('payments.stripe_connect.unlink_failed'),
+                        ], 503);
+                    }
+                }
+            } elseif (!($state['missing'] ?? false)) {
+                // Stripe injoignable : ne pas oublier un compte qu'on n'a pas pu fermer.
+                return response()->json([
+                    'success' => false,
+                    'message' => __('payments.stripe_connect.error_connection'),
+                ], 503);
+            }
+        }
+
+        $this->forgetAccount($user);
 
         Log::info('[StripeConnectController] IBAN désynchronisé par l\'utilisateur', ['user_id' => $user->id]);
 
@@ -347,127 +278,168 @@ class StripeConnectController extends Controller
     }
 
     /**
-     * Un message clair par champ et par règle (« Saisissez votre IBAN », « Vous
-     * devez avoir au moins 18 ans »…), au lieu des messages génériques de Laravel
-     * qui citent le nom technique du champ.
+     * Page affichée par Stripe à la fin de l'inscription (le vendeur la ferme et
+     * revient dans l'application, qui relit le statut).
+     * GET /stripe/connect/return
      */
-    private function validationMessages(): array
+    public function returnPage()
     {
-        $m = fn (string $key) => __("payments.stripe_connect.validation.{$key}");
-
-        return [
-            'country.required' => $m('country_required'),
-            'country.regex' => $m('country_size'),
-            'iban.required' => $m('iban_required'),
-            'iban.regex' => $m('iban_format'),
-            'account_holder_name.required' => $m('holder_required'),
-            'account_holder_name.max' => $m('holder_max'),
-            'birth_date.required' => $m('birth_date_required'),
-            'birth_date.date' => $m('birth_date_invalid'),
-            'birth_date.before' => $m('birth_date_minor'),
-            'phone.required' => $m('phone_required'),
-            'phone.max' => $m('phone_invalid'),
-            'address_line1.required' => $m('address_required'),
-            'address_line1.max' => $m('address_max'),
-            'address_city.required' => $m('city_required'),
-            'address_city.max' => $m('city_max'),
-            'address_postal_code.required' => $m('postal_required'),
-            'address_postal_code.max' => $m('postal_invalid'),
-        ];
+        return $this->simplePage(
+            __('payments.stripe_connect.return_page.title'),
+            __('payments.stripe_connect.return_page.body'),
+        );
     }
 
     /**
-     * Champ du formulaire concerné par un refus de Stripe, d'après le paramètre
-     * qu'il désigne (ex. `external_account[account_number]`, `individual[dob][year]`).
+     * Lien d'inscription expiré ou déjà utilisé : Stripe renvoie ici, on génère un
+     * nouveau lien pour le même vendeur (URL signée, valable 24 h).
+     * GET /stripe/connect/refresh/{user}
      */
-    private function fieldForStripeError(\Throwable $e): ?string
+    public function refreshPage(Request $request, int $user)
     {
-        if (!$e instanceof \Stripe\Exception\InvalidRequestException || StripeService::isPlatformConfigError($e)) {
-            return null;
-        }
-        $param = strtolower((string) $e->getStripeParam());
-        $raw = strtolower($e->getMessage());
+        $vendor = User::find($user);
 
-        return match (true) {
-            str_contains($param, 'account_number') || str_contains($param, 'external_account')
-                || str_contains($raw, 'iban') || str_contains($raw, 'account number') => 'iban',
-            str_contains($param, 'dob') => 'birth_date',
-            str_contains($param, 'phone') => 'phone',
-            str_contains($param, 'postal_code') => 'address_postal_code',
-            str_contains($param, '[city]') => 'address_city',
-            str_contains($param, 'line1') || str_contains($param, '[address]') => 'address_line1',
-            str_contains($param, 'name') => 'account_holder_name',
-            str_contains($param, 'country') || str_contains($param, 'currency')
+        if ($vendor && !empty($vendor->stripe_account_id) && $this->stripe->isConfigured()) {
+            try {
+                $link = $this->stripe->createOnboardingLink(
+                    $vendor->stripe_account_id,
+                    $this->refreshUrl($vendor),
+                    route('stripe.connect.return'),
+                );
+
+                return redirect()->away($link['url']);
+            } catch (\Throwable $e) {
+                Log::warning('[StripeConnectController] Nouveau lien d\'inscription impossible', [
+                    'user_id' => $vendor->id,
+                    'exception' => $e::class,
+                    'stripe_code' => $e instanceof \Stripe\Exception\ApiErrorException ? $e->getStripeCode() : null,
+                ]);
+            }
+        }
+
+        return $this->simplePage(
+            __('payments.stripe_connect.refresh_page.title'),
+            __('payments.stripe_connect.refresh_page.body'),
+        );
+    }
+
+    private function refreshUrl(User $user): string
+    {
+        return URL::temporarySignedRoute('stripe.connect.refresh', now()->addDay(), ['user' => $user->id]);
+    }
+
+    private function simplePage(string $title, string $body)
+    {
+        $title = e($title);
+        $body = e($body);
+
+        return response(
+            '<!doctype html><html lang="' . e(app()->getLocale()) . '"><head><meta charset="utf-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' . $title . '</title></head>'
+            . '<body style="font-family:-apple-system,system-ui,sans-serif;text-align:center;padding:48px 24px;color:#1f2937">'
+            . '<h2>' . $title . '</h2><p style="font-size:17px;line-height:1.5">' . $body . '</p></body></html>'
+        );
+    }
+
+    /** Oublie le compte Stripe du vendeur (fermé, ou inexistant pour la clé actuelle). */
+    private function forgetAccount(User $user): void
+    {
+        $user->update([
+            'stripe_account_id' => null,
+            'stripe_account_status' => null,
+            'stripe_rejection_reason' => null,
+            'stripe_submitted_at' => null,
+            'stripe_verified_at' => null,
+            'stripe_external_last4' => null,
+            'stripe_bank_country' => null,
+            'stripe_account_holder_name' => null,
+        ]);
+    }
+
+    /**
+     * Réponse d'erreur Stripe : détail technique dans le log, message clair au
+     * vendeur. Une erreur de configuration de la plateforme n'est jamais présentée
+     * comme une erreur de sa part.
+     */
+    private function stripeFailure(\Throwable $e, User $user, string $context)
+    {
+        $platformError = StripeService::isPlatformConfigError($e);
+
+        Log::log($platformError ? 'critical' : 'error', "[StripeConnectController] {$context}", [
+            'user_id' => $user->id,
+            'mode' => $this->stripe->mode(),
+            'exception' => $e::class,
+            'stripe_code' => $e instanceof \Stripe\Exception\ApiErrorException ? $e->getStripeCode() : null,
+            'stripe_param' => $e instanceof \Stripe\Exception\InvalidRequestException ? $e->getStripeParam() : null,
+            // Aucune donnée personnelle n'est envoyée par la plateforme : le texte
+            // Stripe peut être conservé pour le diagnostic.
+            'stripe_message' => mb_substr($e->getMessage(), 0, 500),
+        ]);
+
+        if ($platformError
+            || $e instanceof \Stripe\Exception\AuthenticationException
+            || $e instanceof \Stripe\Exception\PermissionException
+            || $e instanceof \RuntimeException) {
+            return response()->json([
+                'success' => false,
+                'message' => __('payments.stripe_connect.error_unavailable'),
+            ], 503);
+        }
+
+        if ($e instanceof \Stripe\Exception\ApiConnectionException
+            || $e instanceof \Stripe\Exception\RateLimitException) {
+            return response()->json([
+                'success' => false,
+                'message' => __('payments.stripe_connect.error_connection'),
+            ], 503);
+        }
+
+        if ($e instanceof \Stripe\Exception\InvalidRequestException) {
+            $raw = strtolower($e->getMessage());
+            if (str_contains($raw, 'country')
                 || str_contains($raw, 'not currently supported')
-                || str_contains($raw, 'country_spec')
-                || str_contains($raw, 'no such country') => 'country',
-            default => null,
+                || str_contains($raw, 'country_spec')) {
+                $message = __('payments.stripe_connect.error_country_unsupported');
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'errors' => ['country' => [$message]],
+                ], 422);
+            }
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => __('payments.stripe_connect.error_onboarding_failed'),
+        ], $e instanceof \Stripe\Exception\ApiErrorException ? 502 : 500);
+    }
+
+    /** Libellé de l'état de vérification Stripe, affichable tel quel par le mobile. */
+    private function verificationLabel(array $state): string
+    {
+        if (!($state['exists'] ?? false)) {
+            return __('payments.stripe_connect.status_unavailable');
+        }
+        if ($state['ready']) {
+            return __('payments.stripe_connect.verified');
+        }
+        if (!($state['details_submitted'] ?? false)) {
+            return __('payments.stripe_connect.onboarding_incomplete');
+        }
+
+        return match ($state['transfers']) {
+            'pending' => __('payments.stripe_connect.pending'),
+            'inactive', 'restricted' => empty($state['requirements_due'])
+                ? __('payments.stripe_connect.not_activated')
+                : __('payments.stripe_connect.requirements_due'),
+            default => empty($state['requirements_due'])
+                ? __('payments.stripe_connect.pending')
+                : __('payments.stripe_connect.requirements_due'),
         };
     }
 
-    /** Message à afficher sous le champ refusé par Stripe. */
-    private function fieldErrorMessage(string $field, string $fallback): string
-    {
-        $key = "payments.stripe_connect.field_errors.{$field}";
-        $message = __($key);
-
-        return $message === $key ? $fallback : $message;
-    }
-
-    /**
-     * Traduit une exception (souvent brute de Stripe) en message clair pour le
-     * vendeur, sans jamais exposer le détail technique interne (URL d'API, code
-     * errno réseau, etc.) qui reste tracé côté serveur via Log::error.
-     */
-    private function friendlyErrorMessage(\Throwable $e): string
-    {
-        // Configuration de la plateforme en cause, pas la saisie du vendeur : avant
-        // ce test, « You must use a test bank account number » était présenté comme
-        // un IBAN invalide, et « complete your platform profile » comme des
-        // informations invalides.
-        if (StripeService::isPlatformConfigError($e)) {
-            return __('payments.stripe_connect.error_unavailable');
-        }
-
-        // Problème de connexion entre notre serveur et Stripe (DNS, réseau, timeout).
-        if ($e instanceof \Stripe\Exception\ApiConnectionException) {
-            return __('payments.stripe_connect.error_connection');
-        }
-
-        // Paramètres refusés par Stripe : le plus souvent un IBAN ou un pays invalide.
-        if ($e instanceof \Stripe\Exception\InvalidRequestException) {
-            $raw = strtolower($e->getMessage());
-            if (str_contains($raw, 'iban') || str_contains($raw, 'bank') || str_contains($raw, 'account_number')) {
-                return __('payments.stripe_connect.error_invalid_iban');
-            }
-            // Stripe formule le pays non supporté sans le mot « country »
-            // (ex. « CM is not currently supported by Stripe. ») : sans ce test, le
-            // vendeur recevait un message générique parlant d'informations invalides.
-            if (str_contains($raw, 'country')
-                || str_contains($raw, 'currency')
-                || str_contains($raw, 'not currently supported')
-                || str_contains($raw, 'country_spec')
-                || str_contains($raw, 'no such country')) {
-                return __('payments.stripe_connect.error_country_unsupported');
-            }
-            return __('payments.stripe_connect.error_invalid_details');
-        }
-
-        // Clés API absentes / invalides côté plateforme : ce n'est pas la faute du vendeur.
-        if ($e instanceof \Stripe\Exception\AuthenticationException
-            || $e instanceof \RuntimeException) {
-            return __('payments.stripe_connect.error_unavailable');
-        }
-
-        // Toute autre erreur Stripe : message générique, sans détail technique.
-        if ($e instanceof \Stripe\Exception\ApiErrorException) {
-            return __('payments.stripe_connect.error_save_failed');
-        }
-
-        return __('payments.stripe_connect.error_generic');
-    }
-
-    /** Représentation publique du statut d'onboarding (jamais l'IBAN complet). */
+    /** Représentation publique du statut (jamais l'IBAN complet). */
     private function formatStatus($user): array
     {
         return [
@@ -479,24 +451,7 @@ class StripeConnectController extends Controller
             'bank_country' => $user->stripe_bank_country,
             'account_holder_name' => $user->stripe_account_holder_name,
             'has_account' => !empty($user->stripe_account_id),
+            'onboarding' => 'stripe_hosted',
         ];
-    }
-
-    private function hasValidIbanChecksum(string $iban): bool
-    {
-        $rearranged = substr($iban, 4) . substr($iban, 0, 4);
-        $remainder = 0;
-
-        foreach (str_split($rearranged) as $character) {
-            $digits = ctype_alpha($character)
-                ? (string) (ord($character) - 55)
-                : $character;
-
-            foreach (str_split($digits) as $digit) {
-                $remainder = ($remainder * 10 + (int) $digit) % 97;
-            }
-        }
-
-        return $remainder === 1;
     }
 }

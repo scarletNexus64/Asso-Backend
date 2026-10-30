@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Log;
 use Stripe\StripeClient;
 
 /**
- * Stripe Connect (Custom Accounts) + paiements carte.
+ * Stripe Connect (comptes vendeurs, inscription hébergée par Stripe) + paiements carte.
  *
  * Wrapper mince du SDK Stripe : TOUT appel `\Stripe\*` reste encapsulé ici, afin
  * que les contrôleurs restent testables en mockant ce service (les tests n'ont
@@ -131,12 +131,29 @@ class StripeService
      */
     public static function isPlatformConfigError(\Throwable $e): bool
     {
+        // Codes propres à la configuration Connect de la plateforme : le vendeur n'y
+        // peut rien. Sans ce test, « account_creation_requirement_collection_
+        // unacknowledged » était présenté au vendeur comme « informations invalides ».
+        $code = $e instanceof \Stripe\Exception\ApiErrorException ? (string) $e->getStripeCode() : '';
+        if (in_array($code, [
+            'account_creation_requirement_collection_unacknowledged',
+            'accounts_v2_access_blocked',
+            'account_dashboard_not_supported',
+            'configs_must_match_to_use_account_links',
+        ], true) || str_contains($code, 'unacknowledged')) {
+            return true;
+        }
+
         $message = strtolower($e->getMessage());
 
         return str_contains($message, 'platform profile')
             || str_contains($message, 'test bank account')
             || str_contains($message, 'livemode')
-            || str_contains($message, 'signed up for connect');
+            || str_contains($message, 'signed up for connect')
+            || str_contains($message, 'accounts v1')
+            || str_contains($message, 'stripe-hosted onboarding')
+            || str_contains($message, 'requirement collection')
+            || str_contains($message, 'acknowledge');
     }
 
     public function webhookSecret(): ?string
@@ -211,75 +228,35 @@ class StripeService
     }
 
     /**
-     * Crée un compte Connect bénéficiaire avec Accounts v2, puis attache son IBAN
-     * via l'endpoint v1 d'external accounts, interopérable avec les comptes v2.
+     * Crée le compte Connect d'un vendeur dont les informations (identité, IBAN)
+     * seront collectées par Stripe sur sa page d'inscription hébergée.
      *
-     * Le KYC reste envoyé à Stripe. La plateforme porte les responsabilités de
-     * frais et pertes, sans dashboard vendeur. La capacité recipient stripe_balance
-     * est demandée pour permettre les Transfers vers le compte connecté.
+     * Pourquoi l'inscription hébergée : en France, la réglementation interdit à la
+     * plateforme de collecter elle-même ces informations (« you can only create
+     * connected accounts using Stripe-hosted onboarding »). Avec Accounts v2, c'est
+     * le couple `dashboard` + `losses_collector` qui décide qui les collecte : seul
+     * `dashboard = none` + `losses_collector = application` laisse la collecte à la
+     * plateforme. Avec `dashboard = express`, Stripe la prend en charge, tandis que
+     * la plateforme garde frais et pertes (même modèle de fonds qu'avant).
      *
-     * Le versement est forcé en **manuel** (`settings.payouts.schedule.interval`) :
-     * ainsi c'est TOUJOURS nous qui créons le Payout, donc nous connaissons son id et
-     * le webhook `payout.paid` peut le rapprocher du retrait. En automatique, Stripe
-     * créerait des payouts inconnus de notre base et le retrait resterait `processing`.
-     *
-     * @param array $data country(2), email, first_name, last_name, iban, account_holder_name,
-     *                    birth_date(Y-m-d), phone, address_line1, address_city,
-     *                    address_postal_code, currency?, user_id?, tos_ip?, tos_date?
-     * @return array { id, external_last4, bank_country, account_holder_name }
+     * @param array $data country(2), currency, email?, display_name?, user_id?
+     * @return string Identifiant du compte (acct_…)
      */
-    public function createCustomAccountWithBank(array $data): array
+    public function createHostedAccount(array $data): string
     {
-        $country = strtoupper($data['country']);
-        $currency = $data['currency'] ?? $this->payoutCurrencyForCountry($country);
-        if (!is_string($currency) || $currency === '') {
+        $country = strtolower((string) $data['country']);
+        $currency = strtolower((string) ($data['currency'] ?? ''));
+        if ($currency === '') {
             throw new \DomainException('A supported payout currency is unavailable for this country.');
         }
-        $currency = strtolower($currency);
-        $holder = $data['account_holder_name'];
         $businessProfile = $this->businessProfileParams();
 
-        $dob = new \DateTimeImmutable((string) $data['birth_date']);
-        $individual = array_filter([
-            'given_name' => $data['first_name'] ?? null,
-            'surname' => $data['last_name'] ?? null,
-            'phone' => $data['phone'] ?? null,
-            'date_of_birth' => [
-                'day' => (int) $dob->format('j'),
-                'month' => (int) $dob->format('n'),
-                'year' => (int) $dob->format('Y'),
-            ],
-            'address' => array_filter([
-                'line1' => $data['address_line1'] ?? null,
-                'line2' => $data['address_line2'] ?? null,
-                'city' => $data['address_city'] ?? null,
-                'postal_code' => $data['address_postal_code'] ?? null,
-                'state' => $data['address_state'] ?? null,
-                'country' => strtolower($country),
-            ]),
-        ]);
-
-        $identity = [
-            'country' => strtolower($country),
-            'entity_type' => 'individual',
-            'individual' => $individual,
-        ];
-
-        if (!empty($data['tos_ip'])) {
-            $identity['attestations'] = [
-                'terms_of_service' => [
-                    'account' => [
-                        'date' => date(DATE_ATOM, (int) ($data['tos_date'] ?? time())),
-                        'ip' => $data['tos_ip'],
-                    ],
-                ],
-            ];
-        }
-
-        $account = $this->withoutStripeNotices(fn () => $this->client()->v2->core->accounts->create([
+        $account = $this->withoutStripeNotices(fn () => $this->client()->v2->core->accounts->create(array_filter([
             'contact_email' => $data['email'] ?? null,
-            'display_name' => $holder,
-            'identity' => $identity,
+            'display_name' => $data['display_name'] ?? null,
+            // Le pays est figé à la création ; le reste de l'identité (particulier ou
+            // entreprise, pièces, IBAN) est demandé par Stripe pendant l'inscription.
+            'identity' => ['country' => $country],
             'configuration' => [
                 'recipient' => [
                     'capabilities' => [
@@ -300,91 +277,120 @@ class StripeService
                     'losses_collector' => 'application',
                 ],
             ],
-            'dashboard' => 'none',
+            'dashboard' => 'express',
             'metadata' => array_filter([
                 'asso_user_id' => (string) ($data['user_id'] ?? ''),
                 'asso_connect_api_version' => 'v2',
+                'asso_onboarding' => 'hosted',
             ]),
             'include' => ['configuration.recipient', 'identity', 'defaults'],
-        ]));
+        ], static fn ($value) => $value !== null)));
 
-        $accountId = $account->id;
+        $this->ensureManualPayouts($account->id);
 
-        // V2 account creation does not accept external bank details in its payload.
-        // Keep using the interoperable v1 endpoint for the bank account and manual
-        // payout schedule used by the existing withdrawal/reconciliation flow.
+        return $account->id;
+    }
+
+    /**
+     * Force le versement **manuel** du compte connecté : c'est TOUJOURS nous qui
+     * créons le Payout, donc nous connaissons son id et le webhook `payout.paid`
+     * peut le rapprocher du retrait. En automatique, Stripe créerait des payouts
+     * inconnus de notre base et le retrait resterait `processing`.
+     *
+     * Best-effort : rejoué à chaque synchronisation tant qu'il n'a pas abouti.
+     */
+    public function ensureManualPayouts(string $accountId): bool
+    {
         try {
             $this->withoutStripeNotices(fn () => $this->client()->accounts->update($accountId, [
                 'settings' => ['payouts' => ['schedule' => ['interval' => 'manual']]],
             ]));
 
-            $bank = $this->withoutStripeNotices(fn () => $this->client()->accounts->createExternalAccount($accountId, [
-                'external_account' => [
-                    'object' => 'bank_account',
-                    'country' => $country,
-                    'currency' => $currency,
-                    'account_holder_name' => $holder,
-                    'account_holder_type' => 'individual',
-                    'account_number' => $data['iban'],
-                ],
-                'default_for_currency' => true,
-            ]));
+            return true;
         } catch (\Throwable $e) {
-            try {
-                $this->withoutStripeNotices(
-                    fn () => $this->client()->v2->core->accounts->close($accountId)
-                );
-            } catch (\Throwable $cleanupError) {
-                Log::error('[StripeService] Fermeture du compte Connect incomplet échouée', [
-                    'account_id' => $accountId,
-                    'exception' => $cleanupError::class,
-                    'stripe_code' => $cleanupError instanceof \Stripe\Exception\ApiErrorException
-                        ? $cleanupError->getStripeCode()
-                        : null,
-                ]);
-            }
+            Log::warning('[StripeService] Versement manuel non appliqué au compte connecté', [
+                'account_id' => $accountId,
+                'exception' => $e::class,
+                'stripe_code' => $e instanceof \Stripe\Exception\ApiErrorException ? $e->getStripeCode() : null,
+            ]);
 
-            throw $e;
+            return false;
         }
+    }
+
+    /**
+     * Lien à usage unique vers la page d'inscription Stripe du vendeur (quelques
+     * minutes de validité). Toutes les informations exigibles sont demandées d'un
+     * coup (`eventually_due`) pour éviter de le renvoyer plus tard sur la page.
+     *
+     * @return array{url:string, expires_at:?string}
+     */
+    public function createOnboardingLink(string $accountId, string $refreshUrl, string $returnUrl): array
+    {
+        $link = $this->withoutStripeNotices(fn () => $this->client()->v2->core->accountLinks->create([
+            'account' => $accountId,
+            'use_case' => [
+                'type' => 'account_onboarding',
+                'account_onboarding' => [
+                    'configurations' => ['recipient'],
+                    'collection_options' => ['fields' => 'eventually_due'],
+                    'refresh_url' => $refreshUrl,
+                    'return_url' => $returnUrl,
+                ],
+            ],
+        ]));
 
         return [
-            'id' => $accountId,
-            'external_last4' => $bank->last4 ?? substr(preg_replace('/\s+/', '', $data['iban']), -4),
-            'bank_country' => $bank->country ?? $country,
-            'account_holder_name' => $holder,
+            'url' => (string) $link->url,
+            'expires_at' => isset($link->expires_at) ? (string) $link->expires_at : null,
         ];
     }
 
     /**
-     * Remplace le compte externe (IBAN) d'un compte Connect existant.
+     * IBAN enregistré par le vendeur sur la page Stripe (jamais le numéro complet).
      *
-     * @return array { external_last4, bank_country }
+     * @return array{last4:?string, country:?string, holder:?string}|null null si aucun.
      */
-    public function replaceExternalAccount(string $accountId, array $data): array
+    public function bankAccountSummary(string $accountId): ?array
     {
-        $country = strtoupper($data['country']);
-        $currency = $data['currency'] ?? $this->payoutCurrencyForCountry($country);
-        if (!is_string($currency) || $currency === '') {
-            throw new \DomainException('A supported payout currency is unavailable for this country.');
-        }
-        $currency = strtolower($currency);
+        try {
+            $accounts = $this->withoutStripeNotices(fn () => $this->client()->accounts->allExternalAccounts(
+                $accountId,
+                ['object' => 'bank_account', 'limit' => 10],
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('[StripeService] Lecture de l\'IBAN du compte connecté échouée', [
+                'account_id' => $accountId,
+                'exception' => $e::class,
+            ]);
 
-        $bank = $this->withoutStripeNotices(fn () => $this->client()->accounts->createExternalAccount($accountId, [
-            'external_account' => [
-                'object' => 'bank_account',
-                'country' => $country,
-                'currency' => $currency,
-                'account_holder_name' => $data['account_holder_name'],
-                'account_holder_type' => 'individual',
-                'account_number' => $data['iban'],
-            ],
-            'default_for_currency' => true,
-        ]));
+            return null;
+        }
+
+        $banks = $accounts->data ?? [];
+        if (empty($banks)) {
+            return null;
+        }
+
+        $bank = $banks[0];
+        foreach ($banks as $candidate) {
+            if (!empty($candidate->default_for_currency)) {
+                $bank = $candidate;
+                break;
+            }
+        }
 
         return [
-            'external_last4' => $bank->last4 ?? substr(preg_replace('/\s+/', '', $data['iban']), -4),
-            'bank_country' => $bank->country ?? $country,
+            'last4' => $bank->last4 ?? null,
+            'country' => isset($bank->country) ? strtoupper((string) $bank->country) : null,
+            'holder' => $bank->account_holder_name ?? null,
         ];
+    }
+
+    /** Ferme un compte connecté (désynchronisation de l'IBAN par le vendeur). */
+    public function closeAccount(string $accountId): void
+    {
+        $this->withoutStripeNotices(fn () => $this->client()->v2->core->accounts->close($accountId));
     }
 
     /**
@@ -425,31 +431,6 @@ class StripeService
     }
 
     /**
-     * Met à jour les informations KYC d'un compte Connect existant (resoumission).
-     *
-     * Sans ces champs le compte reste `requirements.past_due` : c'est la cause n°1
-     * d'un virement refusé par Stripe. On les renvoie donc à chaque resoumission,
-     * en même temps que le nouvel IBAN.
-     */
-    public function updateAccountKyc(string $accountId, array $data): void
-    {
-        $country = strtoupper($data['country'] ?? '');
-        $individual = $this->individualParams($data, $country);
-
-        if (empty($individual)) {
-            return;
-        }
-
-        $this->withoutStripeNotices(fn () => $this->client()->accounts->update($accountId, [
-            'individual' => $individual,
-            'business_profile' => $this->businessProfileParams(),
-            'settings' => [
-                'payouts' => ['schedule' => ['interval' => 'manual']],
-            ],
-        ]));
-    }
-
-    /**
      * État RÉEL du compte Connect côté Stripe (source d'autorité pour savoir si un
      * virement est possible), utilisé par la validation admin et le retrait.
      *
@@ -468,6 +449,7 @@ class StripeService
             'charges_enabled' => false,
             'requirements_due' => [],
             'disabled_reason' => null,
+            'details_submitted' => false,
             'ready' => false,
             'error' => null,
             // true = le compte n'existe pas pour la clé actuelle (ex. créé en test).
@@ -533,6 +515,9 @@ class StripeService
             'charges_enabled' => (bool) ($account->charges_enabled ?? false),
             'requirements_due' => $due,
             'disabled_reason' => $disabledReason,
+            // Le vendeur a terminé la page d'inscription Stripe.
+            'details_submitted' => (bool) ($account->details_submitted ?? false),
+            'payout_interval' => $account->settings->payouts->schedule->interval ?? null,
             // `ready` = Stripe accepterait un Transfer + un Payout vers l'IBAN.
             'ready' => $transfers === 'active' && $payoutsEnabled,
             'error' => null,
@@ -966,6 +951,40 @@ class StripeService
     }
 
     /**
+     * Le compte connecté détient-il encore des fonds (disponibles ou en attente,
+     * toutes devises) ? Dans le doute (Stripe illisible), on répond oui : fermer
+     * le compte bloquerait ces fonds.
+     */
+    public function connectedHasFunds(string $accountId): bool
+    {
+        try {
+            $balance = $this->withoutStripeNotices(
+                fn () => $this->client()->balance->retrieve([], ['stripe_account' => $accountId])
+            );
+        } catch (\Throwable $e) {
+            if (self::isMissingAccountError($e)) {
+                return false;
+            }
+            Log::warning('[StripeService] Solde du compte connecté illisible', [
+                'account' => $accountId,
+                'exception' => $e::class,
+            ]);
+
+            return true;
+        }
+
+        foreach (['available', 'pending'] as $bucket) {
+            foreach (($balance->{$bucket} ?? []) as $entry) {
+                if ((int) ($entry->amount ?? 0) > 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Capacité de virement de la plateforme, exprimée dans la devise demandée :
      * somme de TOUS ses soldes convertis. Une devise sans taux connu est ignorée.
      */
@@ -1118,53 +1137,6 @@ class StripeService
             'amount_minor' => $intent->amount,
             'currency' => $intent->currency,
         ];
-    }
-
-    /**
-     * Bloc `individual` (identité + KYC) envoyé à Stripe.
-     *
-     * `array_filter` retire les clés absentes : une resoumission qui ne fournirait
-     * qu'une partie des informations ne les écrase pas par des valeurs vides.
-     */
-    private function individualParams(array $data, string $country = ''): array
-    {
-        $params = array_filter([
-            'first_name' => $data['first_name'] ?? null,
-            'last_name' => $data['last_name'] ?? null,
-            'email' => $data['email'] ?? null,
-            'phone' => $data['phone'] ?? null,
-        ]);
-
-        // Date de naissance : Stripe attend jour/mois/année séparés.
-        if (!empty($data['birth_date'])) {
-            try {
-                $dob = new \DateTimeImmutable((string) $data['birth_date']);
-                $params['dob'] = [
-                    'day' => (int) $dob->format('j'),
-                    'month' => (int) $dob->format('n'),
-                    'year' => (int) $dob->format('Y'),
-                ];
-            } catch (\Throwable $e) {
-                Log::warning('[StripeService] Date de naissance illisible', [
-                    'user_id' => $data['user_id'] ?? null,
-                ]);
-            }
-        }
-
-        $address = array_filter([
-            'line1' => $data['address_line1'] ?? null,
-            'line2' => $data['address_line2'] ?? null,
-            'city' => $data['address_city'] ?? null,
-            'postal_code' => $data['address_postal_code'] ?? null,
-            'state' => $data['address_state'] ?? null,
-            'country' => $data['address_country'] ?? ($country ?: null),
-        ]);
-
-        if (!empty($address['line1'])) {
-            $params['address'] = $address;
-        }
-
-        return $params;
     }
 
     /**

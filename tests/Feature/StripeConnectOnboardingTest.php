@@ -5,14 +5,15 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Services\StripeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Mockery;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 /**
- * Onboarding Stripe Connect vendeur (Phase 2).
+ * Compte de virement vendeur via l'inscription HÉBERGÉE par Stripe.
  *
- * StripeService est MOCKÉ : ces tests n'ont pas besoin de clés Stripe réelles —
- * ils vérifient la logique du contrôleur (statut pending, validations, garde-fous).
+ * En France, la plateforme n'a pas le droit de collecter elle-même l'identité et
+ * l'IBAN : l'app demande un lien vers la page Stripe, puis relit le statut.
+ * StripeService est MOCKÉ : aucun appel réel à Stripe.
  */
 class StripeConnectOnboardingTest extends TestCase
 {
@@ -21,296 +22,363 @@ class StripeConnectOnboardingTest extends TestCase
     private function mockStripe(callable $expectations): void
     {
         $this->mock(StripeService::class, function ($mock) use ($expectations) {
-            $mock->shouldReceive('payoutCurrencyForCountry')
-                ->byDefault()
-                ->andReturn('eur');
-            $mock->shouldReceive('mode')
-                ->byDefault()
-                ->andReturn('test');
+            $mock->shouldReceive('isConfigured')->byDefault()->andReturn(true);
+            $mock->shouldReceive('payoutCurrencyForCountry')->byDefault()->andReturn('eur');
+            $mock->shouldReceive('mode')->byDefault()->andReturn('test');
+            $mock->shouldReceive('createOnboardingLink')->byDefault()->andReturn([
+                'url' => 'https://connect.stripe.com/setup/e/acct_new/abc',
+                'expires_at' => '2026-10-30T12:00:00Z',
+            ]);
             $expectations($mock);
         });
     }
 
-    /**
-     * Formulaire vendeur complet. Les champs KYC (naissance, téléphone, adresse) sont
-     * OBLIGATOIRES : sans eux Stripe laisse le compte en `requirements.past_due` et
-     * aucun virement ne peut aboutir.
-     */
-    private function payload(array $overrides = []): array
+    private function state(array $overrides = []): array
     {
         return array_merge([
-            'country' => 'FR',
-            'iban' => 'FR1420041010050500013M02606',
-            'account_holder_name' => 'Jean Dupont',
-            'birth_date' => '1990-05-17',
-            'phone' => '+33612345678',
-            'address_line1' => '12 rue de la Paix',
-            'address_city' => 'Paris',
-            'address_postal_code' => '75002',
+            'exists' => true,
+            'transfers' => 'inactive',
+            'payouts_enabled' => false,
+            'charges_enabled' => false,
+            'requirements_due' => [],
+            'disabled_reason' => null,
+            'details_submitted' => false,
+            'payout_interval' => 'manual',
+            'ready' => false,
+            'error' => null,
+            'missing' => false,
         ], $overrides);
     }
 
-    public function test_submit_creates_account_and_sets_pending(): void
+    private function vendor(array $stripe = []): User
+    {
+        $user = User::factory()->create();
+        $user->forceFill($stripe)->saveQuietly();
+
+        return $user;
+    }
+
+    public function test_onboarding_creates_hosted_account_and_returns_stripe_link(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('createCustomAccountWithBank')->once()
-                ->withArgs(function (array $data) {
-                    // Le KYC saisi par le vendeur doit bien être transmis à Stripe.
-                    return $data['birth_date'] === '1990-05-17'
-                        && $data['phone'] === '+33612345678'
-                        && $data['address_line1'] === '12 rue de la Paix'
-                        && $data['address_city'] === 'Paris'
-                        && $data['address_postal_code'] === '75002'
-                        && $data['currency'] === 'eur';
-                })
-                ->andReturn([
-                    'id' => 'acct_test_123',
-                    'external_last4' => '3000',
-                    'bank_country' => 'FR',
-                    'account_holder_name' => 'Jean Dupont',
-                ]);
+            $mock->shouldReceive('createHostedAccount')->once()
+                ->withArgs(fn (array $data) => $data['country'] === 'FR' && $data['currency'] === 'eur')
+                ->andReturn('acct_new');
+            $mock->shouldReceive('createOnboardingLink')->once()
+                ->withArgs(fn ($account, $refresh, $return) => $account === 'acct_new'
+                    && str_contains($refresh, '/stripe/connect/refresh/')
+                    && str_contains($refresh, 'signature=')
+                    && str_ends_with($return, '/stripe/connect/return'))
+                ->andReturn(['url' => 'https://connect.stripe.com/setup/e/acct_new/abc', 'expires_at' => null]);
         });
 
-        $user = User::factory()->create();
+        $user = $this->vendor();
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'fr'])
             ->assertOk()
-            ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.iban_last4', '3000');
+            ->assertJsonPath('data.url', 'https://connect.stripe.com/setup/e/acct_new/abc')
+            ->assertJsonPath('data.status.has_account', true)
+            // L'inscription n'est pas terminée : pas encore « en attente ».
+            ->assertJsonPath('data.status.status', null);
 
         $user->refresh();
-        $this->assertSame('acct_test_123', $user->stripe_account_id);
-        $this->assertSame('pending', $user->stripe_account_status);
-        $this->assertNotNull($user->stripe_submitted_at);
+        $this->assertSame('acct_new', $user->stripe_account_id);
+        $this->assertSame('FR', $user->stripe_bank_country);
     }
 
-    public function test_submit_rejects_invalid_iban(): void
+    public function test_onboarding_reuses_existing_account(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
+            $mock->shouldReceive('accountState')->andReturn($this->state());
+            $mock->shouldReceive('createHostedAccount')->never();
+            $mock->shouldReceive('createOnboardingLink')->once()
+                ->withArgs(fn ($account) => $account === 'acct_existing')
+                ->andReturn(['url' => 'https://connect.stripe.com/x', 'expires_at' => null]);
         });
 
-        $user = User::factory()->create();
+        $this->actingAs($this->vendor(['stripe_account_id' => 'acct_existing']), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding')
+            ->assertOk()
+            ->assertJsonPath('data.url', 'https://connect.stripe.com/x');
+    }
+
+    public function test_onboarding_requires_a_country_for_a_new_account(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('createHostedAccount')->never();
+        });
+
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'France'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.country.0', __('payments.stripe_connect.validation.country_size'));
+    }
+
+    public function test_onboarding_rejects_country_without_supported_payout_currency(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('payoutCurrencyForCountry')->with('CM')->andReturn(null);
+            $mock->shouldReceive('createHostedAccount')->never();
+        });
+
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'CM'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', __('payments.stripe_connect.error_country_unsupported'));
+    }
+
+    /**
+     * Erreur de configuration de la PLATEFORME (ex. collecte des informations non
+     * acceptée dans Stripe) : jamais présentée comme une erreur du vendeur.
+     */
+    public function test_platform_config_error_is_not_blamed_on_vendor(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('createHostedAccount')->andThrow(
+                \Stripe\Exception\InvalidRequestException::factory(
+                    'Due to regulations in France, you can only create connected accounts using Stripe-hosted onboarding.',
+                    400,
+                    null,
+                    null,
+                    null,
+                    'account_creation_requirement_collection_unacknowledged',
+                )
+            );
+        });
+
+        $user = $this->vendor();
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload(['iban' => 'PAS-UN-IBAN']))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('iban')
-            // Message clair, propre au champ (pas le message générique de Laravel).
-            ->assertJsonPath('errors.iban.0', __('payments.stripe_connect.validation.iban_format'));
-    }
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'FR'])
+            ->assertStatus(503)
+            ->assertJsonPath('message', __('payments.stripe_connect.error_unavailable'))
+            ->assertJsonMissingPath('errors');
 
-    public function test_submit_rejects_iban_with_invalid_checksum(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('payoutCurrencyForCountry')->never();
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload([
-                'iban' => 'FR0020041010050500013M02606',
-            ]))
-            ->assertStatus(422)
-            ->assertJsonPath('errors.iban.0', __('payments.stripe_connect.validation.iban_checksum'));
-    }
-
-    public function test_submit_rejects_country_that_does_not_match_iban(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('payoutCurrencyForCountry')->never();
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload(['country' => 'GB']))
-            ->assertStatus(422)
-            ->assertJsonPath(
-                'errors.country.0',
-                __('payments.stripe_connect.validation.country_iban_mismatch'),
-            );
-    }
-
-    public function test_submit_rejects_invalid_phone_format(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('payoutCurrencyForCountry')->never();
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload(['phone' => '0612345678']))
-            ->assertStatus(422)
-            ->assertJsonPath('errors.phone.0', __('payments.stripe_connect.validation.phone_invalid'));
-    }
-
-    public function test_submit_rejects_country_without_supported_payout_currency(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('payoutCurrencyForCountry')->once()->with('FR')->andReturn(null);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(422)
-            ->assertJsonPath('errors.country.0', __('payments.stripe_connect.field_errors.country'));
+        $this->assertNull($user->fresh()->stripe_account_id);
     }
 
     public function test_stripe_connection_failure_returns_safe_service_error(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('payoutCurrencyForCountry')
-                ->once()
-                ->with('FR')
-                ->andThrow(new \Stripe\Exception\ApiConnectionException('private network detail'));
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(503)
-            ->assertJsonPath('message', __('payments.stripe_connect.error_connection'))
-            ->assertDontSee('private network detail');
-    }
-
-    public function test_submit_normalizes_iban_and_phone_before_sending_them_to_stripe(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('createCustomAccountWithBank')
-                ->once()
-                ->withArgs(fn (array $data) => $data['iban'] === 'FR1420041010050500013M02606'
-                    && $data['phone'] === '+33612345678')
-                ->andReturn([
-                    'id' => 'acct_normalized',
-                    'external_last4' => '2606',
-                    'bank_country' => 'FR',
-                ]);
-        });
-
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload([
-                'iban' => 'fr14 2004 1010 0505 0001 3m02 606',
-                'phone' => '+33 (6) 12-34-56-78',
-            ]))
-            ->assertOk();
-    }
-
-    /** Un refus de Stripe sur un paramètre précis s'affiche sous le champ concerné. */
-    public function test_stripe_refusal_is_attached_to_the_matching_field(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('mode')->andReturn('test');
-            $mock->shouldReceive('createCustomAccountWithBank')->andThrow(
-                \Stripe\Exception\InvalidRequestException::factory('Invalid postal code for FR', 400, null, null, null, null, 'individual[address][postal_code]')
+            $mock->shouldReceive('createHostedAccount')->andThrow(
+                new \Stripe\Exception\ApiConnectionException('Could not resolve host: api.stripe.com')
             );
         });
 
-        $this->actingAs(User::factory()->create(), 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(422)
-            ->assertJsonPath('errors.address_postal_code.0', __('payments.stripe_connect.field_errors.address_postal_code'));
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'FR'])
+            ->assertStatus(503)
+            ->assertJsonPath('message', __('payments.stripe_connect.error_connection'));
     }
 
-    /** Sans KYC, le compte serait créé mais inutilisable : on refuse en amont. */
-    public function test_submit_requires_kyc_fields(): void
+    public function test_onboarding_returns_503_when_stripe_not_configured(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
+            $mock->shouldReceive('isConfigured')->andReturn(false);
+            $mock->shouldReceive('createHostedAccount')->never();
         });
 
-        $user = User::factory()->create();
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'FR'])
+            ->assertStatus(503);
+    }
+
+    public function test_onboarding_blocked_when_approved_and_operational(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['ready' => true, 'details_submitted' => true]));
+            $mock->shouldReceive('createOnboardingLink')->never();
+        });
+
+        $this->actingAs($this->vendor(['stripe_account_id' => 'acct_ok', 'stripe_account_status' => 'approved']), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding')
+            ->assertStatus(422)
+            ->assertJsonPath('message', __('payments.stripe_connect.already_validated'));
+    }
+
+    public function test_rejected_vendor_can_reopen_stripe_page(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['details_submitted' => true]));
+            $mock->shouldReceive('createOnboardingLink')->once()->andReturn(['url' => 'https://connect.stripe.com/r', 'expires_at' => null]);
+        });
+
+        $user = $this->vendor([
+            'stripe_account_id' => 'acct_r',
+            'stripe_account_status' => 'rejected',
+            'stripe_rejection_reason' => 'Pièce illisible',
+        ]);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', [
-                'country' => 'FR',
-                'iban' => 'FR1420041010050500013M02606',
-                'account_holder_name' => 'Jean Dupont',
-            ])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors([
-                'birth_date', 'phone', 'address_line1', 'address_city', 'address_postal_code',
-            ]);
+            ->postJson('/api/v1/stripe/connect/onboarding')
+            ->assertOk();
+
+        $this->assertNull($user->fresh()->stripe_account_status);
+        $this->assertNull($user->fresh()->stripe_rejection_reason);
     }
 
-    /** Stripe refuse les mineurs : autant le dire tout de suite au vendeur. */
-    public function test_submit_rejects_minor(): void
+    public function test_onboarding_recreates_account_missing_for_current_key(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
+            $mock->shouldReceive('accountState')->with('acct_old_test')
+                ->andReturn($this->state(['exists' => false, 'missing' => true]));
+            $mock->shouldReceive('createHostedAccount')->once()->andReturn('acct_new_live');
         });
 
-        $user = User::factory()->create();
+        $user = $this->vendor(['stripe_account_id' => 'acct_old_test', 'stripe_account_status' => 'approved']);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload([
-                'birth_date' => now()->subYears(15)->toDateString(),
-            ]))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('birth_date');
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'FR'])
+            ->assertOk();
+
+        $this->assertSame('acct_new_live', $user->fresh()->stripe_account_id);
+        $this->assertNull($user->fresh()->stripe_account_status);
     }
 
-    public function test_submit_blocked_when_already_approved(): void
+    /** Les anciennes versions de l'app reçoivent un message clair, rien n'est envoyé à Stripe. */
+    public function test_legacy_iban_form_asks_to_update_the_app(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('accountState')->andReturn(['missing' => false]);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-            $mock->shouldReceive('replaceExternalAccount')->never();
+            $mock->shouldReceive('createHostedAccount')->never();
         });
 
-        $user = User::factory()->create();
-        $user->forceFill([
-            'stripe_account_id' => 'acct_existing',
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/submit', ['country' => 'FR', 'iban' => 'FR7630006000011234567890189'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', __('payments.stripe_connect.hosted_onboarding_required'))
+            ->assertJsonPath('data.onboarding_required', true);
+    }
+
+    public function test_status_moves_to_pending_once_stripe_registration_is_complete(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state([
+                'details_submitted' => true,
+                'transfers' => 'pending',
+            ]));
+            $mock->shouldReceive('bankAccountSummary')->with('acct_x')
+                ->andReturn(['last4' => '9618', 'country' => 'FR', 'holder' => 'Jean Dupont']);
+        });
+
+        $user = $this->vendor(['stripe_account_id' => 'acct_x']);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/stripe/connect/status')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.iban_last4', '9618')
+            ->assertJsonPath('data.account_holder_name', 'Jean Dupont')
+            ->assertJsonPath('data.stripe.details_submitted', true)
+            ->assertJsonPath('data.stripe.verification', __('payments.stripe_connect.pending'));
+
+        $this->assertNotNull($user->fresh()->stripe_submitted_at);
+    }
+
+    public function test_status_keeps_unfinished_registration_out_of_review(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['requirements_due' => ['individual.dob.day']]));
+            $mock->shouldReceive('bankAccountSummary')->never();
+        });
+
+        $this->actingAs($this->vendor(['stripe_account_id' => 'acct_x']), 'sanctum')
+            ->getJson('/api/v1/stripe/connect/status')
+            ->assertOk()
+            ->assertJsonPath('data.status', null)
+            ->assertJsonPath('data.has_account', true)
+            ->assertJsonPath('data.stripe.details_submitted', false)
+            ->assertJsonPath('data.stripe.verification', __('payments.stripe_connect.onboarding_incomplete'));
+    }
+
+    /** Nouvel IBAN saisi chez Stripe sur un compte validé : il doit être revalidé. */
+    public function test_iban_changed_on_stripe_sends_approved_account_back_to_review(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['details_submitted' => true, 'ready' => true, 'transfers' => 'active']));
+            $mock->shouldReceive('bankAccountSummary')->andReturn(['last4' => '1111', 'country' => 'FR', 'holder' => 'Jean Dupont']);
+        });
+
+        $user = $this->vendor([
+            'stripe_account_id' => 'acct_ok',
             'stripe_account_status' => 'approved',
-        ])->saveQuietly();
+            'stripe_external_last4' => '9618',
+            'stripe_verified_at' => now(),
+        ]);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(422);
+            ->getJson('/api/v1/stripe/connect/status')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.iban_last4', '1111');
+
+        $this->assertNull($user->fresh()->stripe_verified_at);
     }
 
-    public function test_approved_iban_can_be_unlinked_then_replaced(): void
+    public function test_status_forgets_account_missing_for_current_key(): void
     {
-        $user = User::factory()->create();
-        $user->forceFill([
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['exists' => false, 'missing' => true]));
+        });
+
+        $user = $this->vendor(['stripe_account_id' => 'acct_old', 'stripe_account_status' => 'approved', 'stripe_external_last4' => '3000']);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/stripe/connect/status')
+            ->assertOk()
+            ->assertJsonPath('data.has_account', false)
+            ->assertJsonPath('data.status', null);
+    }
+
+    public function test_unlink_closes_stripe_account_and_resets_vendor(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['details_submitted' => true, 'ready' => true]));
+            $mock->shouldReceive('connectedHasFunds')->with('acct_existing')->andReturn(false);
+            $mock->shouldReceive('closeAccount')->once()->with('acct_existing');
+        });
+
+        $user = $this->vendor([
             'stripe_account_id' => 'acct_existing',
             'stripe_account_status' => 'approved',
             'stripe_external_last4' => '2606',
-            'stripe_bank_country' => 'FR',
-            'stripe_account_holder_name' => 'Jean Dupont',
-        ])->saveQuietly();
+        ]);
 
         $this->actingAs($user, 'sanctum')
             ->deleteJson('/api/v1/stripe/connect')
             ->assertOk()
             ->assertJsonPath('data.status', null)
             ->assertJsonPath('data.iban_last4', null)
-            // Le compte Connect reste : un nouvel IBAN le remplacera.
-            ->assertJsonPath('data.has_account', true);
+            ->assertJsonPath('data.has_account', false);
 
         $this->assertFalse(\App\Services\StripeWithdrawalService::isReady($user->fresh()));
     }
 
+    public function test_unlink_refused_while_funds_remain_on_stripe_account(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('accountState')->andReturn($this->state(['details_submitted' => true]));
+            $mock->shouldReceive('connectedHasFunds')->andReturn(true);
+            $mock->shouldReceive('closeAccount')->never();
+        });
+
+        $user = $this->vendor(['stripe_account_id' => 'acct_existing', 'stripe_account_status' => 'approved']);
+
+        $this->actingAs($user, 'sanctum')
+            ->deleteJson('/api/v1/stripe/connect')
+            ->assertStatus(422)
+            ->assertJsonPath('message', __('payments.stripe_connect.unlink_balance_remaining'));
+
+        $this->assertSame('acct_existing', $user->fresh()->stripe_account_id);
+    }
+
     public function test_unlink_refused_while_a_transfer_is_in_progress(): void
     {
-        $user = User::factory()->create();
-        $user->forceFill([
+        $user = $this->vendor([
             'stripe_account_id' => 'acct_existing',
             'stripe_account_status' => 'approved',
             'stripe_external_last4' => '2606',
-        ])->saveQuietly();
+        ]);
         \App\Models\PlatformWithdrawal::create([
             'user_id' => $user->id,
             'amount_requested' => 20,
@@ -332,183 +400,30 @@ class StripeConnectOnboardingTest extends TestCase
         $this->assertSame('approved', $user->fresh()->stripe_account_status);
     }
 
-    public function test_submit_returns_503_when_stripe_not_configured(): void
+    public function test_return_page_tells_vendor_to_go_back_to_the_app(): void
     {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(false);
-        });
-
-        $user = User::factory()->create();
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(503);
-    }
-
-    public function test_resubmit_after_rejection_replaces_iban_and_resets_pending(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('accountState')->andReturn(['missing' => false]);
-            $mock->shouldReceive('createCustomAccountWithBank')->never();
-            $mock->shouldReceive('replaceExternalAccount')->once()->andReturn([
-                'external_last4' => '9999',
-                'bank_country' => 'FR',
-            ]);
-            // Le KYC est rafraîchi à la resoumission : c'est souvent lui qui bloquait.
-            $mock->shouldReceive('updateAccountKyc')->once()
-                ->withArgs(fn (string $id, array $data) => $id === 'acct_existing'
-                    && $data['birth_date'] === '1990-05-17');
-        });
-
-        $user = User::factory()->create();
-        $user->forceFill([
-            'stripe_account_id' => 'acct_existing',
-            'stripe_account_status' => 'rejected',
-            'stripe_rejection_reason' => 'IBAN illisible',
-        ])->saveQuietly();
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload([
-                'iban' => 'FR7630006000011234567890189',
-            ]))
+        $this->get('/stripe/connect/return')
             ->assertOk()
-            ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.iban_last4', '9999');
-
-        $user->refresh();
-        $this->assertSame('pending', $user->stripe_account_status);
-        $this->assertNull($user->stripe_rejection_reason);
+            ->assertSee(__('payments.stripe_connect.return_page.title'));
     }
 
-    public function test_status_endpoint_reflects_state(): void
+    public function test_refresh_page_redirects_to_a_new_stripe_link(): void
     {
         $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('accountState')->andReturn([
-                'exists' => true,
-                'transfers' => 'pending',
-                'payouts_enabled' => false,
-                'charges_enabled' => false,
-                'requirements_due' => [],
-                'disabled_reason' => null,
-                'ready' => false,
-                'error' => null,
-            ]);
+            $mock->shouldReceive('createOnboardingLink')->once()
+                ->andReturn(['url' => 'https://connect.stripe.com/again', 'expires_at' => null]);
         });
 
-        $user = User::factory()->create();
-        $user->forceFill([
-            'stripe_account_id' => 'acct_x',
-            'stripe_account_status' => 'pending',
-            'stripe_external_last4' => '3000',
-        ])->saveQuietly();
+        $user = $this->vendor(['stripe_account_id' => 'acct_x']);
+        $url = URL::temporarySignedRoute('stripe.connect.refresh', now()->addDay(), ['user' => $user->id]);
 
-        $this->actingAs($user, 'sanctum')
-            ->getJson('/api/v1/stripe/connect/status')
-            ->assertOk()
-            ->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.has_account', true)
-            ->assertJsonPath('data.iban_last4', '3000')
-            // L'état réel Stripe est remonté au vendeur (vérification en cours).
-            ->assertJsonPath('data.stripe.ready', false)
-            ->assertJsonPath('data.stripe.verification', 'Vérification en cours chez Stripe (quelques minutes).');
+        $this->get($url)->assertRedirect('https://connect.stripe.com/again');
     }
 
-    /**
-     * Compte Connect créé en mode test puis passage aux clés live : il est
-     * introuvable pour la clé actuelle. Le renvoi de l'IBAN doit créer un NOUVEAU
-     * compte (même si le statut ASSO était « approved »), au lieu d'échouer
-     * indéfiniment sur « does not have access to account ».
-     */
-    public function test_resubmit_recreates_account_missing_for_current_key(): void
+    public function test_refresh_page_requires_a_valid_signature(): void
     {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('mode')->andReturn('live');
-            $mock->shouldReceive('accountState')->with('acct_from_test_mode')->andReturn(['missing' => true]);
-            $mock->shouldReceive('replaceExternalAccount')->never();
-            $mock->shouldReceive('createCustomAccountWithBank')->once()->andReturn([
-                'id' => 'acct_live_new',
-                'external_last4' => '0189',
-                'bank_country' => 'FR',
-                'account_holder_name' => 'Jean Dupont',
-            ]);
-        });
+        $user = $this->vendor(['stripe_account_id' => 'acct_x']);
 
-        $user = User::factory()->create();
-        $user->forceFill([
-            'stripe_account_id' => 'acct_from_test_mode',
-            'stripe_account_status' => 'approved',
-        ])->saveQuietly();
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertOk()
-            ->assertJsonPath('data.status', 'pending');
-
-        $user->refresh();
-        $this->assertSame('acct_live_new', $user->stripe_account_id);
-        $this->assertSame('pending', $user->stripe_account_status);
-    }
-
-    /**
-     * Profil plateforme Connect non rempli en live : ce n'est pas la faute du
-     * vendeur, il ne doit pas lire « informations invalides ».
-     */
-    public function test_platform_config_error_is_not_blamed_on_vendor(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('mode')->andReturn('live');
-            $mock->shouldReceive('createCustomAccountWithBank')->once()->andThrow(
-                new \Stripe\Exception\InvalidRequestException(
-                    'You must complete your platform profile to use Connect and create live connected accounts.'
-                )
-            );
-        });
-
-        $user = User::factory()->create();
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/v1/stripe/connect/submit', $this->payload())
-            ->assertStatus(503)
-            ->assertJsonPath('message', __('payments.stripe_connect.error_unavailable'));
-    }
-
-    public function test_status_reopens_form_when_account_missing_for_current_key(): void
-    {
-        $this->mockStripe(function ($mock) {
-            $mock->shouldReceive('isConfigured')->andReturn(true);
-            $mock->shouldReceive('accountState')->andReturn([
-                'exists' => false,
-                'transfers' => 'unknown',
-                'payouts_enabled' => false,
-                'charges_enabled' => false,
-                'requirements_due' => [],
-                'disabled_reason' => null,
-                'ready' => false,
-                'error' => "does not have access to account 'acct_x'",
-                'missing' => true,
-            ]);
-        });
-
-        $user = User::factory()->create();
-        $user->forceFill([
-            'stripe_account_id' => 'acct_x',
-            'stripe_account_status' => 'approved',
-        ])->saveQuietly();
-
-        $this->actingAs($user, 'sanctum')
-            ->getJson('/api/v1/stripe/connect/status')
-            ->assertOk()
-            ->assertJsonPath('data.has_account', false)
-            ->assertJsonPath('data.status', null);
-    }
-
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
+        $this->get('/stripe/connect/refresh/' . $user->id)->assertForbidden();
     }
 }

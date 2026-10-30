@@ -90,6 +90,14 @@ Route::get('/payment/cancel', function () {
     return response('<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Paiement annulé</title></head><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>Paiement annulé</h2><p>Vous pouvez fermer cette page et revenir à l\'application.</p></body></html>');
 })->name('payment.cancel');
 
+// Retour de la page d'inscription Stripe Connect (compte de virement IBAN du vendeur).
+Route::get('/stripe/connect/return', [\App\Http\Controllers\Api\StripeConnectController::class, 'returnPage'])
+    ->name('stripe.connect.return');
+Route::get('/stripe/connect/refresh/{user}', [\App\Http\Controllers\Api\StripeConnectController::class, 'refreshPage'])
+    ->whereNumber('user')
+    ->middleware('signed')
+    ->name('stripe.connect.refresh');
+
 // Default login route (for Laravel authentication redirects)
 Route::get('/login', function () {
     return redirect()->route('admin.login');

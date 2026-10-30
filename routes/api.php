@@ -611,6 +611,8 @@ Route::middleware('auth:sanctum')->prefix('v1/diaspo')->group(function () {
 
 Route::middleware('auth:sanctum')->prefix('v1/stripe/connect')->group(function () {
     Route::get('/status', [App\Http\Controllers\Api\StripeConnectController::class, 'status']);
+    Route::post('/onboarding', [App\Http\Controllers\Api\StripeConnectController::class, 'onboarding']);
+    // Ancien formulaire IBAN (apps non mises à jour) : renvoie un message clair.
     Route::post('/submit', [App\Http\Controllers\Api\StripeConnectController::class, 'submit']);
     Route::delete('/', [App\Http\Controllers\Api\StripeConnectController::class, 'unlink']);
 });

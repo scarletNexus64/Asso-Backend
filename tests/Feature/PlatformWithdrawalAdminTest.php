@@ -60,16 +60,22 @@ class PlatformWithdrawalAdminTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_invalid_iban_is_not_kept_in_session(): void
+    /** L'IBAN de la plateforme se saisit sur la page Stripe : l'admin y est redirigé. */
+    public function test_platform_iban_opens_stripe_hosted_onboarding(): void
     {
-        ServiceConfiguration::setConfig('stripe', ['secret_key' => 'sk_test_x', 'publishable_key' => 'pk_test_x'], true);
+        $this->mock(\App\Services\StripeService::class, function ($mock) {
+            $mock->shouldReceive('isConfigured')->andReturn(true);
+            $mock->shouldReceive('mode')->andReturn('test');
+            $mock->shouldReceive('payoutCurrencyForCountry')->with('FR')->andReturn('eur');
+            $mock->shouldReceive('createHostedAccount')->once()->andReturn('acct_platform');
+            $mock->shouldReceive('createOnboardingLink')->once()
+                ->andReturn(['url' => 'https://connect.stripe.com/setup/platform', 'expires_at' => null]);
+        });
 
-        $this->actingAs($this->admin)->post('/admin/revenue/withdrawal/iban', [
-            'country' => 'FR', 'iban' => 'FR76 3000 6000 0112 3456 7890 189', 'account_holder_name' => 'ASSO',
-        ])->assertRedirect()->assertSessionHasErrors('birth_date');
+        $this->actingAs($this->admin)->post('/admin/revenue/withdrawal/iban', ['country' => 'FR'])
+            ->assertRedirect('https://connect.stripe.com/setup/platform');
 
-        $this->assertNull(session()->getOldInput('iban'));
-        $this->assertNull($this->platform->fresh()->stripe_account_id);
+        $this->assertSame('acct_platform', $this->platform->fresh()->stripe_account_id);
     }
 
     public function test_admin_validates_pending_platform_iban(): void

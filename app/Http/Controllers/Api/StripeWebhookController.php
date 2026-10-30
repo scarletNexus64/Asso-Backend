@@ -299,33 +299,23 @@ class StripeWebhookController extends Controller
             return;
         }
 
-        $transfers = (string) ($account->capabilities->transfers ?? 'unknown');
-        $ready = $transfers === 'active' && (bool) ($account->payouts_enabled ?? false);
+        // État relu chez Stripe (fait foi pour les comptes v2) : inscription terminée
+        // → dossier en revue ASSO ; IBAN changé → à revalider ; compte validé mais
+        // désactivé par Stripe → repassé en attente.
+        $state = app(\App\Services\StripeConnectSync::class)->sync($user, fromWebhook: true);
 
         Log::info('[StripeWebhook] account.updated', [
             'user_id' => $user->id,
-            'transfers' => $transfers,
-            'payouts_enabled' => $account->payouts_enabled ?? null,
-            'internal_status' => $user->stripe_account_status,
+            'transfers' => $state['transfers'] ?? null,
+            'ready' => $state['ready'] ?? null,
+            'details_submitted' => $state['details_submitted'] ?? null,
+            'internal_status' => $user->fresh()->stripe_account_status,
         ]);
 
-        // Compte validé chez nous mais désactivé par Stripe : on le remet en attente.
-        if (!$ready && $user->stripe_account_status === 'approved') {
-            $due = array_values(array_unique(array_merge(
-                (array) ($account->requirements->currently_due ?? []),
-                (array) ($account->requirements->past_due ?? []),
-            )));
-
-            $user->update([
-                'stripe_account_status' => 'pending',
-                'stripe_verified_at' => null,
-                'stripe_rejection_reason' => 'Informations complémentaires demandées par Stripe'
-                    . (empty($due) ? '.' : ' : ' . implode(', ', array_slice($due, 0, 6)) . '.'),
-            ]);
-
+        if ($state['demoted'] ?? false) {
             Log::warning('[StripeWebhook] ⚠️ Compte de virement repassé en attente', [
                 'user_id' => $user->id,
-                'requirements_due' => $due,
+                'requirements_due' => $state['requirements_due'] ?? [],
             ]);
 
             $this->notifyUser(

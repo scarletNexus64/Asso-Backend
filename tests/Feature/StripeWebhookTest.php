@@ -25,12 +25,30 @@ class StripeWebhookTest extends TestCase
     use RefreshDatabase;
 
     /** Mocke StripeService pour renvoyer l'événement fourni, et neutralise FCM. */
-    private function mockEvent(array $eventData): void
+    private function mockEvent(array $eventData, ?array $accountState = null): void
     {
         $event = Event::constructFrom($eventData);
 
-        $this->mock(StripeService::class, function ($mock) use ($event) {
+        $this->mock(StripeService::class, function ($mock) use ($event, $accountState) {
             $mock->shouldReceive('constructWebhookEvent')->andReturn($event);
+            if ($accountState !== null) {
+                // account.updated relit l'état du compte chez Stripe (fait foi en v2).
+                $mock->shouldReceive('isConfigured')->andReturn(true);
+                $mock->shouldReceive('accountState')->andReturn(array_merge([
+                    'exists' => true,
+                    'transfers' => 'unknown',
+                    'payouts_enabled' => false,
+                    'charges_enabled' => false,
+                    'requirements_due' => [],
+                    'disabled_reason' => null,
+                    'details_submitted' => true,
+                    'payout_interval' => 'manual',
+                    'ready' => false,
+                    'error' => null,
+                    'missing' => false,
+                ], $accountState));
+                $mock->shouldReceive('bankAccountSummary')->andReturn(null);
+            }
         });
 
         $this->mock(FirebaseMessagingService::class, function ($mock) {
@@ -190,7 +208,7 @@ class StripeWebhookTest extends TestCase
                 'capabilities' => ['transfers' => 'inactive'],
                 'requirements' => ['currently_due' => ['individual.verification.document']],
             ]],
-        ]);
+        ], ['transfers' => 'inactive', 'requirements_due' => ['individual.verification.document']]);
 
         $this->postJson('/api/v1/stripe/webhook', [])->assertOk();
 
@@ -220,7 +238,7 @@ class StripeWebhookTest extends TestCase
                 'capabilities' => ['transfers' => 'active'],
                 'requirements' => ['currently_due' => []],
             ]],
-        ]);
+        ], ['transfers' => 'active', 'payouts_enabled' => true, 'ready' => true]);
 
         $this->postJson('/api/v1/stripe/webhook', [])->assertOk();
 

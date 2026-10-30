@@ -25,6 +25,18 @@ trait WithdrawsFromAccount
     /** Données de la vue admin.withdrawals.panel. */
     protected function withdrawalViewData(Request $request, User $account): array
     {
+        // Inscription Stripe terminée depuis la dernière visite : l'IBAN apparaît
+        // « en attente » sans attendre le webhook.
+        try {
+            app(\App\Services\StripeConnectSync::class)->sync($account);
+            $account->refresh();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('[WithdrawsFromAccount] Synchronisation Stripe impossible', [
+                'user_id' => $account->id,
+                'exception' => $e::class,
+            ]);
+        }
+
         $balances = $this->asAccount($request, $account, fn ($r) => app(WalletController::class)->getWithdrawalBalances($r));
 
         return [
@@ -93,21 +105,26 @@ trait WithdrawsFromAccount
     }
 
     /**
-     * Enregistre l'IBAN du compte (même soumission Stripe Connect que dans
-     * l'app). Le compte passe « en attente » puis est validé via approveAccountIban().
+     * Ouvre la page d'inscription Stripe du compte (identité + IBAN saisis chez
+     * Stripe, seule méthode autorisée en France). Le compte passe « en attente »
+     * une fois l'inscription terminée, puis est validé via approveAccountIban().
      */
     protected function submitAccountIban(Request $request, User $account)
     {
         try {
-            $result = $this->asAccount($request, $account, fn ($r) => app(StripeConnectController::class)->submit($r));
+            $result = $this->asAccount($request, $account, fn ($r) => app(StripeConnectController::class)->onboarding($r));
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // L'IBAN complet n'est jamais renvoyé en session.
-            return back()->withInput($request->except('iban'))->withErrors($e->errors());
+            return back()->withInput()->withErrors($e->errors());
         }
 
-        return ($result['success'] ?? false)
-            ? back()->with('success', 'IBAN enregistré. Validez-le pour activer le virement bancaire.')
-            : back()->withInput($request->except('iban'))->with('error', e($result['message'] ?? 'IBAN non enregistré.'));
+        $url = $result['data']['url'] ?? null;
+        if (($result['success'] ?? false) && is_string($url) && $url !== '') {
+            return redirect()->away($url);
+        }
+
+        $errors = collect($result['errors'] ?? [])->flatten()->implode(' ');
+
+        return back()->withInput()->with('error', e(trim(($result['message'] ?? 'Page Stripe indisponible.') . ' ' . $errors)));
     }
 
     /** Valide l'IBAN en attente (mêmes contrôles Stripe que « Comptes de virement »). */
