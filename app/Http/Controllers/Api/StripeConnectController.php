@@ -199,7 +199,9 @@ class StripeConnectController extends Controller
 
             $country = $validated['country'];
             $currency = $this->stripe->payoutCurrencyForCountry($country);
-            if ($currency === null) {
+            // Même liste que la vérification d'IBAN : une banque hors liste passe par
+            // l'IBAN manuel (virement par ASSO), pas par Stripe.
+            if ($currency === null || !in_array($country, \App\Services\IbanValidator::stripeCountries(), true)) {
                 $message = __('payments.stripe_connect.error_country_unsupported');
 
                 return response()->json([

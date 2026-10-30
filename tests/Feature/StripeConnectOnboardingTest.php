@@ -237,6 +237,19 @@ class StripeConnectOnboardingTest extends TestCase
             ->assertStatus(503);
     }
 
+    public function test_onboarding_refuses_country_outside_stripe_iban_list(): void
+    {
+        $this->mockStripe(function ($mock) {
+            $mock->shouldReceive('payoutCurrencyForCountry')->andReturn('XAF');
+            $mock->shouldReceive('createHostedAccount')->never();
+        });
+
+        $this->actingAs($this->vendor(), 'sanctum')
+            ->postJson('/api/v1/stripe/connect/onboarding', ['country' => 'CM'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('country');
+    }
+
     public function test_approved_vendor_can_reopen_stripe_page_to_change_iban(): void
     {
         $this->mockStripe(function ($mock) {
