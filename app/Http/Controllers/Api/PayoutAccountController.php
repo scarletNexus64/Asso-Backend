@@ -92,13 +92,17 @@ class PayoutAccountController extends Controller
     {
         $request->validate(['iban' => 'required|string|max:64']);
 
-        $check = IbanValidator::check($request->input('iban'));
+        $check = IbanValidator::check(
+            $request->input('iban'),
+            IbanValidator::countryHint($request->input('country') ?: $request->user()->country)
+        );
         $hours = WithdrawalPolicy::manualDelayHours();
 
         return response()->json([
             'success' => true,
             'data' => [
                 'valid' => $check['valid'],
+                'kind' => $check['kind'],
                 'formatted' => $check['formatted'],
                 'country' => $check['country'],
                 'last4' => $check['last4'],
@@ -139,7 +143,10 @@ class PayoutAccountController extends Controller
             'bic.regex' => __('wallet.iban.bic_invalid'),
         ]);
 
-        $check = IbanValidator::check($validated['iban']);
+        $check = IbanValidator::check(
+            $validated['iban'],
+            IbanValidator::countryHint($request->input('country') ?: $request->user()->country)
+        );
         if (!$check['valid']) {
             return response()->json([
                 'success' => false,

@@ -394,4 +394,24 @@ class WithdrawalMethodsTest extends TestCase
         $this->assertSame('1.5', (string) Setting::get('withdrawal_fee_mobile_percent'));
         $this->assertSame('FR,BE,DE', Setting::get('stripe_iban_countries'));
     }
+
+    public function test_african_rib_is_accepted_as_manual_bank_account(): void
+    {
+        $cemac = IbanValidator::check('10033 00001 12345678901 12', 'GA');
+        $this->assertTrue($cemac['valid']);
+        $this->assertSame('rib', $cemac['kind']);
+        $this->assertSame('GA', $cemac['country']);
+        $this->assertFalse($cemac['stripe_supported']);
+        $this->assertSame('10033 00001 12345678901 12', $cemac['formatted']);
+
+        $this->assertSame('CM', IbanValidator::check('10033000011234567890112', 'Bénin')['country']);
+        $this->assertSame('CM', IbanValidator::countryHint('Cameroun'));
+
+        $uemoa = IbanValidator::check('BJ061-01001-012345678901-23');
+        $this->assertTrue($uemoa['valid']);
+        $this->assertSame('BJ', $uemoa['country']);
+
+        $this->assertFalse(IbanValidator::check('1003300001')['valid']);
+        $this->assertSame('iban', IbanValidator::check('CM2110033000011234567890112')['kind']);
+    }
 }

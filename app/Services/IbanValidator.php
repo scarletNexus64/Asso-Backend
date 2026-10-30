@@ -47,6 +47,20 @@ class IbanValidator
         'MG', 'DZ', 'MA', 'AO', 'MZ', 'BI', 'CV', 'KM', 'DJ',
     ];
 
+    /** Zone CEMAC : RIB de 23 chiffres (banque 5, guichet 5, compte 11, clé 2). */
+    public const CEMAC = ['CM', 'CG', 'GA', 'TD', 'CF', 'GQ'];
+
+    /** Zone UEMOA : RIB de 24 caractères, le code banque commence par le pays (ex. BJ061). */
+    public const UEMOA = ['BJ', 'BF', 'CI', 'ML', 'NE', 'SN', 'TG', 'GW'];
+
+    /** Pays saisis en toutes lettres dans le profil → code ISO (indice pour un RIB CEMAC). */
+    private const COUNTRY_NAMES = [
+        'cameroun' => 'CM', 'cameroon' => 'CM', 'gabon' => 'GA', 'congo' => 'CG',
+        'republique du congo' => 'CG', 'tchad' => 'TD', 'chad' => 'TD',
+        'centrafrique' => 'CF', 'republique centrafricaine' => 'CF', 'central african republic' => 'CF',
+        'guinee equatoriale' => 'GQ', 'equatorial guinea' => 'GQ',
+    ];
+
     /** Pays où Stripe verse par défaut (zone SEPA + GB + CH). */
     public const DEFAULT_STRIPE_COUNTRIES = [
         'AT', 'BE', 'BG', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR',
@@ -62,7 +76,12 @@ class IbanValidator
     /** IBAN groupé par 4 caractères (affichage). */
     public static function format(string $iban): string
     {
-        return trim(chunk_split(self::normalize($iban), 4, ' '));
+        $value = self::normalize($iban);
+        if ($rib = self::detectRib($value)) {
+            return $rib['formatted'];
+        }
+
+        return trim(chunk_split($value, 4, ' '));
     }
 
     /** @return string[] */
@@ -77,6 +96,42 @@ class IbanValidator
             fn ($c) => strtoupper(trim($c)),
             explode(',', $configured)
         ), fn ($c) => preg_match('/^[A-Z]{2}$/', $c)));
+    }
+
+    /** Code pays ISO à partir du pays du profil (« Cameroun », « CM »…), sinon null. */
+    public static function countryHint(?string $country): ?string
+    {
+        $value = trim((string) $country);
+        if (preg_match('/^[A-Za-z]{2}$/', $value)) {
+            return strtoupper($value);
+        }
+        $key = strtolower(\Illuminate\Support\Str::ascii($value));
+
+        return self::COUNTRY_NAMES[$key] ?? null;
+    }
+
+    /**
+     * RIB national saisi à la place d'un IBAN (courant en Afrique centrale et de
+     * l'Ouest, où beaucoup de banques ne remettent pas d'IBAN).
+     *
+     * @return array{country:string, formatted:string}|null
+     */
+    public static function detectRib(string $value, ?string $countryHint = null): ?array
+    {
+        // CEMAC : 23 chiffres, le pays n'y figure pas → profil, sinon Cameroun.
+        if (preg_match('/^(\d{5})(\d{5})(\d{11})(\d{2})$/', $value, $m)) {
+            $country = in_array($countryHint, self::CEMAC, true) ? $countryHint : 'CM';
+
+            return ['country' => $country, 'formatted' => "{$m[1]} {$m[2]} {$m[3]} {$m[4]}"];
+        }
+
+        // UEMOA : BJ061 01001 012345678901 23.
+        if (preg_match('/^([A-Z]{2})(\d{3})(\d{5})(\d{12})(\d{2})$/', $value, $m)
+            && in_array($m[1], self::UEMOA, true)) {
+            return ['country' => $m[1], 'formatted' => "{$m[1]}{$m[2]} {$m[3]} {$m[4]} {$m[5]}"];
+        }
+
+        return null;
     }
 
     public static function checksumValid(string $iban): bool
@@ -102,13 +157,14 @@ class IbanValidator
      * @return array{valid:bool, iban:string, formatted:string, country:?string, last4:?string,
      *               stripe_supported:bool, reason:?string, message:string}
      */
-    public static function check(?string $input): array
+    public static function check(?string $input, ?string $countryHint = null): array
     {
         $iban = self::normalize($input);
         $country = strlen($iban) >= 2 ? substr($iban, 0, 2) : null;
 
         $result = fn (bool $valid, ?string $reason, string $message, bool $stripe = false) => [
             'valid' => $valid,
+            'kind' => 'iban',
             'iban' => $iban,
             'formatted' => self::format($iban),
             'country' => $country,
@@ -117,6 +173,21 @@ class IbanValidator
             'reason' => $reason,
             'message' => $message,
         ];
+
+        // RIB africain : accepté tel quel (virement manuel par ASSO, jamais Stripe).
+        if ($rib = self::detectRib($iban, $countryHint)) {
+            return [
+                'valid' => true,
+                'kind' => 'rib',
+                'iban' => $iban,
+                'formatted' => $rib['formatted'],
+                'country' => $rib['country'],
+                'last4' => substr($iban, -4),
+                'stripe_supported' => false,
+                'reason' => 'stripe_unsupported',
+                'message' => __('wallet.iban.rib_accepted'),
+            ];
+        }
 
         if ($iban === '' || !preg_match('/^[A-Z]{2}\d{2}[A-Z0-9]{8,30}$/', $iban)) {
             return $result(false, 'format', __('wallet.iban.invalid_format'));

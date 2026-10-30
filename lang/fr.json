@@ -1386,7 +1386,8 @@
         "status_check_error": "Erreur lors de la vérification du statut",
         "history_fetch_error": "Erreur lors de la récupération de l'historique",
         "iban": {
-            "invalid_format": "IBAN invalide : il commence par 2 lettres (pays) et 2 chiffres, sans caractères spéciaux.",
+            "invalid_format": "Numéro de compte non reconnu. Saisissez votre IBAN (ex. FR76 3000…) ou votre RIB tel qu'il figure sur votre relevé (ex. 10033 00001 12345678901 12).",
+            "rib_accepted": "RIB reconnu. Votre banque n'est pas prise en charge pour les virements automatiques : ASSO vous verse l'argent à la main.",
             "invalid_length": "IBAN invalide : un IBAN :country compte :length caractères.",
             "invalid_checksum": "IBAN invalide : la clé de contrôle ne correspond pas. Vérifiez chaque caractère.",
             "stripe_unsupported": "IBAN valide, mais votre banque n'est pas prise en charge pour les virements automatiques.",

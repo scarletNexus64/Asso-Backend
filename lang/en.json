@@ -1386,7 +1386,8 @@
         "status_check_error": "Error while checking the status",
         "history_fetch_error": "Error while fetching the history",
         "iban": {
-            "invalid_format": "Invalid IBAN: it starts with 2 letters (country) and 2 digits, with no special characters.",
+            "invalid_format": "Account number not recognised. Enter your IBAN (e.g. FR76 3000…) or your RIB as shown on your bank statement (e.g. 10033 00001 12345678901 12).",
+            "rib_accepted": "Bank account (RIB) recognised. Your bank isn't supported for automatic transfers: ASSO pays you out manually.",
             "invalid_length": "Invalid IBAN: a :country IBAN has :length characters.",
             "invalid_checksum": "Invalid IBAN: the check digits don't match. Check each character.",
             "stripe_unsupported": "Valid IBAN, but your bank isn't supported for automatic transfers.",
