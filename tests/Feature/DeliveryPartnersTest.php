@@ -214,10 +214,20 @@ class DeliveryPartnersTest extends TestCase
         $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/assign-delivery", ['delivery_person_id' => $seller->id])
             ->assertStatus(422);
 
-        $this->actingAs($seller, 'sanctum')
-            ->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier", ['carrier_tracking_number' => 'SLX-001', 'location' => 'Agence Akwa'])
+        $akwa = \App\Models\DeliveryAgency::create([
+            'deliverer_company_id' => $route->deliverer_company_id, 'code' => 'SLX-AKWA',
+            'name' => 'Agence Akwa', 'city' => 'Douala', 'address' => 'Bd de la Liberté', 'phone' => '237600000000', 'is_active' => true,
+        ]);
+        $this->actingAs($seller, 'sanctum')->getJson("/api/v1/vendor/orders/{$orderId}")
+            ->assertJsonPath('order.carrier_handover.agency.id', $akwa->id)
+            ->assertJsonPath('order.carrier_handover.requires_tracking_number', false);
+        // Le numéro saisi par le vendeur est ignoré : ASSO attribue le suivi et l'agence.
+        $handed = $this->actingAs($seller, 'sanctum')
+            ->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier", ['carrier_tracking_number' => 'TEST', 'location' => 'Ailleurs'])
             ->assertOk()
-            ->assertJsonPath('order.delivery.carrier_tracking_number', 'SLX-001');
+            ->assertJsonPath('order.carrier_handover', null);
+        $this->assertMatchesRegularExpression('/^SOL-'.$orderId.'-[A-Z0-9]{5}$/', $handed->json('order.delivery.carrier_tracking_number'));
+        $this->assertSame('Agence Akwa — Bd de la Liberté', Order::find($orderId)->trackingEvents->firstWhere('step', 'handed_to_carrier')->location);
 
         $this->actingAs($seller, 'sanctum')
             ->postJson("/api/v1/vendor/orders/{$orderId}/tracking", ['step' => 'ready_for_pickup'])
@@ -345,7 +355,7 @@ class DeliveryPartnersTest extends TestCase
 
         $seller = $product->user;
         $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/validate")->assertOk();
-        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier", ['carrier_tracking_number' => 'SLX-9'])->assertOk();
+        $this->actingAs($seller, 'sanctum')->postJson("/api/v1/vendor/orders/{$orderId}/hand-to-carrier")->assertOk();
 
         // Le partenaire n'intervient jamais dans l'app : ASSO enregistre ses confirmations.
         $this->actingAs($courier, 'sanctum')->getJson('/api/v1/delivery/pending')->assertJsonCount(0, 'requests');

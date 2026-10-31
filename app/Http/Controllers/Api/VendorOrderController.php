@@ -235,21 +235,28 @@ class VendorOrderController extends Controller
     }
 
     /**
-     * Transporteur (SOLEX, DHL, FedEx) : le vendeur a déposé le colis en agence et
-     * saisit le numéro de suivi du transporteur. La commande passe « expédiée ».
+     * Transporteur (SOLEX, DHL, FedEx) : le vendeur confirme la remise du colis.
+     * L'agence de départ et le numéro de suivi sont fixés par ASSO ; seul un
+     * transporteur à suivi en ligne (DHL, FedEx) demande le numéro de son bordereau.
+     * La commande passe « expédiée ».
      *
-     * POST /vendor/orders/{id}/hand-to-carrier  { carrier_tracking_number, location?, note? }
+     * POST /vendor/orders/{id}/hand-to-carrier  { carrier_tracking_number?, note? }
      */
     public function handToCarrier(Request $request, $id)
     {
         $validated = $request->validate([
-            'carrier_tracking_number' => 'required|string|max:100',
+            'carrier_tracking_number' => 'nullable|string|max:100',
             'location' => 'nullable|string|max:150',
             'note' => 'nullable|string|max:500',
         ]);
 
         $vendor = $request->user();
         $order = $this->getVendorOrder($vendor, $id);
+        if (\App\Support\CarrierHandover::needsCarrierNumber($order) && !filled($validated['carrier_tracking_number'] ?? null)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'carrier_tracking_number' => __('validation.required', ['attribute' => 'carrier tracking number']),
+            ]);
+        }
 
         if ($order->isInternationalExport()) {
             return response()->json(['success' => false, 'message' => __('shipment.asso_only')], 422);
@@ -262,15 +269,21 @@ class VendorOrderController extends Controller
         }
 
         DB::transaction(function () use ($order, $validated, $vendor) {
+            $handover = \App\Support\CarrierHandover::class;
+            // Numéro du bordereau DHL/FedEx, sinon numéro ASSO (un numéro déjà attribué est conservé).
+            $number = $handover::needsCarrierNumber($order)
+                ? trim($validated['carrier_tracking_number'])
+                : ($order->carrier_tracking_number ?: $handover::generateTrackingNumber($order));
+            $agency = $handover::originAgency($order);
             $order->update([
                 'status' => 'shipped',
                 'shipped_at' => now(),
-                'carrier_tracking_number' => trim($validated['carrier_tracking_number']),
+                'carrier_tracking_number' => $number,
             ]);
             app(\App\Services\OrderTrackingService::class)->record(
                 $order,
                 'handed_to_carrier',
-                $validated['location'] ?? null,
+                $handover::locationLabel($agency) ?? ($validated['location'] ?? null),
                 trim("N° de suivi {$order->carrier_tracking_number}. " . ($validated['note'] ?? '')),
                 'vendor',
                 $vendor->id,
@@ -486,6 +499,8 @@ class VendorOrderController extends Controller
                 'name' => $order->deliveryCompany->name,
             ] : null,
             'delivery' => \App\Support\DeliveryPresenter::forOrder($order),
+            // Remise au transporteur : agence et suivi automatiques, à confirmer.
+            'carrier_handover' => \App\Support\CarrierHandover::present($order),
             'delivery_person_id' => $order->delivery_person_id,
             'delivery_person' => $order->deliveryPerson ? [
                 'id' => $order->deliveryPerson->id,
