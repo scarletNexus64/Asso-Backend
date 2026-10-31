@@ -79,6 +79,14 @@
         </form>
     </div>
 
+    @if($statsSince ?? null)
+        <p class="text-xs text-gray-400 mb-3">
+            <i class="fas fa-info-circle mr-1"></i>
+            Compteurs remis à zéro le {{ $statsSince->timezone(config('app.display_timezone', 'Africa/Douala'))->format('d/m/Y à H:i') }} :
+            les statistiques ne comptent que les transactions suivantes. L'historique complet reste dans la liste.
+        </p>
+    @endif
+
     <!-- Statistics Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div class="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/30 rounded-xl p-6">

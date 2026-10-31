@@ -97,7 +97,7 @@ class GeminiService
     private function buildAnalysisPrompt(): string
     {
         return <<<PROMPT
-You are a product analysis AI assistant for an e-commerce marketplace in Africa (Benin/Gabon region).
+You are a product analysis AI assistant for an e-commerce marketplace in Africa (Cameroon / Central Africa, prices in XAF).
 Analyze this product image carefully and extract the following information in JSON format.
 
 **IMPORTANT**: Your response MUST be ONLY valid JSON, no markdown, no code blocks, no explanation text.

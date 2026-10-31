@@ -23,6 +23,7 @@ class AuthController extends Controller
             'phone' => 'required|string|min:8|max:20',
             'country_code' => 'nullable|string|max:5',
             'otp_method' => 'nullable|string|in:whatsapp,sms,auto',
+            'country' => 'nullable|string|max:100',
         ]);
 
         $phone = $request->phone;
@@ -47,8 +48,9 @@ class AuthController extends Controller
                 'email' => 'user_' . time() . '_' . rand(100, 999) . '@asso.app',
                 'password' => Hash::make(str()->random(16)),
                 'role' => 'client',
-                'country' => 'Cameroun',
+                'country' => $this->signupCountry($request),
             ]);
+            $user->forceFill(['country_inferred' => !$this->appCountry($request)])->save();
             Log::info('[AUTH] New user created', ['user_id' => $user->id, 'phone' => $fullPhone]);
         } else {
             Log::info('[AUTH] Existing user found', ['user_id' => $user->id, 'phone' => $fullPhone]);
@@ -77,7 +79,7 @@ class AuthController extends Controller
 
         // Generate 6-digit OTP
         $otpCode = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        Log::info('[AUTH] OTP code generated', ['phone' => $fullPhone, 'code' => $otpCode]);
+        Log::info('[AUTH] OTP code generated', ['phone' => $fullPhone]);
 
         // Store OTP in user model
         $user->update([
@@ -143,7 +145,6 @@ class AuthController extends Controller
 
         Log::info('[AUTH] ========== VERIFY OTP ==========', [
             'phone' => $request->phone,
-            'otp_code' => $request->otp_code,
         ]);
 
         $user = User::where('phone', $request->phone)->first();
@@ -389,6 +390,7 @@ class AuthController extends Controller
             'password' => 'required|string|min:6|confirmed',
             'first_name' => 'nullable|string|max:100',
             'last_name' => 'nullable|string|max:100',
+            'country' => 'nullable|string|max:100',
         ]);
 
         Log::info('[AUTH] ========== REGISTER EMAIL ==========', ['email' => $request->email]);
@@ -409,10 +411,11 @@ class AuthController extends Controller
             'first_name' => $request->first_name ?? 'Utilisateur',
             'last_name' => $request->last_name ?? '',
             'role' => 'client',
-            'country' => 'Bénin',
+            'country' => $this->signupCountry($request),
             'otp_code' => $otpCode,
             'otp_expires_at' => Carbon::now()->addMinutes(10),
         ]);
+        $user->forceFill(['country_inferred' => !$this->appCountry($request)])->save();
 
         Log::info('[AUTH] Email user created, OTP generated', ['user_id' => $user->id]);
 
@@ -898,5 +901,47 @@ class AuthController extends Controller
             'success' => true,
             'message' => __('auth.account_deleted'),
         ]);
+    }
+
+    /**
+     * Pays choisi dans l'app (accueil ou réglages).
+     *
+     * POST /v1/auth/country { country, explicit? }
+     * Sans « explicit », seul un pays déduit par défaut est remplacé : un pays déjà
+     * confirmé n'est jamais écrasé par une synchro automatique.
+     */
+    public function syncCountry(Request $request)
+    {
+        $request->validate([
+            'country' => 'required|string|max:100',
+            'explicit' => 'nullable|boolean',
+        ]);
+        $country = $this->appCountry($request);
+        if (!$country) {
+            return response()->json(['success' => false, 'message' => __('validation.in', ['attribute' => 'country'])], 422);
+        }
+
+        $user = $request->user();
+        $updated = false;
+        if ($request->boolean('explicit') || $user->country_inferred || blank($user->country)) {
+            $updated = $user->country !== $country || $user->country_inferred;
+            $user->forceFill(['country' => $country, 'country_inferred' => false])->save();
+        }
+
+        return response()->json(['success' => true, 'updated' => $updated, 'country' => $user->country]);
+    }
+
+    /** Pays envoyé par l'app, normalisé (« Cameroon » → « Cameroun »), sinon null. */
+    private function appCountry(Request $request): ?string
+    {
+        $code = \App\Support\CountryCode::normalize($request->input('country'));
+
+        return $code ? \App\Support\CountryCode::name($code) : null;
+    }
+
+    /** Pays du nouveau compte : celui choisi à l'accueil de l'app, sinon le Cameroun. */
+    private function signupCountry(Request $request): string
+    {
+        return $this->appCountry($request) ?: 'Cameroun';
     }
 }

@@ -204,6 +204,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/preferences', [AuthController::class, 'getPreferences']);
         Route::put('/preferences', [AuthController::class, 'updatePreferences']);
         Route::put('/locale', [AuthController::class, 'updateLocale']);
+        // Pays choisi dans l'app (accueil, réglages) : remplace un pays déduit par défaut.
+        Route::post('/country', [AuthController::class, 'syncCountry']);
         Route::post('/request-phone-change', [AuthController::class, 'requestPhoneChange']);
         Route::post('/confirm-phone-change', [AuthController::class, 'confirmPhoneChange']);
         Route::post('/delete-account', [AuthController::class, 'deleteAccount']);

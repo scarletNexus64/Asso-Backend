@@ -48,7 +48,24 @@ class PlatformRevenueService
 
     public function resolvePeriod(?string $key): array
     {
-        return $this->statistics->resolvePeriod($key, $this->firstActivity());
+        $period = $this->statistics->resolvePeriod($key, $this->firstActivity());
+
+        // Compteurs remis à zéro : l'affichage commence à cette date. query() n'est
+        // pas bornée ici, le solde du Wallet ASSO (PlatformWalletSync) reste exact.
+        $since = \App\Support\FinanceStatsReset::since();
+        if ($since) {
+            if (! $period['from'] || $period['from']->lt($since)) {
+                $period['from'] = $since->copy();
+            }
+            if ($period['previous_from'] && $period['previous_to']->lt($since)) {
+                $period['previous_from'] = $period['previous_to'] = null;
+            } elseif ($period['previous_from'] && $period['previous_from']->lt($since)) {
+                $period['previous_from'] = $since->copy();
+            }
+        }
+        $period['stats_since'] = $since;
+
+        return $period;
     }
 
     /** Période affichable (sélecteur), sans calcul. */
@@ -343,6 +360,7 @@ class PlatformRevenueService
             'from' => $period['from'],
             'to' => $period['to'],
             'granularity' => $period['granularity'],
+            'stats_since' => $period['stats_since'] ?? null,
             'available' => collect(ShopStatisticsService::PERIODS)
                 ->map(fn ($p, $k) => ['key' => $k, 'label' => __("shops.statistics.periods.{$k}")])
                 ->values()->all(),

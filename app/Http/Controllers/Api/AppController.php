@@ -26,9 +26,9 @@ class AppController extends Controller
                 'logo' => null,
                 'contact' => [
                     'email' => 'contact@asso.app',
-                    'phone' => '+229 01 00 00 00',
+                    'phone' => \App\Models\Setting::get('contact_phone') ?: null,
                     // Adresse saisie dans le back-office (traduisible), sinon celle d'origine.
-                    'address' => \App\Models\Setting::get('contact_address') ?: 'Cotonou, Bénin',
+                    'address' => \App\Models\Setting::get('contact_address') ?: 'Cameroun',
                     'website' => 'https://asso.app',
                 ],
                 'social' => [

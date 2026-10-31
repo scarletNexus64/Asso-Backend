@@ -25,6 +25,11 @@ class TransactionController extends Controller
 
         // Statistiques globales - Créer la requête de base
         $baseStatsQuery = $this->filtered($request);
+        // Compteurs remis à zéro : seules les transactions suivantes comptent (la liste reste complète).
+        $statsSince = \App\Support\FinanceStatsReset::since();
+        if ($statsSince) {
+            $baseStatsQuery->where('created_at', '>=', $statsSince);
+        }
 
         $stats = [
             // Total des crédits (recharges)
@@ -94,7 +99,8 @@ class TransactionController extends Controller
             'stats',
             'paymentMethodStats',
             'chartData',
-            'paymentMethodChartData'
+            'paymentMethodChartData',
+            'statsSince'
         ));
     }
 

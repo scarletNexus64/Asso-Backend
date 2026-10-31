@@ -30,6 +30,11 @@
                 Chiffre d'affaires de la plateforme par service, et tout ce qui vient en déduction
                 — {{ strtolower($period['label']) }}. Montants en FCFA.
             </p>
+            @if($period['stats_since'] ?? null)
+                <p class="text-xs text-gray-500 mt-1">
+                    Compteurs remis à zéro le {{ $period['stats_since']->timezone(config('app.display_timezone', 'Africa/Douala'))->format('d/m/Y à H:i') }} — les données antérieures sont conservées.
+                </p>
+            @endif
         </div>
         <div class="flex flex-wrap items-center gap-2">
             @include('admin.statistics.partials.period-picker', ['route' => 'admin.revenue.index'])
