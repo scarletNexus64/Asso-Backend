@@ -18,6 +18,10 @@ class AdminNavigation
                 if (! $user->canAccessAdminRoute($item['route'])) {
                     continue;
                 }
+                // Entrée masquée tant que sa fonctionnalité est désactivée (ex. retrait ASSO).
+                if (isset($item['enabled']) && ! call_user_func($item['enabled'])) {
+                    continue;
+                }
                 $scoped = AssoScope::restricts($user);
                 if ($scoped && $item['id'] === 'asso_products') {
                     continue;

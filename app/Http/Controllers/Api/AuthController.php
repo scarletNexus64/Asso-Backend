@@ -931,12 +931,26 @@ class AuthController extends Controller
         return response()->json(['success' => true, 'updated' => $updated, 'country' => $user->country]);
     }
 
-    /** Pays envoyé par l'app, normalisé (« Cameroon » → « Cameroun »), sinon null. */
+    /**
+     * Pays envoyé par l'app, en français (« Cameroon » → « Cameroun »), sinon null.
+     * L'app affiche les noms anglais du backend : on passe par le même code ISO
+     * que l'écran d'accueil (CountryFlag), pour reconnaître toute la liste.
+     */
     private function appCountry(Request $request): ?string
     {
-        $code = \App\Support\CountryCode::normalize($request->input('country'));
+        $raw = trim((string) $request->input('country'));
+        if ($raw === '') {
+            return null;
+        }
+        $code = \App\Support\CountryCode::normalize($raw) ?: \App\Support\CountryFlag::code($raw);
+        if (!$code) {
+            return null;
+        }
+        $code = strtoupper($code);
+        $name = \App\Support\CountryCode::name($code);
 
-        return $code ? \App\Support\CountryCode::name($code) : null;
+        // Pas de nom français connu (ex. England → GB-ENG) : nom reçu de l'app.
+        return ($name && $name !== $code) ? $name : mb_substr($raw, 0, 100);
     }
 
     /** Pays du nouveau compte : celui choisi à l'accueil de l'app, sinon le Cameroun. */

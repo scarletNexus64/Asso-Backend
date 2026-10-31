@@ -63,7 +63,8 @@ return [
         'id' => 'finance', 'icon' => 'fa-coins',
         'items' => [
             ['id' => 'revenue', 'route' => 'admin.revenue.index', 'icon' => 'fa-coins', 'match' => ['admin.revenue.index', 'admin.revenue.show', 'admin.revenue.export']],
-            ['id' => 'withdrawals', 'route' => 'admin.revenue.withdrawal', 'icon' => 'fa-money-bill-transfer', 'match' => ['admin.revenue.withdrawal', 'admin.revenue.withdrawal.*']],
+            // Masqué tant que le réglage admin_platform_withdrawal_enabled n'est pas activé.
+            ['id' => 'withdrawals', 'route' => 'admin.revenue.withdrawal', 'icon' => 'fa-money-bill-transfer', 'match' => ['admin.revenue.withdrawal', 'admin.revenue.withdrawal.*'], 'enabled' => [\App\Http\Controllers\Admin\PlatformWithdrawalController::class, 'enabled']],
             ['id' => 'transactions', 'route' => 'admin.transactions.index', 'icon' => 'fa-exchange-alt', 'match' => ['admin.transactions.*']],
             ['id' => 'payout_requests', 'route' => 'admin.payouts.requests', 'icon' => 'fa-hand-holding-dollar', 'match' => ['admin.payouts.requests', 'admin.payouts.take', 'admin.payouts.execute', 'admin.payouts.complete', 'admin.payouts.reject', 'admin.payouts.fees']],
             ['id' => 'payout_accounts', 'route' => 'admin.payouts.accounts', 'icon' => 'fa-address-card', 'match' => ['admin.payouts.accounts']],

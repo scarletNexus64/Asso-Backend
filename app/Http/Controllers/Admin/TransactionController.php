@@ -15,6 +15,10 @@ class TransactionController extends Controller
     public function index(Request $request)
     {
         $query = $this->filtered($request);
+        // Liste remise à zéro avec les compteurs : rien n'est supprimé, l'export garde tout.
+        if ($listSince = \App\Support\FinanceStatsReset::since()) {
+            $query->where('created_at', '>=', $listSince);
+        }
         $endDate = $request->filled('end_date') ? Carbon::parse($request->end_date)->endOfDay() : now()->endOfDay();
         // The chart is bounded independently of the export/filter date range.
         $chartStartDate = $endDate->copy()->subDays(29)->startOfDay();

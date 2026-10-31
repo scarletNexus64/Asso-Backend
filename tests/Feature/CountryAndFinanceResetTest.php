@@ -54,6 +54,29 @@ class CountryAndFinanceResetTest extends TestCase
         $this->postJson('/api/v1/auth/country', ['country' => 'Atlantide'])->assertUnprocessable();
     }
 
+    public function test_platform_withdrawal_menu_is_hidden_by_default(): void
+    {
+        $admin = User::factory()->create(['email' => 'admin@asso.com', 'role' => 'admin', 'roles' => ['admin']]);
+        $this->actingAs($admin)->get(route('admin.revenue.index'))->assertOk()->assertDontSee(route('admin.revenue.withdrawal'));
+        $this->get(route('admin.revenue.withdrawal'))->assertRedirect(route('admin.revenue.index'));
+        $this->post(route('admin.revenue.withdrawal.mobile'))->assertNotFound();
+
+        \App\Models\Setting::set(\App\Http\Controllers\Admin\PlatformWithdrawalController::ENABLED_SETTING, 'true');
+        $this->get(route('admin.revenue.index'))->assertSee(route('admin.revenue.withdrawal'));
+    }
+
+    public function test_every_country_of_the_app_list_is_accepted(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+        // Les 197 noms (anglais) renvoyés par /v1/currencies/all-with-countries.
+        foreach (json_decode(file_get_contents(__DIR__.'/app_country_names.json'), true) as $name) {
+            $this->postJson('/api/v1/auth/country', ['country' => $name, 'explicit' => true])
+                ->assertOk()->assertJsonPath('success', true);
+        }
+        $this->postJson('/api/v1/auth/country', ['country' => 'Ivory Coast', 'explicit' => true])->assertJsonPath('country', 'Côte d’Ivoire');
+        $this->postJson('/api/v1/auth/country', ['country' => 'England', 'explicit' => true])->assertJsonPath('country', 'England');
+    }
+
     public function test_finance_counters_restart_without_deleting_history(): void
     {
         $admin = User::factory()->create(['email' => 'admin@asso.com', 'role' => 'admin', 'roles' => ['admin']]);
@@ -69,7 +92,8 @@ class CountryAndFinanceResetTest extends TestCase
 
         $page = $this->actingAs($admin)->get(route('admin.transactions.index'))->assertOk();
         $this->assertEquals(1200, $page->viewData('stats')['total_credits']);
-        $this->assertSame(3, $page->viewData('transactions')->total()); // la liste garde tout l'historique
+        $this->assertSame(1, $page->viewData('transactions')->total()); // liste remise à zéro…
+        $this->assertSame(3, WalletTransaction::count()); // …sans rien supprimer
         $page->assertSee('Compteurs remis à zéro');
         $this->assertDatabaseHas('wallet_transactions', ['id' => $old->id, 'amount' => 5000]);
 

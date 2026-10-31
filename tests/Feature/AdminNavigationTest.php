@@ -57,6 +57,10 @@ class AdminNavigationTest extends TestCase
     public function test_product_and_finance_pages_have_exactly_one_selected_entry(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
+        // Retrait ASSO masqué par défaut…
+        $this->assertNotContains('withdrawals', $this->items($this->navigation($admin, 'admin.revenue.index', []))->pluck('id')->all());
+        // …et visible une fois réactivé.
+        \App\Models\Setting::set(\App\Http\Controllers\Admin\PlatformWithdrawalController::ENABLED_SETTING, 'true');
         foreach ([
             ['admin.products.index', [], 'products'],
             ['admin.products.index', ['asso' => 1], 'asso_products'],

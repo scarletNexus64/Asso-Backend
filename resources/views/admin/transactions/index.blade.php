@@ -83,7 +83,7 @@
         <p class="text-xs text-gray-400 mb-3">
             <i class="fas fa-info-circle mr-1"></i>
             Compteurs remis à zéro le {{ $statsSince->timezone(config('app.display_timezone', 'Africa/Douala'))->format('d/m/Y à H:i') }} :
-            les statistiques ne comptent que les transactions suivantes. L'historique complet reste dans la liste.
+            la liste et les statistiques ne montrent que les transactions suivantes. Rien n'est supprimé : l'export Excel/PDF contient tout l'historique.
         </p>
     @endif
 

@@ -38,7 +38,7 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
             @include('admin.statistics.partials.period-picker', ['route' => 'admin.revenue.index'])
-            @if(auth()->user()->isAdmin())
+            @if(auth()->user()->isAdmin() && \App\Http\Controllers\Admin\PlatformWithdrawalController::enabled())
             <a href="{{ route('admin.revenue.withdrawal') }}"
                class="px-3 py-2 text-sm rounded-lg bg-primary-600 hover:bg-primary-700 text-white">
                 <i class="fas fa-money-bill-transfer mr-1"></i>Retirer

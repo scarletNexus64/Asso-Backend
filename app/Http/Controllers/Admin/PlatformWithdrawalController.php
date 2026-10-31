@@ -39,8 +39,20 @@ class PlatformWithdrawalController extends Controller
 
     use WithdrawsFromAccount;
 
+    /** Réglage qui réactive le retrait des fonds ASSO depuis le back-office. */
+    public const ENABLED_SETTING = 'admin_platform_withdrawal_enabled';
+
+    public static function enabled(): bool
+    {
+        return filter_var(\App\Models\Setting::get(self::ENABLED_SETTING, false), FILTER_VALIDATE_BOOLEAN);
+    }
+
     public function index(Request $request)
     {
+        // Menu masqué : la page renvoie vers les revenus.
+        if (!self::enabled()) {
+            return redirect()->route('admin.revenue.index');
+        }
         $platform = $this->platform($request);
 
         return view('admin.revenue.withdrawal', $this->withdrawalViewData($request, $platform) + [
@@ -56,26 +68,31 @@ class PlatformWithdrawalController extends Controller
 
     public function mobile(Request $request)
     {
+        abort_unless(self::enabled(), 404);
         return $this->withdrawMobile($request, $this->platform($request), 'Retrait ASSO');
     }
 
     public function bank(Request $request)
     {
+        abort_unless(self::enabled(), 404);
         return $this->withdrawBank($request, $this->platform($request), 'Retrait ASSO');
     }
 
     public function iban(Request $request)
     {
+        abort_unless(self::enabled(), 404);
         return $this->submitAccountIban($request, $this->platform($request));
     }
 
     public function approveIban(Request $request)
     {
+        abort_unless(self::enabled(), 404);
         return $this->approveAccountIban($request, $this->platform($request));
     }
 
     public function refresh(Request $request, PlatformWithdrawal $withdrawal)
     {
+        abort_unless(self::enabled(), 404);
         return $this->refreshAccountWithdrawal($request, $this->platform($request), $withdrawal);
     }
 

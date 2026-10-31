@@ -25,6 +25,7 @@ class PlatformWithdrawalAdminTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        \App\Models\Setting::set(\App\Http\Controllers\Admin\PlatformWithdrawalController::ENABLED_SETTING, 'true');
 
         ServiceConfiguration::setConfig('elgiopay', ['mode' => 'live', 'public_key' => 'pk_live_x', 'secret_key' => 'sk_live_x'], true);
         Http::fake([
