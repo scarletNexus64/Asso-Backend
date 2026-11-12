@@ -1949,6 +1949,7 @@
             "shops": "Boutiques",
             "products": "Tous les produits",
             "asso_products": "Produits ASSO",
+            "product_references": "Références ASSO",
             "categories": "Catégories",
             "import_countries": "Pays d’importation",
             "packages": "Forfaits vendeurs",

@@ -40,7 +40,7 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Product::with(['shop', 'category', 'subcategory', 'primaryImage'])
+        $query = Product::with(['shop', 'category', 'subcategory', 'primaryImage', 'assoReference'])
             ->withCount('reviews')
             ->latest();
 
@@ -81,6 +81,14 @@ class ProductController extends Controller
                     ->where('is_local_made', $origin['is_local_made']);
         }
 
+        // Référence ASSO : une référence précise, ou « none » pour les produits ASSO sans référence.
+        if ($request->filled('asso_reference')) {
+            $request->input('asso_reference') === 'none'
+                ? $query->whereNull('asso_product_reference_id')
+                    ->whereIn('shop_id', Shop::where('user_id', \App\Support\AssoScope::ownerId())->select('id'))
+                : $query->where('asso_product_reference_id', (int) $request->input('asso_reference'));
+        }
+
         // Filter wholesale only
         if ($request->boolean('wholesale_only')) {
             $query->where('is_wholesale', true);
@@ -95,7 +103,11 @@ class ProductController extends Controller
             ->orderBy('name')->get();
         $categories = Category::where('is_library', false)->orderBy('name')->get();
 
-        return view('admin.products.index', compact('products', 'shops', 'categories'));
+        $assoReference = $request->filled('asso_reference') && $request->input('asso_reference') !== 'none'
+            ? \App\Models\AssoProductReference::find((int) $request->input('asso_reference'))
+            : null;
+
+        return view('admin.products.index', compact('products', 'shops', 'categories', 'assoReference'));
     }
 
     /**
@@ -847,8 +859,9 @@ class ProductController extends Controller
     private function validateAssoReference(Request $request, Shop $shop, array &$validated, ?Product $product): void
     {
         $id = $validated['asso_product_reference_id'] ?? null;
+        // Même règle pour tous les produits ASSO, produits de gros compris.
         $asso = (int) $shop->user_id === \App\Support\AssoScope::ownerId() && \App\Support\AssoScope::ownerId() > 0;
-        if (! $asso || $request->boolean('is_wholesale')) {
+        if (! $asso) {
             if ($id) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Cette référence ne peut pas être utilisée pour ce produit.']);
             }

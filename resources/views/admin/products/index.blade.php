@@ -1,7 +1,6 @@
 @extends('admin.layouts.app')
 
 @section('content')
-<div class="px-6 pt-4"><a class="text-primary-500" href="{{ route('admin.product-references.index') }}">Gérer les références ASSO</a></div>
 <div class="p-6" x-data="{ view: localStorage.getItem('productsView') || 'grid' }">
     <!-- Header -->
     <div class="mb-6 flex items-center justify-between">
@@ -15,6 +14,12 @@
             @endif
         </div>
         <div class="flex gap-3">
+            @adminCan('admin.product-references.index')
+            <a href="{{ route('admin.product-references.index') }}"
+               class="px-4 py-2 bg-dark-100 border border-dark-200 text-gray-200 rounded-lg hover:border-primary-500/50 transition-all">
+                <i class="fas fa-barcode mr-2 text-primary-400"></i>Références ASSO
+            </a>
+            @endadminCan
             <!-- View Toggle -->
             <div class="flex bg-dark-100 rounded-lg border border-dark-200 p-1">
                 <button @click="view = 'grid'; localStorage.setItem('productsView', 'grid')"
@@ -76,8 +81,26 @@
                     </option>
                 @endforeach
             </select>
+            @if(request()->boolean('asso') || \App\Support\AssoScope::active())
+            <select name="asso_reference" class="px-4 py-2 bg-dark-50 border border-dark-300 text-white rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="">Toutes références</option>
+                <option value="none" @selected(request('asso_reference') === 'none')>Sans référence</option>
+                @foreach(\App\Models\AssoProductReference::orderBy('name')->get() as $reference)
+                    <option value="{{ $reference->id }}" @selected((string) request('asso_reference') === (string) $reference->id)>{{ $reference->name }}</option>
+                @endforeach
+            </select>
+            @elseif(request()->filled('asso_reference'))
+            <input type="hidden" name="asso_reference" value="{{ request('asso_reference') }}">
+            @endif
             <button type="submit" class="px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-lg hover:shadow-lg transition-all"><i class="fas fa-filter mr-2"></i>Filtrer</button>
         </form>
+        @if($assoReference || request('asso_reference') === 'none')
+        <p class="mt-4 text-sm text-gray-300">
+            <i class="fas fa-barcode mr-1 text-primary-400"></i>
+            {{ $assoReference ? 'Produits de la référence '.$assoReference->name : 'Produits ASSO sans référence' }}
+            <a href="{{ request()->fullUrlWithoutQuery(['asso_reference', 'page']) }}" class="ml-2 text-primary-400 hover:text-primary-300">Retirer ce filtre</a>
+        </p>
+        @endif
     </div>
 
     <!-- Products Container -->

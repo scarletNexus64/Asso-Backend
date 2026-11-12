@@ -545,8 +545,28 @@ class Product extends Model
         return $this->belongsTo(Shop::class);
     }
 
+    public function assoReference(): BelongsTo
+    {
+        return $this->belongsTo(AssoProductReference::class, 'asso_product_reference_id');
+    }
+
     /**
-     * Position publiée du produit : celle de sa boutique.
+     * Point de départ de la livraison d'un produit ASSO (gros compris) : sa référence,
+     * dès qu'elle est géolocalisée. Sinon, le départ habituel (boutique ou entrepôt).
+     */
+    public function shippingReference(): ?AssoProductReference
+    {
+        if (! $this->shop || (int) $this->shop->user_id !== \App\Support\AssoScope::ownerId()) {
+            return null;
+        }
+        $reference = $this->assoReference;
+
+        return $reference?->isLocated() ? $reference : null;
+    }
+
+    /**
+     * Position publiée du produit : celle de sa référence ASSO géolocalisée,
+     * sinon celle de sa boutique.
      *
      * Les colonnes latitude/longitude du produit ne sont écrites par aucune route (seuls
      * des seeders les remplissent) et ne suivaient pas un déménagement de la boutique :
@@ -555,20 +575,6 @@ class Product extends Model
      *
      * @return array{0: ?float, 1: ?float} [latitude, longitude]
      */
-    public function assoReference(): BelongsTo
-    {
-        return $this->belongsTo(AssoProductReference::class, 'asso_product_reference_id');
-    }
-
-    public function shippingReference(): ?AssoProductReference
-    {
-        if ($this->is_wholesale || ! $this->shop || (int) $this->shop->user_id !== \App\Support\AssoScope::ownerId()) {
-            return null;
-        }
-        $reference = $this->assoReference;
-        return $reference?->isLocated() ? $reference : null;
-    }
-
     public function publicCoordinates(): array
     {
         if ($reference = $this->shippingReference()) {

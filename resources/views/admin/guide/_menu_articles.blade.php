@@ -49,6 +49,10 @@ const MENU_ARTICLES = {
     lead:'La vue du catalogue limitée aux boutiques ASSO.',
     body:()=>`<p>Cette entrée ouvre la même gestion des produits avec le filtre ASSO. Pour les administrateurs, « Tous les produits » donne la vue complète. Les gestionnaires restent limités au périmètre ASSO.</p>${steps(['Recherchez le produit ou choisissez une boutique ASSO.','Ouvrez sa fiche pour consulter ou modifier les informations selon vos droits.','Utilisez les champs FR et EN pour les textes présentés aux clients.'])}`
   },
+  product_references: {
+    lead:'Les références des produits ASSO et leur point de départ de livraison.',
+    body:()=>`<p>Chaque produit ASSO, produits de gros compris, porte une référence. Tant qu’elle n’est pas placée sur la carte, la livraison part de la boutique ou de l’entrepôt ; une fois placée, elle part de la référence.</p>${steps(['Recherchez une référence par code, ville ou quartier.','Ouvrez-la pour la placer sur la carte, renseigner la ville et le pays, ou la désactiver.','Cliquez sur le nombre de produits pour voir les produits rattachés.'])}`
+  },
   freight_partners: {
     lead:'Les partenaires de transport international, leurs points de départ et d’arrivée, leurs tarifs et leurs départs.',
     body:()=>steps(['Ouvrez un partenaire pour consulter sa configuration.','Vérifiez les QG, les trajets et les tarifs correspondant au service proposé.','Renseignez les départs réels et leur disponibilité pour les rendre réservables.'])

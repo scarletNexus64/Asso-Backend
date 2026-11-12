@@ -94,13 +94,28 @@
                 <div class="text-white whitespace-pre-wrap">
                     {{ $product->description ?? 'Aucune description disponible.' }}
                 </div>
-                @if($product->assoReference && (int) $product->shop?->user_id === \App\Support\AssoScope::ownerId())
-                    <p class="mt-4 text-gray-300">Référence ASSO : {{ $product->assoReference->name }} — {{ $product->assoReference->isLocated() ? 'géolocalisée' : 'départ depuis la boutique' }}</p>
-                @endif
-                @if($product->characteristics || $product->commercial_information)
+                @php($isAssoProduct = (int) $product->shop?->user_id === \App\Support\AssoScope::ownerId())
+                @if($product->characteristics || $product->commercial_information || $isAssoProduct)
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-dark-300">
-                    <div><h3 class="font-semibold text-white mb-2">Caractéristiques</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->characteristics ?: '—' }}</p></div>
-                    <div><h3 class="font-semibold text-white mb-2">Informations commerciales</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->commercial_information ?: '—' }}</p></div>
+                    @if($isAssoProduct)
+                    <div class="md:col-span-2">
+                        <h3 class="font-semibold text-white mb-2">Référence ASSO</h3>
+                        @if($product->assoReference)
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono text-white bg-dark-50 border border-dark-300 rounded-lg px-3 py-1">{{ $product->assoReference->name }}</span>
+                                @if($product->assoReference->isLocated())
+                                    <span class="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-300"><i class="fas fa-map-marker-alt mr-1"></i>Départ : {{ $product->assoReference->placeLabel() }}</span>
+                                @else
+                                    <span class="rounded-full bg-gray-500/10 px-2 py-0.5 text-xs text-gray-300"><i class="fas fa-store mr-1"></i>Départ boutique</span>
+                                @endif
+                            </div>
+                        @else
+                            <p class="text-yellow-300 text-sm"><i class="fas fa-exclamation-triangle mr-1"></i>Aucune référence : modifiez le produit pour en choisir une.</p>
+                        @endif
+                    </div>
+                    @endif
+                    <div><h3 class="font-semibold text-white mb-2">Caractéristiques</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->characteristics ?: 'Non renseignées' }}</p></div>
+                    <div><h3 class="font-semibold text-white mb-2">Informations commerciales</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->commercial_information ?: 'Non renseignées' }}</p></div>
                 </div>
                 @endif
             </div>
