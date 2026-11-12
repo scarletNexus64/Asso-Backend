@@ -128,6 +128,7 @@ return [
         'admin.product-references.store' => 'products.create',
         'admin.product-references.edit' => 'products.update',
         'admin.product-references.update' => 'products.update',
+        'admin.product-references.toggle-status' => 'products.update',
 
         // Produits
         'admin.products.index' => 'products.view',

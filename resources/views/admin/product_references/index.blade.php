@@ -113,12 +113,31 @@
                                         <span class="rounded-full bg-red-500/10 px-2 py-0.5 text-xs text-red-300">Désactivée</span>
                                     @endif
                                 </td>
-                                <td class="px-4 py-3 text-right">
-                                    @adminCan('admin.product-references.edit')
-                                    <a href="{{ route('admin.product-references.edit', $reference) }}" class="text-primary-400 hover:text-primary-300" title="Modifier">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    @endadminCan
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center justify-end gap-2">
+                                        @adminCan('admin.product-references.edit')
+                                        <a href="{{ route('admin.product-references.edit', $reference) }}"
+                                           class="px-3 py-1.5 rounded-lg bg-primary-500/10 text-primary-300 hover:bg-primary-500/20" title="Modifier">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        @endadminCan
+                                        @adminCan('admin.product-references.toggle-status')
+                                        <form action="{{ route('admin.product-references.toggle-status', $reference) }}" method="POST"
+                                              @if($reference->is_active) data-confirm="Désactiver la référence {{ $reference->name }} ? Elle ne sera plus proposée aux nouveaux produits ; ses {{ $reference->products_count }} produit(s) la conservent." @endif>
+                                            @csrf
+                                            @method('PATCH')
+                                            @if($reference->is_active)
+                                                <button type="submit" class="px-3 py-1.5 rounded-lg bg-red-500/10 text-red-300 hover:bg-red-500/20 text-xs" title="Désactiver">
+                                                    <i class="fas fa-ban mr-1"></i>Désactiver
+                                                </button>
+                                            @else
+                                                <button type="submit" class="px-3 py-1.5 rounded-lg bg-green-500/10 text-green-300 hover:bg-green-500/20 text-xs" title="Réactiver">
+                                                    <i class="fas fa-check mr-1"></i>Réactiver
+                                                </button>
+                                            @endif
+                                        </form>
+                                        @endadminCan
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach

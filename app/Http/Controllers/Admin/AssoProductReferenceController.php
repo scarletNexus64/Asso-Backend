@@ -69,6 +69,16 @@ class AssoProductReferenceController extends Controller
         return redirect()->route('admin.product-references.index')->with('success', "Référence {$reference->name} mise à jour.");
     }
 
+    /** Active ou désactive depuis la liste ; les produits déjà rattachés la conservent. */
+    public function toggleStatus(AssoProductReference $reference)
+    {
+        $reference->update(['is_active' => ! $reference->is_active]);
+
+        return back()->with('success', $reference->is_active
+            ? "Référence {$reference->name} réactivée : elle est de nouveau proposée aux produits."
+            : "Référence {$reference->name} désactivée : elle n'est plus proposée aux nouveaux produits.");
+    }
+
     private function validated(Request $request, ?AssoProductReference $reference = null): array
     {
         // Le code est conservé tel que fourni : seuls les espaces sont retirés et la casse unifiée.
