@@ -868,12 +868,52 @@ class ProductController extends Controller
             $validated['asso_product_reference_id'] = null;
             return;
         }
+        $id = $this->absorbReferenceCode($validated, $product) ?? $id;
         if (! $id && ! $product && $request->input('type') === 'article') {
             throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Choisissez une référence pour ce produit ASSO.']);
         }
         if ($id && (int) $id !== (int) $product?->asso_product_reference_id && ! \App\Models\AssoProductReference::whereKey($id)->where('is_active', true)->exists()) {
             throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Cette référence est désactivée.']);
         }
+    }
+
+    /**
+     * Code saisi dans les informations commerciales (FR ou EN) : il devient la
+     * référence ASSO du produit, créée si besoin, puis il est retiré du texte
+     * présenté aux clients. Renvoie l'identifiant de la référence retenue.
+     */
+    private function absorbReferenceCode(array &$validated, ?Product $product): ?int
+    {
+        $texts = [$validated['commercial_information'] ?? null];
+        foreach ($validated['translations'] ?? [] as $values) {
+            $texts[] = is_array($values) ? ($values['commercial_information'] ?? null) : null;
+        }
+        $codes = \App\Support\AssoReferenceCode::extract(implode("\n", array_filter($texts)));
+        if ($codes === []) {
+            return null;
+        }
+        if (count($codes) > 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['commercial_information' => 'Les informations commerciales contiennent plusieurs références ('.implode(', ', $codes).') : gardez-en une seule.']);
+        }
+        $reference = \App\Models\AssoProductReference::named($codes[0])->first();
+        $chosen = $validated['asso_product_reference_id'] ?? null;
+        // Une référence choisie dans la liste et différente du code saisi : on laisse trancher.
+        if ($chosen && (int) $chosen !== (int) $reference?->id && (int) $chosen !== (int) $product?->asso_product_reference_id) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => "Les informations commerciales indiquent {$codes[0]} : choisissez cette référence ou retirez le code du texte."]);
+        }
+        $reference ??= \App\Models\AssoProductReference::create(['name' => $codes[0], 'is_active' => true]);
+
+        $validated['asso_product_reference_id'] = $reference->id;
+        if (array_key_exists('commercial_information', $validated) && $validated['commercial_information'] !== null) {
+            $validated['commercial_information'] = \App\Support\AssoReferenceCode::strip($validated['commercial_information']) ?: null;
+        }
+        foreach ($validated['translations'] ?? [] as $locale => $values) {
+            if (is_array($values) && filled($values['commercial_information'] ?? null)) {
+                $validated['translations'][$locale]['commercial_information'] = \App\Support\AssoReferenceCode::strip($values['commercial_information']) ?: null;
+            }
+        }
+
+        return $reference->id;
     }
 
 }

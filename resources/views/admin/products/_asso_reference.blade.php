@@ -16,6 +16,7 @@
         @endif
         <a href="{{ route('admin.product-references.index') }}" class="text-primary-400 hover:text-primary-300" target="_blank">Gérer les références</a>
     </p>
+    <p class="text-gray-500 text-xs mt-1"><i class="fas fa-magic mr-1"></i>Un code saisi dans les informations commerciales (ex. ASSO-FRN-LRG-001) est reconnu à l'enregistrement : il remplit ce champ et est retiré du texte.</p>
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
