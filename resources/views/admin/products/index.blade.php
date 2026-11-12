@@ -1,6 +1,7 @@
 @extends('admin.layouts.app')
 
 @section('content')
+<div class="px-6 pt-4"><a class="text-primary-500" href="{{ route('admin.product-references.index') }}">Gérer les références ASSO</a></div>
 <div class="p-6" x-data="{ view: localStorage.getItem('productsView') || 'grid' }">
     <!-- Header -->
     <div class="mb-6 flex items-center justify-between">

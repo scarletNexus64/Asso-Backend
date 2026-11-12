@@ -123,6 +123,12 @@ return [
         'admin.division.withdrawal*' => 'division.withdraw',
         'admin.division.*' => 'division.view',
 
+        'admin.product-references.index' => 'products.view',
+        'admin.product-references.create' => 'products.create',
+        'admin.product-references.store' => 'products.create',
+        'admin.product-references.edit' => 'products.update',
+        'admin.product-references.update' => 'products.update',
+
         // Produits
         'admin.products.index' => 'products.view',
         'admin.products.show' => 'products.view',

@@ -89,6 +89,7 @@ class DeliveryQuoteService
             'weight_kg' => $cart['weight_kg'],
             'missing_weight_products' => $cart['missing_weight'],
             'default_weight_kg' => $cart['missing_weight'] !== [] ? self::defaultProductWeightKg() : null,
+            'collection_origin' => $cart['collection_origin'],
             'origin' => ['city' => $originCity, 'country' => $originCountry, 'country_name' => CountryCode::name($originCountry)],
             'destination' => ['city' => $destCity, 'country' => $destCountry, 'country_name' => CountryCode::name($destCountry)],
             'vat_rate' => self::vatRate(),
@@ -389,14 +390,14 @@ class DeliveryQuoteService
             }
             // Grille urbaine zone à zone : véhicule choisi.
             if ($gridId && ! $routeId && $partner['route_id'] === null) {
-                return $partner + ['weight_kg' => $result['weight_kg']];
+                return $partner + ['weight_kg' => $result['weight_kg'], 'collection_origin' => $result['collection_origin']];
             }
             // Trajet : « retrait en agence » (sans zone) ou « à domicile » (zone d'arrivée).
             if ($routeId && $partner['route_id'] === $routeId && $partner['zone_id'] === $zoneId) {
-                return $partner + ['weight_kg' => $result['weight_kg']];
+                return $partner + ['weight_kg' => $result['weight_kg'], 'collection_origin' => $result['collection_origin']];
             }
             if (! $routeId && $zoneId && $partner['zone_id'] === $zoneId) {
-                return $partner + ['weight_kg' => $result['weight_kg']];
+                return $partner + ['weight_kg' => $result['weight_kg'], 'collection_origin' => $result['collection_origin']];
             }
         }
 
@@ -413,7 +414,7 @@ class DeliveryQuoteService
             if ($zone && $zone->activePricelist && $zone->delivererCompany) {
                 $quote = $this->localQuote($zone->delivererCompany, $zone, $cart, null);
                 if ($quote) {
-                    return $quote + ['weight_kg' => $cart['weight_kg']];
+                    return $quote + ['weight_kg' => $cart['weight_kg'], 'collection_origin' => $cart['collection_origin']];
                 }
             }
         }
@@ -437,7 +438,8 @@ class DeliveryQuoteService
         $originLng = null;
         $category = null;
         $pickupShops = [];
-        $products = Product::with('shop')->whereIn('id', collect($items)->pluck('product_id'))->get()->keyBy('id');
+        $collectionOrigin = null;
+        $products = Product::with(['shop', 'assoReference'])->whereIn('id', collect($items)->pluck('product_id'))->get()->keyBy('id');
         // Gros : la quantité compte des unités du palier (pack, bidon, pièce), chacune son poids.
         $tiers = ProductPriceTier::whereIn('id', collect($items)->pluck('price_tier_id')->filter())->get()->keyBy('id');
 
@@ -474,6 +476,19 @@ class DeliveryQuoteService
                 $originQuarter = $shop?->quarter;
                 $originLat = $shop?->latitude !== null ? (float) $shop->latitude : null;
                 $originLng = $shop?->longitude !== null ? (float) $shop->longitude : null;
+                if ($reference = $product->shippingReference()) {
+                    $origin = [$reference->city, CountryCode::normalize($reference->country) ?: 'CM'];
+                    $originAddress = trim(implode(', ', array_filter([$reference->address, $reference->city])));
+                    $originQuarter = $reference->quarter;
+                    $originLat = (float) $reference->latitude;
+                    $originLng = (float) $reference->longitude;
+                    $collectionOrigin = [
+                        'kind' => 'reference', 'reference_id' => $reference->id,
+                        'name' => $reference->name, 'phone' => $shop?->phone ?: $shop?->user?->phone,
+                        'address' => $reference->address, 'city' => $reference->city,
+                        'latitude' => $originLat, 'longitude' => $originLng,
+                    ];
+                }
             }
             $category ??= $product->weight_category;
         }
@@ -486,6 +501,7 @@ class DeliveryQuoteService
             'origin' => $origin,
             'origin_address' => $originAddress,
             'origin_quarter' => $originQuarter,
+            'collection_origin' => $collectionOrigin,
             'origin_lat' => $originLat,
             'origin_lng' => $originLng,
             'weight_category' => $category ?? 'X-small',

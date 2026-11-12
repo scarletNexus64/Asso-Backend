@@ -112,7 +112,8 @@ class ProductController extends Controller
         $importCountries = ImportCountry::activeOrdered()->get();
         $currencies = Currency::active()->orderBy('code')->get();
 
-        return view('admin.products.create', compact('shops', 'categories', 'subcategories', 'importCountries', 'currencies', 'libraryMode'));
+        $references = \App\Models\AssoProductReference::where('is_active', true)->orderBy('name')->get();
+        return view('admin.products.create', compact('shops', 'categories', 'subcategories', 'importCountries', 'currencies', 'libraryMode', 'references'));
     }
 
     /**
@@ -126,6 +127,7 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'shop_id' => 'required|exists:shops,id',
+            'asso_product_reference_id' => 'nullable|integer|exists:asso_product_references,id',
             'category_id' => 'bail|required|integer|exists:categories,id',
             'subcategory_id' => 'bail|nullable|integer|exists:subcategories,id',
             'name' => 'required|string|max:255',
@@ -222,6 +224,7 @@ class ProductController extends Controller
 
         // Get shop owner
         $shop = Shop::findOrFail($validated['shop_id']);
+        $this->validateAssoReference($request, $shop, $validated, isset($product) ? $product : null);
         $validated['user_id'] = $shop->user_id;
         $validated['weight_category'] = $validated['weight_category'] ?? 'X-small';
         $validated['sizes'] = $this->normalizeSizes($request->input('sizes', []));
@@ -317,7 +320,8 @@ class ProductController extends Controller
             ? \App\Models\User::where('role', 'product_manager')->orderBy('first_name')->get(['id', 'first_name', 'last_name', 'email'])
             : collect();
 
-        return view('admin.products.edit', compact('product', 'shops', 'categories', 'subcategories', 'importCountries', 'currencies', 'libraryMode', 'managers'));
+        $references = \App\Models\AssoProductReference::where('is_active', true)->orWhere('id', $product->asso_product_reference_id)->orderBy('name')->get();
+        return view('admin.products.edit', compact('product', 'shops', 'categories', 'subcategories', 'importCountries', 'currencies', 'libraryMode', 'managers', 'references'));
     }
 
     /**
@@ -339,6 +343,7 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'shop_id' => 'required|exists:shops,id',
+            'asso_product_reference_id' => 'nullable|integer|exists:asso_product_references,id',
             'category_id' => 'bail|required|integer|exists:categories,id',
             'subcategory_id' => 'bail|nullable|integer|exists:subcategories,id',
             'name' => 'required|string|max:255',
@@ -435,6 +440,7 @@ class ProductController extends Controller
 
         // Get shop owner
         $shop = Shop::findOrFail($validated['shop_id']);
+        $this->validateAssoReference($request, $shop, $validated, isset($product) ? $product : null);
         $validated['user_id'] = $shop->user_id;
         $validated['sizes'] = $this->normalizeSizes($request->input('sizes', []));
 
@@ -838,4 +844,23 @@ class ProductController extends Controller
     {
         return response()->json($category->subcategories);
     }
+    private function validateAssoReference(Request $request, Shop $shop, array &$validated, ?Product $product): void
+    {
+        $id = $validated['asso_product_reference_id'] ?? null;
+        $asso = (int) $shop->user_id === \App\Support\AssoScope::ownerId() && \App\Support\AssoScope::ownerId() > 0;
+        if (! $asso || $request->boolean('is_wholesale')) {
+            if ($id) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Cette référence ne peut pas être utilisée pour ce produit.']);
+            }
+            $validated['asso_product_reference_id'] = null;
+            return;
+        }
+        if (! $id && ! $product && $request->input('type') === 'article') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Choisissez une référence pour ce produit ASSO.']);
+        }
+        if ($id && (int) $id !== (int) $product?->asso_product_reference_id && ! \App\Models\AssoProductReference::whereKey($id)->where('is_active', true)->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['asso_product_reference_id' => 'Cette référence est désactivée.']);
+        }
+    }
+
 }

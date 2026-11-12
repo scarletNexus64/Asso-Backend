@@ -43,6 +43,8 @@
                         </select>
                     </div>
 
+                        @include('admin.products._asso_reference')
+
                     @if(auth()->user()->isAdmin() && $managers->isNotEmpty())
                         <div class="mb-4">
                             <label for="created_by" class="block text-sm font-medium text-white mb-2">Gestionnaire responsable</label>

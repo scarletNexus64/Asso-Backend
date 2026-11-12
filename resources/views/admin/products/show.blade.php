@@ -94,6 +94,9 @@
                 <div class="text-white whitespace-pre-wrap">
                     {{ $product->description ?? 'Aucune description disponible.' }}
                 </div>
+                @if($product->assoReference && (int) $product->shop?->user_id === \App\Support\AssoScope::ownerId())
+                    <p class="mt-4 text-gray-300">Référence ASSO : {{ $product->assoReference->name }} — {{ $product->assoReference->isLocated() ? 'géolocalisée' : 'départ depuis la boutique' }}</p>
+                @endif
                 @if($product->characteristics || $product->commercial_information)
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-dark-300">
                     <div><h3 class="font-semibold text-white mb-2">Caractéristiques</h3><p class="text-gray-300 whitespace-pre-wrap">{{ $product->characteristics ?: '—' }}</p></div>

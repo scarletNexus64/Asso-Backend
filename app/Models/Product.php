@@ -113,6 +113,7 @@ class Product extends Model
         'description',
         'characteristics',
         'commercial_information',
+        'asso_product_reference_id',
         'price',
         'currency',
         'price_xaf',
@@ -554,8 +555,25 @@ class Product extends Model
      *
      * @return array{0: ?float, 1: ?float} [latitude, longitude]
      */
+    public function assoReference(): BelongsTo
+    {
+        return $this->belongsTo(AssoProductReference::class, 'asso_product_reference_id');
+    }
+
+    public function shippingReference(): ?AssoProductReference
+    {
+        if ($this->is_wholesale || ! $this->shop || (int) $this->shop->user_id !== \App\Support\AssoScope::ownerId()) {
+            return null;
+        }
+        $reference = $this->assoReference;
+        return $reference?->isLocated() ? $reference : null;
+    }
+
     public function publicCoordinates(): array
     {
+        if ($reference = $this->shippingReference()) {
+            return [(float) $reference->latitude, (float) $reference->longitude];
+        }
         $shop = $this->shop;
         if ($shop && (float) $shop->latitude && (float) $shop->longitude) {
             return [(float) $shop->latitude, (float) $shop->longitude];

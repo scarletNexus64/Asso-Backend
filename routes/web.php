@@ -383,6 +383,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/shops/{shop}/location-requests/{request}/reject', [ShopController::class, 'rejectLocationRequest'])->name('shops.location-requests.reject');
 
         // Products management
+        Route::resource('product-references', \App\Http\Controllers\Admin\AssoProductReferenceController::class)->parameters(['product-references' => 'reference'])->except(['show', 'destroy']);
         Route::resource('products', ProductController::class);
         Route::patch('/products/{product}/toggle-status', [ProductController::class, 'toggleStatus'])->name('products.toggle-status');
         Route::get('/categories/{category}/subcategories', [ProductController::class, 'getSubcategories'])->name('categories.subcategories');

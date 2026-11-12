@@ -104,7 +104,7 @@ class DeliveryPresenter
             ];
         }
 
-        $origin = $order->isInternationalExport() ? ($order->delivery_breakdown['collection_origin'] ?? []) : [];
+        $origin = $order->delivery_breakdown['collection_origin'] ?? [];
         return $origin + [
             'kind' => 'shop',
             'name' => $shop?->name,

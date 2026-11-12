@@ -44,6 +44,8 @@
                             @error('shop_id')<p class="mt-1 text-sm text-red-400">{{ $message }}</p>@enderror
                         </div>
 
+                        @include('admin.products._asso_reference')
+
                         <!-- Product Name / Description (FR + EN) -->
                         <x-admin.translatable class="mb-4" name="name" label="Nom du produit" :model="null" required placeholder="Ex: iPhone 15 Pro" />
                         <x-admin.translatable class="mb-4" name="description" label="Description" :model="null" type="textarea" placeholder="Décrivez le produit..." />
