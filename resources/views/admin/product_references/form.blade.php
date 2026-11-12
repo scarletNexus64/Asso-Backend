@@ -8,7 +8,7 @@
             @if($reference->exists)
                 <p class="text-gray-400"><span class="font-mono">{{ $reference->name }}</span> · {{ $reference->products_count }} produit(s) rattaché(s)</p>
             @else
-                <p class="text-gray-400">Le code est enregistré tel que saisi, en majuscules et sans espaces.</p>
+                <p class="text-gray-400">Le code est enregistré tel que saisi, en majuscules.</p>
             @endif
         </div>
         <a href="{{ route('admin.product-references.index') }}" class="shrink-0 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
@@ -83,8 +83,13 @@
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('reference_name');
     const preview = document.getElementById('reference_preview');
-    // Même normalisation que le serveur : majuscules, sans espaces ni caractères invisibles.
-    const refresh = () => { preview.textContent = input.value.replace(/[\s​-‍⁠﻿]+/g, '').replace(/[‐‑–—−]/g, '-').toUpperCase(); };
+    // Même normalisation que le serveur (App\Support\AssoReferenceCode::normalize).
+    const refresh = () => {
+        preview.textContent = input.value.replace(/[\u200B-\u200D\u2060\uFEFF]+/g, '')
+            .replace(/[\u2010\u2011\u2013\u2014\u2212]/g, '-')
+            .replace(/[\s\u00A0]*-[\s\u00A0]*/g, '-')
+            .replace(/[\s\u00A0]+/g, ' ').trim().toUpperCase();
+    };
     input.addEventListener('input', refresh);
     refresh();
 });

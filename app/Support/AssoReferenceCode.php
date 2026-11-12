@@ -4,10 +4,11 @@ namespace App\Support;
 
 /**
  * Codes de référence ASSO saisis dans les informations commerciales
- * (« Référence : ASSO-FRN-LRG-001 », « FR : Référence : FRN-CHN-ELM-001 »…).
+ * (« Référence : ASSO-FRN-LRG-001 », « FR : Référence : FRN-CHN-ELM-001 »,
+ * « ASSO-RFR-ELECTRO 03 »…).
  *
- * Les codes sont conservés tels que fournis : seuls les espaces et les
- * caractères invisibles collés au code sont retirés.
+ * Les codes sont conservés tels que fournis : seuls les espaces autour des
+ * tirets, les espaces répétés et les caractères invisibles sont retirés.
  */
 final class AssoReferenceCode
 {
@@ -20,7 +21,7 @@ final class AssoReferenceCode
     /** Un trait d'union ou l'un des tirets ci-dessus. */
     private const DASH = '[-\x{2010}\x{2011}\x{2013}\x{2014}\x{2212}]';
 
-    private const CODE = '(?<![\p{L}\p{N}])(?:ASSO\s*'.self::DASH.'\s*)?FRN\s*'.self::DASH.'\s*[A-Z]+(?:\s*'.self::DASH.'\s*[A-Z]+)?\s*'.self::DASH.'\s*[0-9]+(?![\p{N}])';
+    private const CODE = '(?<![\p{L}\p{N}])(?:ASSO\s*'.self::DASH.'\s*)?(?:FRN|RFR)\s*'.self::DASH.'\s*[A-Z]+(?:\s*'.self::DASH.'\s*[A-Z]+)?(?:\s*'.self::DASH.'\s*|[ \t]+)[0-9]+(?![\p{N}])';
 
     /** @return list<string> codes distincts trouvés dans le texte */
     public static function extract(?string $text): array
@@ -45,12 +46,17 @@ final class AssoReferenceCode
         return trim($text);
     }
 
-    /** Forme canonique d'un code : majuscules, sans espace ni caractère invisible. */
+    /**
+     * Forme canonique d'un code : majuscules, sans caractère invisible ni espace
+     * autour des tirets ; un espace voulu (« ELECTRO 03 ») est conservé.
+     */
     public static function normalize(string $code): string
     {
         $code = preg_replace('/'.self::DASHES.'/u', '-', $code);
+        $code = preg_replace('/[\x{200B}-\x{200D}\x{2060}\x{FEFF}]+/u', '', $code);
+        $code = preg_replace('/[\s\x{00A0}]*-[\s\x{00A0}]*/u', '-', $code);
 
-        return mb_strtoupper(preg_replace('/[\s\x{200B}-\x{200D}\x{2060}\x{FEFF}\x{00A0}]+/u', '', $code));
+        return mb_strtoupper(trim(preg_replace('/[\s\x{00A0}]+/u', ' ', $code)));
     }
 
     private static function prepare(?string $text): string

@@ -99,6 +99,10 @@ class AssoProductReferenceTest extends TestCase
     {
         $this->assertSame(['ASSO-FRN-AGR-001'], \App\Support\AssoReferenceCode::extract("Référence : ASSO-\r\nFRN-AGR-001"));
         $this->assertSame('- Conditionnement : sac', \App\Support\AssoReferenceCode::strip("- Conditionnement : sac\r\n- Référence : ASSO-FRN-AGR-001"));
+        // Format sans « Référence : », avec un espace voulu avant le numéro.
+        $this->assertSame(['ASSO-RFR-ELECTRO 03'], \App\Support\AssoReferenceCode::extract('ASSO - RFR-ELECTRO  03'));
+        $this->assertSame('', \App\Support\AssoReferenceCode::strip('ASSO-RFR-ELECTRO 03'));
+        $this->assertSame([], \App\Support\AssoReferenceCode::extract("Contactez ASSO pour plus d'infos"));
         AssoProductReference::create(['name' => 'ASSO-FRN-AGR-001', 'is_active' => true]);
         $this->assertTrue(AssoProductReference::named(' asso-frn-agr-001 ')->exists());
     }
